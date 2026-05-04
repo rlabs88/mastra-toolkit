@@ -14,7 +14,7 @@ import path from "node:path";
 
 import { mastraAgents } from "../agents/agent.js";
 import { daytonaWorkflows } from "../workflows/daytona.js";
-import { piAgentJobWorkflows } from "../workflows/pi-agent-job.js";
+import { asyncAgentJobWorkflows } from "../workflows/async-agent-job.js";
 import { workspaceWorkflows } from "../workflows/workspace.js";
 import { resolveWorkspacePath, workspace } from "../workspace.js";
 
@@ -93,7 +93,7 @@ export const mastra = new Mastra({
   agents: mastraAgents,
   workflows: {
     ...daytonaWorkflows,
-    ...piAgentJobWorkflows,
+    ...asyncAgentJobWorkflows,
     ...workspaceWorkflows,
   },
   storage,

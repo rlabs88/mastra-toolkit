@@ -1,16 +1,16 @@
-# Vertically Integrated Issue Plan: Async Mastra Streaming Card in Pi TUI
+# Historical Plan: Async Mastra Streaming Card (was Pi TUI)
 
 ## Status
 
-Ready for implementation.
+Completed. This plan was implemented when the Pi extension lived inside the mastra-system monorepo. The Pi extension has since been extracted to the standalone `pi-mastra-extension` repository.
 
 ## Source Issue
 
 GitHub issue #2: `Add async streaming Mastra agent calls routed to Pi TUI`
 
-## User-Facing Problem
+## User-Facing Problem (Historical)
 
-Async Mastra agent calls should return a `jobId` immediately while the agent output continues to stream live in the Pi TUI. Today the async call path shows a mostly static compact widget/card, does not use the rich Mastra card layout, may time out while still receiving stream chunks, and completion does not reliably re-notify/resume the parent agent.
+Async Mastra agent calls should return a `jobId` immediately while the agent output continues to stream live in the client TUI. The async call path showed a mostly static compact widget/card, did not use the rich Mastra card layout, could time out while still receiving stream chunks, and completion did not reliably re-notify/resume the parent agent.
 
 ## Desired Behavior
 
@@ -23,7 +23,7 @@ Async Mastra agent calls should return a `jobId` immediately while the agent out
 7. Long-running streams do not die because of a wall-clock timeout if chunks are still arriving.
 8. Async output artifacts/read tools include useful output even when the agent emits reasoning/tool events instead of `text-delta` chunks.
 
-## Confirmed Pi API Constraints
+## Confirmed Client API Constraints
 
 `@mariozechner/pi-coding-agent` only supports these widget placements:
 
@@ -36,7 +36,7 @@ There is no `bottomRight` or `aboveTextChannel` placement. Therefore:
 - Use `{ placement: "aboveEditor" }`.
 - Implement the bottom-right appearance inside the widget renderer by choosing a bounded card width and left-padding rendered card lines.
 
-`pi.sendMessage` supports:
+`sendMessage` supports:
 
 ```ts
 {
@@ -45,7 +45,7 @@ There is no `bottomRight` or `aboveTextChannel` placement. Therefore:
 }
 ```
 
-`triggerTurn: true` is needed when Pi is idle and the completion message should resume the parent agent.
+`triggerTurn: true` is needed when the client is idle and the completion message should resume the parent agent.
 
 ## Root Causes
 
@@ -98,7 +98,7 @@ Current completion path:
 pi.sendMessage(message, { deliverAs: "followUp" })
 ```
 
-If Pi is idle by the time the background job finishes, this can append/persist without triggering a new parent turn. Use `triggerTurn: true` for completion notification semantics.
+If the client is idle by the time the background job finishes, this can append/persist without triggering a new parent turn. Use `triggerTurn: true` for completion notification semantics.
 
 ### Root Cause 4: Async artifact may be empty for reasoning/tool-heavy agents
 

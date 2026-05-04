@@ -34,10 +34,10 @@ const modePromptTrackerStore = new PostgresStore({
 let modePromptTrackerStoreInit: Promise<void> | undefined;
 const inMemoryModePromptTracker = new Map<string, string>();
 
-const piAgentJobInputSchema = z.object({
+const asyncAgentJobInputSchema = z.object({
   jobId: z.string(),
   jobName: z.string(),
-  piSessionId: z.string().optional(),
+  clientSessionId: z.string().optional(),
   runId: z.string().optional(),
   agentRunId: z.string().optional(),
   agentId: z.string(),
@@ -54,10 +54,10 @@ const piAgentJobInputSchema = z.object({
   timeoutMs: z.number().optional(),
 });
 
-const piAgentJobOutputSchema = z.object({
+const asyncAgentJobOutputSchema = z.object({
   jobId: z.string(),
   jobName: z.string(),
-  piSessionId: z.string().optional(),
+  clientSessionId: z.string().optional(),
   runId: z.string().optional(),
   agentRunId: z.string().optional(),
   agentId: z.string(),
@@ -99,16 +99,16 @@ const piAgentJobOutputSchema = z.object({
   }).optional(),
 });
 
-export const runPiAgentJobStep = createStep({
-  id: "run-pi-agent-job",
-  inputSchema: piAgentJobInputSchema,
-  outputSchema: piAgentJobOutputSchema,
+export const runAsyncAgentJobStep = createStep({
+  id: "run-async-agent-job",
+  inputSchema: asyncAgentJobInputSchema,
+  outputSchema: asyncAgentJobOutputSchema,
   execute: async ({ inputData, mastra, writer, abortSignal }) => {
     const artifactDir = resolveWorkspacePath(
-      process.env.MASTRA_PI_AGENT_JOB_DIR ??
+      process.env.MASTRA_ASYNC_AGENT_JOB_DIR ??
         path.join(
-          "apps/mastra-control/.mastra/pi-agent-jobs",
-          safePathPart(inputData.piSessionId ?? "local-session"),
+          "apps/mastra-control/.mastra/async-agent-jobs",
+          safePathPart(inputData.clientSessionId ?? "local-session"),
           safePathPart(inputData.jobId),
         ),
     );
@@ -120,7 +120,7 @@ export const runPiAgentJobStep = createStep({
     let snapshotCapture: SnapshotCapture | undefined;
     const snapshotOwner = {
       agentId: inputData.agentId,
-      sessionId: inputData.piSessionId ?? inputData.resourceId,
+      sessionId: inputData.clientSessionId ?? inputData.resourceId,
       runId: inputData.runId ?? inputData.jobId,
       childId: inputData.jobId,
     };
@@ -180,7 +180,7 @@ export const runPiAgentJobStep = createStep({
       return {
         jobId: inputData.jobId,
         jobName: inputData.jobName,
-        piSessionId: inputData.piSessionId,
+        clientSessionId: inputData.clientSessionId,
         runId: inputData.runId,
         agentRunId: inputData.agentRunId,
         agentId: inputData.agentId,
@@ -201,7 +201,7 @@ export const runPiAgentJobStep = createStep({
     return {
       jobId: inputData.jobId,
       jobName: inputData.jobName,
-      piSessionId: inputData.piSessionId,
+      clientSessionId: inputData.clientSessionId,
       runId: inputData.runId,
       agentRunId: inputData.agentRunId,
       agentId: inputData.agentId,
@@ -220,17 +220,17 @@ export const runPiAgentJobStep = createStep({
   },
 });
 
-const piAgentJobWorkflow = createWorkflow({
-  id: "pi.agent-job",
-  description: "Durable Pi session background Mastra agent job runner.",
-  inputSchema: piAgentJobInputSchema,
-  outputSchema: piAgentJobOutputSchema,
+const asyncAgentJobWorkflow = createWorkflow({
+  id: "async.agent-job",
+  description: "Durable async background Mastra agent job runner.",
+  inputSchema: asyncAgentJobInputSchema,
+  outputSchema: asyncAgentJobOutputSchema,
 })
-  .then(runPiAgentJobStep)
+  .then(runAsyncAgentJobStep)
   .commit();
 
-export const piAgentJobWorkflows = {
-  piAgentJob: piAgentJobWorkflow,
+export const asyncAgentJobWorkflows = {
+  asyncAgentJob: asyncAgentJobWorkflow,
 };
 
 async function emitSnapshotReminder({
