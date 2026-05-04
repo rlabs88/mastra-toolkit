@@ -510,6 +510,18 @@ async function streamHarnessMessage({
       return;
     }
 
+    if (event.type === "delegation_start") {
+      emitChunk(toDelegationChunk(event as Record<string, unknown>, "started"));
+      return;
+    }
+
+    if (event.type === "delegation_complete") {
+      const delegationEvent = event as Record<string, unknown>;
+      const status = delegationEvent.error ? "failed" : "completed";
+      emitChunk(toDelegationChunk(delegationEvent, status));
+      return;
+    }
+
     if (event.type === "error") {
       emitChunk({
         type: "error",
@@ -572,6 +584,45 @@ async function streamHarnessMessage({
     abortSignal?.removeEventListener("abort", onAbort);
     unsubscribe();
   }
+}
+
+
+
+type DelegationStatus = "started" | "completed" | "failed";
+
+function toDelegationChunk(event: Record<string, unknown>, status: DelegationStatus) {
+  const startedAt = asNumber(event.startedAt) ?? Date.now();
+  const endedAt = asNumber(event.completedAt) ?? asNumber(event.endedAt) ?? (status === "started" ? undefined : Date.now());
+  const durationMs = endedAt !== undefined ? Math.max(0, endedAt - startedAt) : undefined;
+
+  return {
+    type: "delegation-event",
+    payload: {
+      status,
+      delegationId: asString(event.delegationId) ?? asString(event.toolCallId),
+      delegatedAgentId: asString(event.agentId) ?? asString(event.delegateAgentId),
+      delegatedAgentName: asString(event.agentName) ?? asString(event.delegateAgentName),
+      prompt: asString(event.prompt) ?? asString(event.query) ?? asString(event.input),
+      response: asString(event.response) ?? asString(event.resultText),
+      success: status === "completed",
+      error: status === "failed" ? (event.error ?? event.result) : undefined,
+      runId: asString(event.runId),
+      threadId: asString(event.threadId),
+      resourceId: asString(event.resourceId),
+      startedAt,
+      endedAt,
+      durationMs,
+      raw: event,
+    },
+  };
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function requestContextFromRecord(

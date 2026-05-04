@@ -21,6 +21,24 @@ export function mapMastraChunkToUpdates(chunk) {
         return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: textFrom(chunk) }, _meta: { mastra: { reasoning: chunk } } }];
     if (type === 'finish')
         return chunk.usage ? [{ sessionUpdate: 'usage_update', used: num(chunk.usage, 'totalTokens') ?? 0, size: num(chunk.usage, 'totalTokens') ?? 0 }] : [];
+    if (type === 'delegation-event') {
+        const p = isRecord(chunk.payload) ? chunk.payload : chunk;
+        const status = str(p.status) === 'failed' ? 'failed' : str(p.status) === 'completed' ? 'completed' : 'in_progress';
+        const delegatedName = str(p.delegatedAgentName) ?? str(p.delegatedAgentId) ?? 'subagent';
+        const prompt = str(p.prompt) ?? '';
+        const response = str(p.response) ?? '';
+        return [{
+                sessionUpdate: 'tool_call_update',
+                toolCallId: str(p.delegationId) ?? `delegation:${delegatedName}`,
+                status,
+                title: `delegate:${delegatedName}`,
+                kind: 'other',
+                rawInput: prompt,
+                rawOutput: p.error ?? response,
+                content: [{ type: 'content', content: { type: 'text', text: JSON.stringify({ delegatedAgent: delegatedName, prompt, response, durationMs: p.durationMs, error: p.error }) } }],
+                _meta: { mastra: chunk },
+            }];
+    }
     if (type?.startsWith('tool-')) {
         const p = isRecord(chunk.payload) ? chunk.payload : chunk;
         const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : (type === 'tool-call-input-streaming-start' ? 'in_progress' : 'pending');
