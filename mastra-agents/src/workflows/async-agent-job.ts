@@ -23,7 +23,7 @@ import {
 import { captureTurnSnapshot, initializeSessionSnapshot, type SnapshotCapture } from "../tools/snapshots.js";
 import { resolveWorkspacePath } from "../workspace.js";
 import { setSessionId } from "../session.js";
-import { delegationPayloadFromEvent } from "./delegation-event.js";
+import { delegationPayloadFromEvent, subscribeDelegationEvents } from "./delegation-event.js";
 
 const inputArgsSchema = z.record(z.string()).optional();
 const modePromptTrackerStore = new PostgresStore({
@@ -529,6 +529,16 @@ async function streamHarnessMessage({
 
   const onAbort = () => harness.abort();
   abortSignal?.addEventListener("abort", onAbort, { once: true });
+  const unsubscribeDelegationEvents = subscribeDelegationEvents((payload) => {
+    if (!isCurrentRunDelegationPayload(payload, threadId, resourceId)) {
+      return;
+    }
+
+    emitChunk({
+      type: "delegation-event",
+      payload,
+    });
+  });
 
   try {
     await harness.init();
@@ -579,8 +589,21 @@ async function streamHarnessMessage({
   } finally {
     await writeQueue;
     abortSignal?.removeEventListener("abort", onAbort);
+    unsubscribeDelegationEvents();
     unsubscribe();
   }
+}
+
+function isCurrentRunDelegationPayload(
+  payload: unknown,
+  threadId: string,
+  resourceId: string,
+): payload is Record<string, unknown> {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return payload.threadId === threadId && payload.resourceId === resourceId;
 }
 
 function requestContextFromRecord(
@@ -639,4 +662,3 @@ function safePathPart(value: string): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

@@ -8,6 +8,7 @@ import { scoutModePrompts } from "../prompts/agents/scout.js";
 import { orchestratorModePrompts } from "../prompts/agents/orchestrator.js";
 import { supervisorModePrompts } from "../prompts/agents/supervisor.js";
 import { validatorModePrompts } from "../prompts/agents/validator.js";
+import { workspace } from "../workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
 import { orchestratorAgent } from "./orchestrator-agent.js";
 import { architectAgent } from "./architect-agent.js";
@@ -260,6 +261,7 @@ export function formatMastraAgentHarnessModePrompt(resolved: ResolvedMastraAgent
 export function createMastraAgentHarness(): Harness<MastraAgentHarnessState> {
   return new Harness<MastraAgentHarnessState>({
     id: "mastra-system-agents",
+    workspace: workspace as any,
     initialState: {
       activeAgentId: DEFAULT_MASTRA_AGENT_HARNESS_AGENT_ID,
       harnessMode: DEFAULT_MASTRA_AGENT_HARNESS_LOCAL_MODE,

@@ -1,3 +1,16 @@
+const delegationEventSinks = new Set();
+
+export function subscribeDelegationEvents(sink) {
+  delegationEventSinks.add(sink);
+  return () => delegationEventSinks.delete(sink);
+}
+
+export function emitDelegationEvent(payload) {
+  for (const sink of delegationEventSinks) {
+    sink(payload);
+  }
+}
+
 export function delegationPayloadFromEvent(event) {
   const payload = isRecord(event?.payload) ? event.payload : event;
   const phase = typeof event?.type === 'string' ? event.type : 'delegation';
@@ -17,6 +30,48 @@ export function delegationPayloadFromEvent(event) {
     resourceId: stringFromUnknown(payload.resourceId),
     timestamp: Date.now(),
     raw: payload,
+  };
+}
+
+export function delegationStartPayloadFromContext(context) {
+  return {
+    phase: 'delegation_start',
+    delegationId: stringFromUnknown(context.toolCallId),
+    delegatedName: stringFromUnknown(context.primitiveId),
+    delegatedAgentId: stringFromUnknown(context.primitiveId),
+    prompt: structuredFromUnknown(context.prompt),
+    runId: stringFromUnknown(context.runId),
+    agentRunId: stringFromUnknown(context.parentAgentId),
+    threadId: stringFromUnknown(context.threadId),
+    resourceId: stringFromUnknown(context.resourceId),
+    parentAgentId: stringFromUnknown(context.parentAgentId),
+    parentAgentName: stringFromUnknown(context.parentAgentName),
+    iteration: numberFromUnknown(context.iteration),
+    timestamp: Date.now(),
+    raw: context,
+  };
+}
+
+export function delegationCompletePayloadFromContext(context) {
+  return {
+    phase: 'delegation_complete',
+    delegationId: stringFromUnknown(context.toolCallId),
+    delegatedName: stringFromUnknown(context.primitiveId),
+    delegatedAgentId: stringFromUnknown(context.primitiveId),
+    prompt: structuredFromUnknown(context.prompt),
+    response: structuredFromUnknown(context.result),
+    error: structuredFromUnknown(context.error),
+    success: booleanFromUnknown(context.success),
+    durationMs: numberFromUnknown(context.duration),
+    runId: stringFromUnknown(context.runId),
+    agentRunId: stringFromUnknown(context.parentAgentId),
+    threadId: stringFromUnknown(context.threadId),
+    resourceId: stringFromUnknown(context.resourceId),
+    parentAgentId: stringFromUnknown(context.parentAgentId),
+    parentAgentName: stringFromUnknown(context.parentAgentName),
+    iteration: numberFromUnknown(context.iteration),
+    timestamp: Date.now(),
+    raw: context,
   };
 }
 

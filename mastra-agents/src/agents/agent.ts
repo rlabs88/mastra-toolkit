@@ -13,9 +13,11 @@ import {
 import { sharedPolicyPrompts } from "../prompts/policy.js";
 import { sharedToolPrompts } from "../prompts/tools.js";
 import { workspaceTools } from "../tools/workspace.js";
+import { workspace } from "../workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
 import { orchestratorAgent } from "./orchestrator-agent.js";
 import { architectAgent } from "./architect-agent.js";
+import { createDelegationObservabilityOptions } from "./delegation-observability.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
 import { scoutAgent } from "./scout-agent.js";
@@ -65,7 +67,7 @@ function createSupervisorChannelsConfig() {
   return Object.keys(adapters).length > 0 ? { adapters } : undefined;
 }
 
-orchestratorAgent.channels = createSupervisorChannelsConfig();
+(orchestratorAgent as typeof orchestratorAgent & { channels?: unknown }).channels = createSupervisorChannelsConfig();
 
 export const supervisorAgent = withAgentModes(new Agent({
   id: "supervisor-agent",
@@ -81,7 +83,14 @@ export const supervisorAgent = withAgentModes(new Agent({
   ),
   model: defaultSupervisorModel,
   memory: createAgentMemory(),
-  defaultOptions: agentDefaultOptions.supervisor,
+  workspace,
+  defaultOptions: {
+    ...agentDefaultOptions.supervisor,
+    delegation: createDelegationObservabilityOptions({
+      parentAgentId: "supervisor-agent",
+      parentAgentName: "Supervisor Lead",
+    }),
+  },
   agents: {
     scoutAgent,
     researcherAgent,

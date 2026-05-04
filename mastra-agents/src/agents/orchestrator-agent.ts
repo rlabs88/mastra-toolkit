@@ -10,8 +10,10 @@ import {
 import { sharedPolicyPrompts } from "../prompts/policy.js";
 import { sharedToolPrompts } from "../prompts/tools.js";
 import { workspaceTools } from "../tools/workspace.js";
+import { workspace } from "../workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
 import { architectAgent } from "./architect-agent.js";
+import { createDelegationObservabilityOptions } from "./delegation-observability.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
 import { scoutAgent } from "./scout-agent.js";
@@ -32,7 +34,14 @@ export const orchestratorAgent = withAgentModes(new Agent({
   ),
   model: defaultSupervisorModel,
   memory: createAgentMemory(),
-  defaultOptions: agentDefaultOptions.orchestrator,
+  workspace,
+  defaultOptions: {
+    ...agentDefaultOptions.orchestrator,
+    delegation: createDelegationObservabilityOptions({
+      parentAgentId: "orchestrator-agent",
+      parentAgentName: "Orchestrator",
+    }),
+  },
   agents: {
     scoutAgent,
     researcherAgent,
