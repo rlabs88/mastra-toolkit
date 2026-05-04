@@ -21,6 +21,41 @@ export function mapMastraChunkToUpdates(chunk) {
         return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: textFrom(chunk) }, _meta: { mastra: { reasoning: chunk } } }];
     if (type === 'finish')
         return chunk.usage ? [{ sessionUpdate: 'usage_update', used: num(chunk.usage, 'totalTokens') ?? 0, size: num(chunk.usage, 'totalTokens') ?? 0 }] : [];
+
+    if (type === "delegation-event") {
+        const payload = isRecord(chunk.payload) ? chunk.payload : {};
+        const fallbackIdParts = [
+            str(payload.delegationId),
+            str(payload.runId),
+            str(payload.agentRunId),
+            str(payload.threadId),
+            str(payload.timestamp),
+            str(payload.phase),
+            str(payload.delegatedAgentId) ?? str(payload.delegatedName),
+        ].filter(Boolean);
+        const fallbackId = fallbackIdParts.length > 0 ? `delegation:${fallbackIdParts.join(":")}` : `delegation:${Date.now()}`;
+        const phase = str(payload.phase) ?? "delegation";
+        const status = phase === "delegation_complete" ? (payload.success === false ? "failed" : "completed") : "in_progress";
+        const summary = {
+            target: payload.delegatedAgentId ?? payload.delegatedName,
+            prompt: payload.prompt,
+            response: payload.response,
+            error: payload.error,
+            success: payload.success,
+            durationMs: payload.durationMs,
+        };
+        return [{
+            sessionUpdate: "tool_call_update",
+            toolCallId: str(payload.delegationId) ?? fallbackId,
+            status,
+            title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? "delegation",
+            kind: "other",
+            rawInput: payload.prompt,
+            rawOutput: payload.response ?? payload.error,
+            content: [{ type: "content", content: { type: "text", text: JSON.stringify(summary) } }],
+            _meta: { mastra: chunk },
+        }];
+    }
     if (type?.startsWith('tool-')) {
         const p = isRecord(chunk.payload) ? chunk.payload : chunk;
         const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : (type === 'tool-call-input-streaming-start' ? 'in_progress' : 'pending');
