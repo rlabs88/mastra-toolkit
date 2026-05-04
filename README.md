@@ -6,7 +6,6 @@ A monorepo for the Mastra agentic development environment, organized as a multi-
 mastra-system/
 ├── mastra-code/       @mastrasystem/code — Mastra Code wrapper (CLI + TUI)
 ├── mastra-agents/     @mastrasystem/agents — Supervisor + specialist agent patterns
-│   ├── pi/            @mastrasystem/pi — Pi TUI adapters, extensions, terminal UI
 │   └── paseo/         @mastrasystem/paseo — Relay network adapter
 ├── package.json       Workspace root (npm/bun workspaces)
 └── tsconfig.base.json Shared TypeScript config
@@ -55,14 +54,6 @@ See [Mastra agent calling methods](docs/mastra-agent-calling-methods.md) for the
 See [Mastra multi-channel architecture plan](docs/mastra-multichannel-architecture-plan.md) for the shared parent-scope implementation plan spanning Slack, GitHub, and Linear channels.
 
 See [daytona-agents](https://github.com/Eugenechan00/daytona-agents) for the reference implementation.
-
-### `@mastrasystem/pi` — Pi TUI
-
-Terminal UI components built on `@mariozechner/pi-tui`:
-
-- `adapters/` — Relay and transport adapters
-- `extensions/` — Extension protocol for agent capabilities
-- `tui/` — Terminal UI rendering components
 
 ### `@mastrasystem/paseo` — Paseo Adapter
 

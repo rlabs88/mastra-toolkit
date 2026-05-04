@@ -6,7 +6,6 @@
   "workspaces": [
     "mastra-code",
     "mastra-agents",
-    "pi",
     "paseo"
   ],
   "scripts": {

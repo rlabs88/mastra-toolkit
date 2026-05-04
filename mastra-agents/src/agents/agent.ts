@@ -1,4 +1,5 @@
 import { createLinearAdapter } from "@chat-adapter/linear";
+import { createGitHubAdapter } from "@chat-adapter/github";
 import { Agent } from "@mastra/core/agent";
 import { createSlackAdapter } from "@chat-adapter/slack";
 
@@ -30,17 +31,33 @@ function createSupervisorChannelsConfig() {
       : {}),
   };
 
+  const githubWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+  const githubAuthConfigured = Boolean(
+    process.env.GITHUB_TOKEN ||
+      (process.env.GITHUB_APP_ID && process.env.GITHUB_PRIVATE_KEY),
+  );
+
+  if (process.env.ENABLE_GITHUB_CHANNEL === "true" && githubWebhookSecret && githubAuthConfigured) {
+    Object.assign(adapters, {
+      github: createGitHubAdapter(),
+    });
+  }
+
   const linearWebhookSecret = process.env.LINEAR_WEBHOOK_SECRET;
   const linearAuthConfigured = Boolean(
     process.env.LINEAR_API_KEY ||
       process.env.LINEAR_ACCESS_TOKEN ||
+      (process.env.LINEAR_CLIENT_CREDENTIALS_CLIENT_ID &&
+        process.env.LINEAR_CLIENT_CREDENTIALS_CLIENT_SECRET) ||
       (process.env.LINEAR_CLIENT_ID && process.env.LINEAR_CLIENT_SECRET),
   );
 
   if (linearWebhookSecret && linearAuthConfigured) {
+    const linearMode = process.env.LINEAR_CHANNEL_MODE ?? process.env.LINEAR_MODE;
+
     Object.assign(adapters, {
       linear: createLinearAdapter({
-        mode: process.env.LINEAR_CHANNEL_MODE === "agent-sessions" ? "agent-sessions" : "comments",
+        mode: linearMode === "agent-sessions" ? "agent-sessions" : "comments",
       }),
     });
   }

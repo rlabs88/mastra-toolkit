@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+.git
+.serena
+.agents/exec
+.agents/plans
+*.log
+.env
+*.local
+coverage
+dist
+.mastra
+mastra-agents/.mastra

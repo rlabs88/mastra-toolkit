@@ -1,68 +1,45 @@
-function getUsageFromEvent(event) {
-  if (event?.usage && typeof event.usage === 'object') return event.usage;
-
-  const usage = {
-    inputTokens: event?.inputTokens,
-    outputTokens: event?.outputTokens,
-    thoughtTokens: event?.thoughtTokens,
-    totalTokens: event?.totalTokens,
-  };
-
-  return Object.values(usage).some(value => typeof value === 'number') ? usage : undefined;
+export function inferToolKind(name) {
+    if (!name)
+        return 'other';
+    if (name === 'workspace.read-file')
+        return 'read';
+    if (name === 'workspace.write-file' || name === 'workspace.replace-in-file')
+        return 'edit';
+    if (name === 'workspace.list-files')
+        return 'search';
+    if (name.includes('shell') || name.includes('sandbox'))
+        return 'execute';
+    return 'other';
 }
-
-function getToolStatus(event) {
-  if (event?.status) return event.status;
-  switch (event?.type) {
-    case 'tool-error':
-      return 'failed';
-    case 'tool-result':
-      return 'completed';
-    default:
-      return 'in_progress';
-  }
+export function mapMastraChunkToUpdates(chunk) {
+    if (!isRecord(chunk))
+        return [];
+    const type = str(chunk.type);
+    if (type === 'text-delta')
+        return [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: textFrom(chunk) } }];
+    if (type === 'reasoning-delta' || type === 'reasoning')
+        return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: textFrom(chunk) }, _meta: { mastra: { reasoning: chunk } } }];
+    if (type === 'finish')
+        return chunk.usage ? [{ sessionUpdate: 'usage_update', used: num(chunk.usage, 'totalTokens') ?? 0, size: num(chunk.usage, 'totalTokens') ?? 0 }] : [];
+    if (type?.startsWith('tool-')) {
+        const p = isRecord(chunk.payload) ? chunk.payload : chunk;
+        const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : (type === 'tool-call-input-streaming-start' ? 'in_progress' : 'pending');
+        const update = {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: str(p.toolCallId) ?? str(p.id) ?? 'unknown',
+            status,
+            title: str(p.toolName) ?? str(p.name) ?? 'tool',
+            kind: inferToolKind(str(p.toolName) ?? str(p.name)),
+            rawInput: p.args,
+            rawOutput: p.error ?? p.result,
+            content: [{ type: 'content', content: { type: 'text', text: JSON.stringify({ args: p.args, result: p.result, error: p.error }) } }],
+            _meta: { mastra: chunk },
+        };
+        return [update];
+    }
+    return [];
 }
-
-export function mapMastraEventToSessionUpdates(event) {
-  if (!event || typeof event !== 'object' || typeof event.type !== 'string') return [];
-
-  if (event.type === 'text-delta' && event.text) {
-    return [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: event.text } }];
-  }
-
-  if (event.type === 'reasoning-delta' && event.text) {
-    return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: event.text } }];
-  }
-
-  if (event.type === 'usage' || event.type === 'finish') {
-    const usage = getUsageFromEvent(event);
-    if (usage) return [{ sessionUpdate: 'usage_update', usage }];
-  }
-
-  if (event.type.startsWith('tool-')) {
-    return [{
-      sessionUpdate: 'tool_call_update',
-      toolCallId: event.toolCallId,
-      status: getToolStatus(event),
-      content: {
-        type: 'tool_call',
-        toolCallId: event.toolCallId,
-        name: event.name,
-        kind: event.kind,
-        args: event.args,
-        result: event.result,
-        error: event.error,
-      },
-      toolCall: {
-        id: event.toolCallId,
-        name: event.name,
-        kind: event.kind,
-        input: event.args,
-        output: event.result,
-        error: event.error,
-      },
-    }];
-  }
-
-  return [];
-}
+const isRecord = (v) => typeof v === 'object' && !!v;
+const str = (v) => (typeof v === 'string' ? v : undefined);
+const textFrom = (c) => str(c.text) ?? str(c.delta) ?? str(c.payload?.text) ?? '';
+const num = (o, k) => (typeof o?.[k] === 'number' ? o[k] : undefined);

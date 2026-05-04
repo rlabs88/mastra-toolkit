@@ -35,11 +35,11 @@ addDefault(
   args,
   "--server-port",
   "-s",
-  process.env.MASTRA_STUDIO_SERVER_PORT ??
+    process.env.MASTRA_STUDIO_SERVER_PORT ??
     process.env.MASTRA_STUDIO_PROXY_PORT ??
     process.env.MASTRA_SERVER_PORT ??
     process.env.PORT ??
-    "4112",
+    "4111",
 );
 addDefault(
   args,

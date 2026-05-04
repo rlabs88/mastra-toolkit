@@ -1,2 +1,0 @@
-# Beta
-This is beta.

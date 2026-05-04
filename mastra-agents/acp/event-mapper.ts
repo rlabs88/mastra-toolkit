@@ -25,9 +25,9 @@ export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
       status,
       title: str(p.toolName) ?? str(p.name) ?? 'tool',
       kind: inferToolKind(str(p.toolName) ?? str(p.name)),
-      rawInput: typeof p.args === 'string' ? p.args : undefined,
-      rawOutput: typeof p.result === 'string' ? p.result : undefined,
-      content: [{type:'text', text: JSON.stringify({ args:p.args, result:p.result, error:p.error })}] as any,
+      rawInput: p.args,
+      rawOutput: p.error ?? p.result,
+      content: [{ type: 'content', content: { type: 'text', text: JSON.stringify({ args:p.args, result:p.result, error:p.error }) } }],
       _meta: { mastra: chunk },
     };
     return [update];

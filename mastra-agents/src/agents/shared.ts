@@ -2,13 +2,21 @@ import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 
 export const defaultMiniMaxModel = "minimax-coding-plan/MiniMax-M2.7";
+function optionalEnv(name: string) {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
 export const defaultAgentModel =
-  process.env.MASTRA_AGENT_MODEL ?? process.env.MASTRA_SUBAGENT_MODEL ?? process.env.MASTRA_MODEL ?? defaultMiniMaxModel;
+  optionalEnv("MASTRA_AGENT_MODEL") ??
+  optionalEnv("MASTRA_SUBAGENT_MODEL") ??
+  optionalEnv("MASTRA_MODEL") ??
+  defaultMiniMaxModel;
 export const defaultSupervisorModel =
-  process.env.MASTRA_SUPERVISOR_MODEL ??
-  process.env.MASTRA_AGENT_MODEL ??
-  process.env.MASTRA_SUBAGENT_MODEL ??
-  process.env.MASTRA_MODEL ??
+  optionalEnv("MASTRA_SUPERVISOR_MODEL") ??
+  optionalEnv("MASTRA_AGENT_MODEL") ??
+  optionalEnv("MASTRA_SUBAGENT_MODEL") ??
+  optionalEnv("MASTRA_MODEL") ??
   defaultMiniMaxModel;
 
 const defaultToolCallConcurrency = 15;
@@ -56,7 +64,7 @@ export const defaultAgentModes = agentModesFromPrompts({
 });
 
 export const defaultObservationalMemoryModel =
-  process.env.MASTRA_OBSERVATIONAL_MEMORY_MODEL ?? defaultAgentModel;
+  optionalEnv("MASTRA_OBSERVATIONAL_MEMORY_MODEL") ?? defaultAgentModel;
 
 export const defaultObservationalMemoryOptions = {
   model: defaultObservationalMemoryModel,

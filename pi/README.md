@@ -16,7 +16,7 @@ uses `http://localhost:4111/api`; override that with `MASTRA_BASE_URL` when the
 service is on another host or port:
 
 ```bash
-MASTRA_BASE_URL=http://localhost:4112/api pi
+MASTRA_BASE_URL=http://localhost:4111/api pi
 ```
 
 ## Package Structure
@@ -39,7 +39,7 @@ npm run dev --workspace @mastrasystem/pi
 `MASTRA_BASE_URL` defaults to `http://localhost:4111/api`. Override it when needed:
 
 ```bash
-MASTRA_BASE_URL=http://localhost:4112/api npm run dev --workspace @mastrasystem/pi
+MASTRA_BASE_URL=http://localhost:4111/api npm run dev --workspace @mastrasystem/pi
 ```
 
 ## Mastra Agent Widget Config

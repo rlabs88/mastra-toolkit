@@ -8,6 +8,17 @@ build/
 
 # Mastra generated runtime/build state
 .mastra/
+.agents/exec/snapshots/
+
+# Generated scratch artifacts
+test*/
+**/test*/
+story*.md
+**/story*.md
+test*snapshot*.mjs
+.agents/exec/*snapshot*/
+.agents/exec/*snapshot*.md
+.agents/plans/*snapshot*.md
 
 # Environment files (contain secrets)
 .env
