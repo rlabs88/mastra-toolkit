@@ -23,6 +23,7 @@ import {
 import { captureTurnSnapshot, initializeSessionSnapshot, type SnapshotCapture } from "../tools/snapshots.js";
 import { resolveWorkspacePath } from "../workspace.js";
 import { setSessionId } from "../session.js";
+import { delegationPayloadFromEvent } from "./delegation-event.js";
 
 const inputArgsSchema = z.record(z.string()).optional();
 const modePromptTrackerStore = new PostgresStore({
@@ -510,6 +511,14 @@ async function streamHarnessMessage({
       return;
     }
 
+    if (event.type === "delegation_start" || event.type === "delegation_complete") {
+      emitChunk({
+        type: "delegation-event",
+        payload: delegationPayloadFromEvent(event),
+      });
+      return;
+    }
+
     if (event.type === "error") {
       emitChunk({
         type: "error",
@@ -630,3 +639,4 @@ function safePathPart(value: string): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
