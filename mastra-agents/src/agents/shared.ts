@@ -28,11 +28,17 @@ export type AgentModeMetadata = {
 };
 
 export const sharedAgentModeNames = {
+  base: "Base",
   balanced: "Balanced",
   scope: "Scope",
+  spec: "Spec",
+  exec: "Execution",
   plan: "Plan",
   build: "Build",
   verify: "Verify",
+  quick: "Quick",
+  precision: "Precision",
+  auto: "Auto",
   research: "Research",
   brainstorm: "Brainstorm",
   analysis: "Analysis",

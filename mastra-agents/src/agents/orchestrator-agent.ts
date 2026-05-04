@@ -26,7 +26,7 @@ export const orchestratorAgent = withAgentModes(new Agent({
   description: orchestratorAgentDescription,
   instructions: composeAgentInstructions(
     orchestratorInstructionsPrompt,
-    orchestratorModePrompts.balanced,
+    orchestratorModePrompts.auto,
     sharedPolicyPrompts.supervisor,
     sharedToolPrompts.supervisor,
     orchestratorPolicyPrompts,
@@ -59,4 +59,4 @@ export const orchestratorAgent = withAgentModes(new Agent({
     git_snapshot_query: workspaceTools.gitSnapshotQuery,
     capture_snapshot: workspaceTools.captureSnapshot,
   },
-}), agentModesFromPrompts(orchestratorModePrompts));
+}), agentModesFromPrompts(orchestratorModePrompts, "auto"));

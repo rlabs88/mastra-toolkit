@@ -21,7 +21,6 @@ export function mapMastraChunkToUpdates(chunk) {
         return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: textFrom(chunk) }, _meta: { mastra: { reasoning: chunk } } }];
     if (type === 'finish')
         return chunk.usage ? [{ sessionUpdate: 'usage_update', used: num(chunk.usage, 'totalTokens') ?? 0, size: num(chunk.usage, 'totalTokens') ?? 0 }] : [];
-
     if (type === "delegation-event") {
         const payload = isRecord(chunk.payload) ? chunk.payload : {};
         const fallbackIdParts = [
@@ -45,16 +44,16 @@ export function mapMastraChunkToUpdates(chunk) {
             durationMs: payload.durationMs,
         };
         return [{
-            sessionUpdate: "tool_call_update",
-            toolCallId: str(payload.delegationId) ?? fallbackId,
-            status,
-            title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? "delegation",
-            kind: "other",
-            rawInput: payload.prompt,
-            rawOutput: payload.response ?? payload.error,
-            content: [{ type: "content", content: { type: "text", text: JSON.stringify(summary) } }],
-            _meta: { mastra: chunk },
-        }];
+                sessionUpdate: "tool_call_update",
+                toolCallId: str(payload.delegationId) ?? fallbackId,
+                status,
+                title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? "delegation",
+                kind: "other",
+                rawInput: payload.prompt,
+                rawOutput: payload.response ?? payload.error,
+                content: [{ type: "content", content: { type: "text", text: JSON.stringify(summary) } }],
+                _meta: { mastra: chunk },
+            }];
     }
     if (type?.startsWith('tool-')) {
         const p = isRecord(chunk.payload) ? chunk.payload : chunk;

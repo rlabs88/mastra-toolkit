@@ -145,6 +145,8 @@ export const runAsyncAgentJobStep = createStep({
         [REQUEST_CONTEXT_HARNESS_MODE_KEY]: resolvedMode.harnessMode,
         [REQUEST_CONTEXT_HARNESS_MODE_ID_KEY]: resolvedMode.harnessModeId,
         [REQUEST_CONTEXT_HARDNESS_MODE_KEY]: resolvedMode.harnessModeId,
+        ...(resolvedMode.supervisorScope ? { supervisorScope: resolvedMode.supervisorScope } : {}),
+        ...(resolvedMode.orchestratorMode ? { orchestratorMode: resolvedMode.orchestratorMode } : {}),
         ...(inputData.input_args && Object.keys(inputData.input_args).length > 0 ? { input_args: inputData.input_args } : {}),
         snapshotRepoPath: initialSnapshot.snapshotRepoPath,
         snapshot: initialSnapshot.snapshot,
@@ -551,6 +553,8 @@ async function streamHarnessMessage({
       activeAgentId: resolvedMode.activeAgentId,
       harnessMode: resolvedMode.harnessMode,
       harnessModeId: resolvedMode.harnessModeId,
+      supervisorScope: resolvedMode.supervisorScope,
+      orchestratorMode: resolvedMode.orchestratorMode,
       hardnessMode: resolvedMode.harnessModeId,
     });
     const shouldSubmitModePrompt = await shouldSubmitHarnessModePrompt({

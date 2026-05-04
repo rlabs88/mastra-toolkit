@@ -75,7 +75,7 @@ export const supervisorAgent = withAgentModes(new Agent({
   description: supervisorAgentDescription,
   instructions: composeAgentInstructions(
     supervisorInstructionsPrompt,
-    supervisorModePrompts.balanced, // Active mode prompt injected into instruction string
+    supervisorModePrompts.base, // Active scope prompt injected into instruction string
     sharedPolicyPrompts.supervisor,
     sharedToolPrompts.supervisor,
     supervisorPolicyPrompts,
@@ -108,7 +108,7 @@ export const supervisorAgent = withAgentModes(new Agent({
     git_snapshot_query: workspaceTools.gitSnapshotQuery,
     capture_snapshot: workspaceTools.captureSnapshot,
   },
-}), agentModesFromPrompts(supervisorModePrompts));
+}), agentModesFromPrompts(supervisorModePrompts, "base"));
 
 export const mastraAgents = {
   orchestratorAgent,

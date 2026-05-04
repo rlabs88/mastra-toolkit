@@ -12,7 +12,7 @@
     "acp:smoke": "node src/acp/smoke-client.js",
     "dev": "node scripts/with-env.mjs mastra dev",
     "build": "node scripts/with-env.mjs mastra build",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test \"src/**/*.test.js\" \"test/**/*.test.js\"",
     "start": "node scripts/with-env.mjs mastra start",
     "studio": "node scripts/with-env.mjs node scripts/run-studio.mjs"
   },
