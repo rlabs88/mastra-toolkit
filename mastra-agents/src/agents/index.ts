@@ -1,5 +1,6 @@
 export { mastraAgents } from "./agent.js";
 export { supervisorAgent } from "./agent.js";
+export { orchestratorAgent } from "./orchestrator-agent.js";
 export { scoutAgent } from "./scout-agent.js";
 export { researcherAgent } from "./researcher-agent.js";
 export { architectAgent } from "./architect-agent.js";

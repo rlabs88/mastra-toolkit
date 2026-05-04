@@ -5,9 +5,11 @@ import { architectModePrompts } from "../prompts/agents/architect.js";
 import { developerModePrompts } from "../prompts/agents/developer.js";
 import { researcherModePrompts } from "../prompts/agents/researcher.js";
 import { scoutModePrompts } from "../prompts/agents/scout.js";
+import { orchestratorModePrompts } from "../prompts/agents/orchestrator.js";
 import { supervisorModePrompts } from "../prompts/agents/supervisor.js";
 import { validatorModePrompts } from "../prompts/agents/validator.js";
 import { advisorAgent } from "./advisor-agent.js";
+import { orchestratorAgent } from "./orchestrator-agent.js";
 import { architectAgent } from "./architect-agent.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
@@ -23,6 +25,7 @@ export const REQUEST_CONTEXT_LAST_SUBMITTED_HARNESS_MODE_ID_KEY = "lastSubmitted
 export const REQUEST_CONTEXT_HARDNESS_MODE_KEY = "hardnessMode";
 
 export type MastraAgentHarnessAgentId =
+  | "orchestrator"
   | "supervisor"
   | "scout"
   | "researcher"
@@ -58,12 +61,18 @@ export type ResolvedMastraAgentHarnessMode = {
   modePrompt: string;
 };
 
-export const DEFAULT_MASTRA_AGENT_HARNESS_AGENT_ID = "supervisor" satisfies MastraAgentHarnessAgentId;
+export const DEFAULT_MASTRA_AGENT_HARNESS_AGENT_ID = "orchestrator" satisfies MastraAgentHarnessAgentId;
 export const DEFAULT_MASTRA_AGENT_HARNESS_LOCAL_MODE = "balanced" satisfies SharedAgentModeId;
 export const DEFAULT_MASTRA_AGENT_HARNESS_MODE_ID =
   `${DEFAULT_MASTRA_AGENT_HARNESS_AGENT_ID}.${DEFAULT_MASTRA_AGENT_HARNESS_LOCAL_MODE}` as const;
 
 export const mastraAgentModeDefinitions = {
+  orchestrator: {
+    agentId: "orchestrator",
+    agentName: "Orchestrator",
+    modePrompts: orchestratorModePrompts,
+    agent: orchestratorAgent,
+  },
   supervisor: {
     agentId: "supervisor",
     agentName: "Supervisor Lead",
@@ -109,6 +118,9 @@ export const mastraAgentModeDefinitions = {
 } as const satisfies Record<MastraAgentHarnessAgentId, AgentModeDefinition>;
 
 const agentAliasToAgentId = new Map<string, MastraAgentHarnessAgentId>([
+  ["orchestrator", "orchestrator"],
+  ["orchestrator-agent", "orchestrator"],
+  ["orchestratoragent", "orchestrator"],
   ["supervisor", "supervisor"],
   ["supervisor-agent", "supervisor"],
   ["supervisoragent", "supervisor"],

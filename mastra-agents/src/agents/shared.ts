@@ -88,6 +88,7 @@ export function createAgentMemory() {
 
 export const agentDefaultOptions = {
   supervisor: { maxSteps: 50, toolCallConcurrency: defaultToolCallConcurrency },
+  orchestrator: { maxSteps: 50, toolCallConcurrency: defaultToolCallConcurrency },
   scout: { maxSteps: 35, toolCallConcurrency: defaultToolCallConcurrency },
   researcher: { maxSteps: 35, toolCallConcurrency: defaultToolCallConcurrency },
   advisor: { maxSteps: 20, toolCallConcurrency: defaultToolCallConcurrency },

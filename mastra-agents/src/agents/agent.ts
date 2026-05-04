@@ -13,6 +13,7 @@ import { sharedPolicyPrompts } from "../prompts/policy.js";
 import { sharedToolPrompts } from "../prompts/tools.js";
 import { workspaceTools } from "../tools/workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
+import { orchestratorAgent } from "./orchestrator-agent.js";
 import { architectAgent } from "./architect-agent.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
@@ -47,6 +48,8 @@ function createSupervisorChannelsConfig() {
   return Object.keys(adapters).length > 0 ? { adapters } : undefined;
 }
 
+orchestratorAgent.channels = createSupervisorChannelsConfig();
+
 export const supervisorAgent = withAgentModes(new Agent({
   id: "supervisor-agent",
   name: "Supervisor Lead",
@@ -62,7 +65,6 @@ export const supervisorAgent = withAgentModes(new Agent({
   model: defaultSupervisorModel,
   memory: createAgentMemory(),
   defaultOptions: agentDefaultOptions.supervisor,
-  channels: createSupervisorChannelsConfig(),
   agents: {
     scoutAgent,
     researcherAgent,
@@ -83,6 +85,7 @@ export const supervisorAgent = withAgentModes(new Agent({
 }), agentModesFromPrompts(supervisorModePrompts));
 
 export const mastraAgents = {
+  orchestratorAgent,
   supervisorAgent,
   scoutAgent,
   researcherAgent,

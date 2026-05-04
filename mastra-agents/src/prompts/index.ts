@@ -6,4 +6,5 @@ export * from "./agents/developer.js";
 export * from "./agents/researcher.js";
 export * from "./agents/scout.js";
 export * from "./agents/supervisor.js";
+export * from "./agents/orchestrator.js";
 export * from "./agents/validator.js";
