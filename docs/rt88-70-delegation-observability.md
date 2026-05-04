@@ -7,7 +7,7 @@ Workspace ownership is now explicit at the orchestration boundary:
 - `orchestratorAgent` and `supervisorAgent` are configured with the shared `workspace`.
 - `createMastraAgentHarness()` is also configured with the same shared `workspace` so harness modes without their own workspace receive it through Mastra's inheritance path.
 - Specialist definitions (`scout`, `architect`, `researcher`, `advisor`, `developer`, `validator`) do not declare their own `workspace`; they inherit the active orchestration/harness workspace unless a future design adds a specific override.
-- Auto-injected Mastra workspace tools are disabled on the shared workspace; role-specific tool access still comes from explicit agent `tools` definitions so read-only/write-capable lanes stay separate and snapshot-aware write tools are not overridden.
+- The shared workspace exposes inherited read-only inspection tools under Mastra's default `mastra_workspace_*` names. Write, edit, mkdir, delete, indexing, and shell execution remain disabled there, so role-specific explicit tools remain the write/command permission boundary and snapshot-aware write tools are not overridden.
 
 ## Delegation visibility in ACP
 

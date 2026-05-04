@@ -1,4 +1,4 @@
-import { LocalFilesystem, LocalSandbox, Workspace } from "@mastra/core/workspace";
+import { LocalFilesystem, LocalSandbox, Workspace, WORKSPACE_TOOLS } from "@mastra/core/workspace";
 
 import { DaytonaAgentsDaytonaSandbox } from "./daytona/mastra-sandbox.js";
 import {
@@ -161,6 +161,12 @@ export const workspace = new Workspace({
   ...createWorkspaceFilesystemConfig(),
   tools: {
     enabled: false,
+    [WORKSPACE_TOOLS.FILESYSTEM.LIST_FILES]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.READ_FILE]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.FILE_STAT]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.GREP]: { enabled: true },
+    [WORKSPACE_TOOLS.SEARCH.SEARCH]: { enabled: true },
+    [WORKSPACE_TOOLS.LSP.LSP_INSPECT]: { enabled: true },
   },
   onMount: ({ filesystem, mountPath, sandbox }) => {
     if (filesystem.provider !== "local") {
