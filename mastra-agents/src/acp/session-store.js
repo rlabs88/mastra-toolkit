@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { DEFAULT_ACP_MODE_ID, DEFAULT_ACP_MODEL_ID } from './config-options.js';
 export class MastraAcpSessionStore {
     sessions = new Map();
     create(params) {
@@ -11,8 +10,8 @@ export class MastraAcpSessionStore {
             cwd: params.cwd,
             resourceId: params.resourceId ?? `acp:${shortHash(params.cwd)}`,
             threadId: params.threadId ?? `acp:${sessionId}:${params.agentId}`,
-            modeId: DEFAULT_ACP_MODE_ID,
-            modelId: DEFAULT_ACP_MODEL_ID,
+            modeId: params.defaultModeId,
+            modelId: params.defaultModelId,
             thinkingOptionId: 'medium',
             createdAt: now,
             updatedAt: now,

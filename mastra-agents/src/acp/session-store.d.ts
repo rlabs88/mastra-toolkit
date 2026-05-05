@@ -7,6 +7,8 @@ export declare class MastraAcpSessionStore {
         cwd: string;
         resourceId?: string;
         threadId?: string;
+        defaultModeId: string;
+        defaultModelId: string;
     }): MastraAcpSession;
     get(sessionId: string): MastraAcpSession | undefined;
     update(session: MastraAcpSession): void;

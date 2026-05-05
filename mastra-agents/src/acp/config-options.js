@@ -1,17 +1,3 @@
-export const SUPERVISOR_MODE_IDS = ['base', 'scope', 'spec', 'exec'];
-export const DEFAULT_ACP_MODE_ID = 'base';
-export const DEFAULT_ACP_MODEL_ID = process.env.MASTRA_SUPERVISOR_MODEL?.trim() ||
-    process.env.MASTRA_AGENT_MODEL?.trim() ||
-    process.env.MASTRA_SUBAGENT_MODEL?.trim() ||
-    process.env.MASTRA_MODEL?.trim() ||
-    'minimax-coding-plan/MiniMax-M2.7';
-export const AVAILABLE_MODES = [...SUPERVISOR_MODE_IDS];
-export const AVAILABLE_MODELS = [
-    DEFAULT_ACP_MODEL_ID,
-    'gpt-5.3-codex',
-    'gpt-5.3',
-    'gpt-5.1-mini',
-].filter((modelId, index, models) => modelId && models.indexOf(modelId) === index);
 const modeAliases = new Map([
     ['base', 'base'],
     ['balance', 'base'],
@@ -24,20 +10,172 @@ const modeAliases = new Map([
     ['build', 'exec'],
     ['verify', 'exec'],
 ]);
-export function normalizeModeId(value) {
-    if (typeof value !== 'string')
-        return DEFAULT_ACP_MODE_ID;
-    return modeAliases.get(value.trim().toLowerCase().replace(/_/g, '-')) ?? DEFAULT_ACP_MODE_ID;
+const configCache = new Map();
+export function runtimeAgentIdFromAgentId(agentId) {
+    const normalized = agentId?.trim().toLowerCase().replace(/_/g, '-') ?? '';
+    return normalized.includes('orchestrator') ? 'orchestrator' : 'supervisor';
 }
-export function normalizeModelId(value) {
-    return typeof value === 'string' && value.trim() ? value.trim() : DEFAULT_ACP_MODEL_ID;
+export function loadAcpRuntimeConfig(agentId, mastraBaseUrl) {
+    const runtimeAgentId = runtimeAgentIdFromAgentId(agentId);
+    const cacheKey = `${runtimeAgentId}:${mastraBaseUrl ?? ''}`;
+    const existing = configCache.get(cacheKey);
+    if (existing)
+        return existing;
+    const config = loadMastraRuntimeConfig(runtimeAgentId, agentId, mastraBaseUrl)
+        .catch(async () => fallbackRuntimeConfig(runtimeAgentId, await modelIdFromMastraAgentApi(agentId, mastraBaseUrl)));
+    configCache.set(cacheKey, config);
+    return config;
 }
-export function buildConfigOptions(session) {
-    const modeId = normalizeModeId(session.modeId);
-    const modelId = normalizeModelId(session.modelId);
+export function normalizeModeId(value, config) {
+    if (typeof value !== 'string' || !value.trim())
+        return config.defaultModeId;
+    const normalized = value.trim().toLowerCase().replace(/_/g, '-');
+    const aliased = config.agentId === 'supervisor' ? modeAliases.get(normalized) : undefined;
+    const requested = aliased ?? normalized.split('.').at(-1) ?? normalized;
+    return config.modes.some((mode) => mode.id === requested) ? requested : config.defaultModeId;
+}
+export function normalizeModelId(value, config) {
+    return typeof value === 'string' && value.trim() ? value.trim() : config.defaultModelId;
+}
+export function modeDefinitionForSession(session, config) {
+    const modeId = normalizeModeId(session.modeId, config);
+    return config.modes.find((mode) => mode.id === modeId) ?? config.modes[0];
+}
+export function modelOptionsForSession(session, config) {
+    return unique([normalizeModelId(session.modelId, config), ...config.models]);
+}
+export function buildConfigOptions(session, config) {
+    const modeId = normalizeModeId(session.modeId, config);
+    const modelId = normalizeModelId(session.modelId, config);
     return [
-        { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: modeId, options: AVAILABLE_MODES.map(v => ({ value: v, name: v })) },
-        { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: modelId, options: AVAILABLE_MODELS.map(v => ({ value: v, name: v })) },
+        { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: modeId, options: config.modes.map(v => ({ value: v.id, name: v.name })) },
+        { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: modelId, options: modelOptionsForSession(session, config).map(v => ({ value: v, name: v })) },
         { id: 'thinking', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: session.thinkingOptionId ?? 'medium', options: ['low', 'medium', 'high'].map(v => ({ value: v, name: v[0].toUpperCase() + v.slice(1) })) },
     ];
+}
+async function loadMastraRuntimeConfig(agentId, apiAgentId, mastraBaseUrl) {
+    const harnessModule = await import(new URL('../agents/harness.js', import.meta.url).href);
+    const modes = harnessModule.mastraAgentHarnessModes
+        .filter((mode) => mode.id.startsWith(`${agentId}.`))
+        .map((mode) => {
+        const resolved = harnessModule.resolveMastraAgentHarnessMode({ agentId, harnessMode: mode.id });
+        return {
+            id: resolved.harnessMode,
+            name: mode.name,
+            agentId: resolved.activeAgentId,
+            harnessMode: resolved.harnessMode,
+            harnessModeId: resolved.harnessModeId,
+            default: Boolean(mode.default),
+            prompt: harnessModule.formatMastraAgentHarnessModePrompt(resolved),
+            defaultModelId: mode.defaultModelId,
+        };
+    });
+    const defaultMode = modes.find((mode) => mode.default) ?? modes[0];
+    const configuredModels = unique([
+        ...modes.map((mode) => mode.defaultModelId),
+        await modelIdFromMastraAgentApi(apiAgentId, mastraBaseUrl),
+        ...configuredModelEnvValues(agentId),
+    ]);
+    const defaultModelId = configuredModels[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
+    return {
+        agentId,
+        modes,
+        defaultModeId: defaultMode?.id ?? fallbackRuntimeConfig(agentId).defaultModeId,
+        models: configuredModels.length > 0 ? configuredModels : [defaultModelId],
+        defaultModelId,
+    };
+}
+async function modelIdFromMastraAgentApi(agentId, mastraBaseUrl) {
+    if (!agentId || !mastraBaseUrl)
+        return undefined;
+    try {
+        const baseUrl = mastraBaseUrl.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/agents/${encodeURIComponent(agentId)}`);
+        if (!response.ok)
+            return undefined;
+        const agentConfig = await response.json();
+        const provider = typeof agentConfig.provider === 'string' ? agentConfig.provider.trim() : '';
+        const modelId = typeof agentConfig.modelId === 'string' ? agentConfig.modelId.trim() : '';
+        if (!modelId)
+            return undefined;
+        return provider && !modelId.includes('/') ? `${provider}/${modelId}` : modelId;
+    }
+    catch {
+        return undefined;
+    }
+}
+function fallbackRuntimeConfig(agentId, apiModelId) {
+    const models = unique([apiModelId, ...configuredModelEnvValues(agentId)]);
+    const defaultModelId = models[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
+    const fallbackModes = agentId === 'orchestrator'
+        ? ['quick', 'precision', 'auto'].map((id) => fallbackMode(agentId, id, id === 'auto'))
+        : ['base', 'scope', 'spec', 'exec'].map((id, index) => fallbackMode(agentId, id, index === 0));
+    const defaultMode = fallbackModes.find((mode) => mode.default) ?? fallbackModes[0];
+    return {
+        agentId,
+        modes: fallbackModes,
+        defaultModeId: defaultMode.id,
+        models: models.length > 0 ? models : [defaultModelId],
+        defaultModelId,
+    };
+}
+function fallbackMode(agentId, id, isDefault) {
+    const harnessModeId = `${agentId}.${id}`;
+    const prompt = fallbackModePrompt(agentId, id);
+    return {
+        id,
+        name: `${agentId === 'supervisor' ? 'Supervisor Lead' : 'Orchestrator'} / ${fallbackModeName(id)}`,
+        agentId,
+        harnessMode: id,
+        harnessModeId,
+        default: isDefault,
+        prompt: `<harness-mode id="${harnessModeId}" agent="${agentId}" mode="${id}">\n${prompt}\n</harness-mode>`,
+    };
+}
+function fallbackModeName(id) {
+    return {
+        base: 'Base',
+        scope: 'Scope',
+        spec: 'Spec',
+        exec: 'Execution',
+        quick: 'Quick',
+        precision: 'Precision',
+        auto: 'Auto',
+    }[id] ?? id;
+}
+function fallbackModePrompt(agentId, id) {
+    if (agentId === 'orchestrator') {
+        return {
+            quick: 'Agent: Orchestrator\nMode: Quick',
+            precision: 'Agent: Orchestrator\nMode: Precision',
+            auto: 'Agent: Orchestrator\nMode: Auto',
+        }[id] ?? `Agent: Orchestrator\nMode: ${id}`;
+    }
+    const prompts = {
+        base: 'Agent: Supervisor Lead\nMode: Base\nSupervisor Lead Base:\n- Orchestrate the work pragmatically across scoping, planning, building, and verification.\n- Delegate only when a specialist can advance a bounded part of the task.\n- Keep ownership of the final answer, evidence quality, and next action.',
+        scope: 'Agent: Supervisor Lead\nMode: Scope\nSupervisor Lead Scope:\n- Identify the smallest useful slice, non-goals, assumptions, and evidence needed.\n- Route discovery to the right specialist before committing to implementation.\n- Stop for a decision when product scope or write boundaries are unclear.',
+        spec: 'Agent: Supervisor Lead\nMode: Spec\nSupervisor Lead Spec:\n- Convert the scoped slice into a concrete execution plan with boundaries and verification.\n- Use specialists to sharpen contracts, risks, and acceptance criteria.\n- Do not present implementation as complete while still planning.',
+        exec: 'Agent: Supervisor Lead\nMode: Execution\nSupervisor Lead Exec:\n- Drive implementation through the appropriate specialist agents while preserving the approved boundary.\n- Keep build progress tied to concrete files, behavior, and evidence.\n- Escalate if implementation requires a new scope or architecture decision.\n- Audit the completed or claimed work before final synthesis.\n- Require evidence from tests, inspected diffs, snapshot turn/session diffs, tool output, or explicit verification gaps.\n- When a specialist claims it changed code, require snapshot-backed audit evidence unless snapshots are unavailable and that gap is stated.\n- Separate confirmed results from residual risk.',
+    };
+    return prompts[id] ?? `Agent: Supervisor Lead\nMode: ${id}`;
+}
+function configuredModelEnvValues(agentId) {
+    const agentSpecificKeys = agentId === 'orchestrator'
+        ? ['MASTRA_ORCHESTRATE_MODEL', 'MASTRA_CODE_MODEL']
+        : ['MASTRA_SUPERVISOR_MODEL'];
+    return unique([
+        ...agentSpecificKeys.map((key) => process.env[key]),
+        process.env.MASTRA_AGENT_MODEL,
+        process.env.MASTRA_SUBAGENT_MODEL,
+        process.env.MASTRA_MODEL,
+        ...Object.entries(process.env)
+            .filter(([key]) => /^MASTRA_.*MODEL$/.test(key))
+            .map(([, value]) => value),
+    ]);
+}
+function unique(values) {
+    return values
+        .map((value) => value?.trim())
+        .filter((value) => Boolean(value))
+        .filter((value, index, all) => all.indexOf(value) === index);
 }

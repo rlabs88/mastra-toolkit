@@ -77,10 +77,17 @@ Configure GitHub webhooks or GitHub App events for issue comments and pull reque
 
 The stack in `compose.webhooks.yml` runs:
 
+- `mastra-postgres`: Postgres storage for Mastra memory, workflows, and control-plane state.
 - `webhook-server`: a small raw-body HTTP proxy that forwards webhook requests to the Mastra server already running on the Docker host.
 - `cloudflare-webhook-tunnel`: a Cloudflare Tunnel connector forwarding public HTTPS traffic to `webhook-server`.
 
 Create a remotely managed Cloudflare Tunnel in Cloudflare Zero Trust, copy its connector token into `CLOUDFLARED_TUNNEL_TOKEN`, and configure a public hostname for the tunnel with this service target:
+
+```text
+http://webhook-server:8080
+```
+
+The deployed internal Docker network endpoint is:
 
 ```text
 http://webhook-server:8080
@@ -94,16 +101,22 @@ http://host.docker.internal:4111
 
 If Docker cannot reach `host.docker.internal` from this workspace, set `MASTRA_UPSTREAM_URL` to the workspace container IP, for example `http://172.30.10.102:4111`.
 
+The stack exposes Postgres on the Docker host at:
+
+```text
+postgresql://mastra:mastra@localhost:5432/mastra
+```
+
 Then start the webhook stack:
 
 ```bash
 docker compose -f compose.webhooks.yml --env-file mastra-agents/.env up -d --build
 ```
 
-Use the public hostname for platform webhooks:
+Use the deployed public hostname for platform webhooks:
 
 ```text
-https://your-webhook-domain.example.com/api/agents/supervisor-agent/channels/slack/webhook
-https://your-webhook-domain.example.com/api/agents/supervisor-agent/channels/linear/webhook
-https://your-webhook-domain.example.com/api/agents/supervisor-agent/channels/github/webhook
+https://webb.renaissancelab.org/api/agents/supervisor-agent/channels/slack/webhook
+https://webb.renaissancelab.org/api/agents/supervisor-agent/channels/linear/webhook
+https://webb.renaissancelab.org/api/agents/supervisor-agent/channels/github/webhook
 ```

@@ -1,10 +1,11 @@
-import { buildConfigOptions, AVAILABLE_MODELS, AVAILABLE_MODES, normalizeModeId, normalizeModelId } from './config-options.js';
+import { buildConfigOptions, loadAcpRuntimeConfig, modeDefinitionForSession, modelOptionsForSession, normalizeModeId, normalizeModelId } from './config-options.js';
 import { mapMastraChunkToUpdates } from './event-mapper.js';
 import { streamMastraAgent } from './mastra-stream.js';
 import { MastraAcpSessionStore } from './session-store.js';
 import { getSlashCommands } from './slash-commands.js';
 export function createMastraAcpAgentHandler(conn, options) {
     const store = new MastraAcpSessionStore();
+    const runtimeConfig = () => loadAcpRuntimeConfig(options.agentId, options.mastraBaseUrl);
     return {
         async initialize(_params) {
             return {
@@ -18,11 +19,20 @@ export function createMastraAcpAgentHandler(conn, options) {
             };
         },
         async newSession(_params) {
-            const session = store.create({ agentId: options.agentId, cwd: options.cwd, resourceId: options.defaultResourceId, threadId: options.defaultThreadId });
+            const config = await runtimeConfig();
+            const session = store.create({
+                agentId: options.agentId,
+                cwd: options.cwd,
+                resourceId: options.defaultResourceId,
+                threadId: options.defaultThreadId,
+                defaultModeId: config.defaultModeId,
+                defaultModelId: config.defaultModelId,
+            });
             await conn.sessionUpdate({ sessionId: session.sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: getSlashCommands() } });
-            return sessionStateResponse(session);
+            return sessionStateResponse(session, config);
         },
         async prompt(params) {
+            const config = await runtimeConfig();
             const session = store.get(params.sessionId);
             if (!session)
                 throw new Error(`Unknown session: ${params.sessionId}`);
@@ -31,7 +41,7 @@ export function createMastraAcpAgentHandler(conn, options) {
             const ac = new AbortController();
             session.abortController = ac;
             store.update(session);
-            for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content), ac.signal)) {
+            for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content, config), ac.signal)) {
                 for (const update of mapMastraChunkToUpdates(chunk)) {
                     await conn.sessionUpdate({ sessionId: session.sessionId, update });
                 }
@@ -41,76 +51,79 @@ export function createMastraAcpAgentHandler(conn, options) {
         async cancel(params) { const s = store.get(params.sessionId); s?.abortController?.abort(); },
         async closeSession(params) { store.delete(params.sessionId); },
         async setSessionMode(params) {
+            const config = await runtimeConfig();
             const s = store.get(params.sessionId);
             if (!s)
                 throw new Error(`Unknown session: ${params.sessionId}`);
-            s.modeId = normalizeModeId(params.modeId);
+            s.modeId = normalizeModeId(params.modeId, config);
             store.update(s);
-            await emitSessionConfigUpdate(conn, s, true);
+            await emitSessionConfigUpdate(conn, s, config, true);
             return {};
         },
         async unstable_setSessionModel(params) {
+            const config = await runtimeConfig();
             const s = store.get(params.sessionId);
             if (!s)
                 throw new Error(`Unknown session: ${params.sessionId}`);
-            s.modelId = normalizeModelId(params.modelId);
+            s.modelId = normalizeModelId(params.modelId, config);
             store.update(s);
-            await emitSessionConfigUpdate(conn, s, false);
+            await emitSessionConfigUpdate(conn, s, config, false);
             return {};
         },
         async setSessionConfigOption(params) {
+            const config = await runtimeConfig();
             const s = store.get(params.sessionId);
             if (!s)
                 throw new Error(`Unknown session: ${params.sessionId}`);
             let modeChanged = false;
             if (typeof params.value === 'string') {
                 if (params.configId === 'mode') {
-                    s.modeId = normalizeModeId(params.value);
+                    s.modeId = normalizeModeId(params.value, config);
                     modeChanged = true;
                 }
                 if (params.configId === 'model')
-                    s.modelId = normalizeModelId(params.value);
+                    s.modelId = normalizeModelId(params.value, config);
                 if (params.configId === 'thinking')
                     s.thinkingOptionId = params.value;
             }
             store.update(s);
-            const configOptions = buildConfigOptions(s);
-            await emitSessionConfigUpdate(conn, s, modeChanged);
+            const configOptions = buildConfigOptions(s, config);
+            await emitSessionConfigUpdate(conn, s, config, modeChanged);
             return { configOptions };
         },
         async authenticate() { },
     };
 }
-function sessionStateResponse(session) {
-    const modeId = normalizeModeId(session.modeId);
-    const modelId = normalizeModelId(session.modelId);
+function sessionStateResponse(session, config) {
+    const modeId = normalizeModeId(session.modeId, config);
+    const modelId = normalizeModelId(session.modelId, config);
     return {
         sessionId: session.sessionId,
         modes: {
-            availableModes: AVAILABLE_MODES.map(id => ({ id, name: id })),
+            availableModes: config.modes.map(mode => ({ id: mode.id, name: mode.name })),
             currentModeId: modeId,
         },
         models: {
-            availableModels: AVAILABLE_MODELS.map(modelId => ({ modelId, name: modelId })),
+            availableModels: modelOptionsForSession(session, config).map(modelId => ({ modelId, name: modelId })),
             currentModelId: modelId,
         },
-        configOptions: buildConfigOptions(session),
+        configOptions: buildConfigOptions(session, config),
     };
 }
-async function emitSessionConfigUpdate(conn, session, modeChanged) {
-    const modeId = normalizeModeId(session.modeId);
-    const configOptions = buildConfigOptions(session);
+async function emitSessionConfigUpdate(conn, session, config, modeChanged) {
+    const modeId = normalizeModeId(session.modeId, config);
+    const configOptions = buildConfigOptions(session, config);
     if (modeChanged) {
         await conn.sessionUpdate({ sessionId: session.sessionId, update: { sessionUpdate: 'current_mode_update', currentModeId: modeId } });
     }
     await conn.sessionUpdate({ sessionId: session.sessionId, update: { sessionUpdate: 'config_option_update', configOptions } });
 }
-function buildPromptPayload(session, content) {
-    const modeId = normalizeModeId(session.modeId);
-    const modelId = normalizeModelId(session.modelId);
-    const harnessModeId = `supervisor.${modeId}`;
+function buildPromptPayload(session, content, config) {
+    const mode = modeDefinitionForSession(session, config);
+    const modeId = mode.id;
+    const modelId = normalizeModelId(session.modelId, config);
     return {
-        messages: [{ role: 'user', content: `${formatSupervisorScopePrompt(modeId)}\n\n${content}` }],
+        messages: [{ role: 'user', content: `${mode.prompt}\n\n${content}` }],
         memory: { thread: session.threadId, resource: session.resourceId },
         model: modelId,
         requestContext: {
@@ -121,22 +134,13 @@ function buildPromptPayload(session, content) {
                 modelId,
                 thinkingOptionId: session.thinkingOptionId,
             },
-            activeAgentId: 'supervisor',
+            activeAgentId: mode.agentId,
             modeId,
             modelId,
-            harnessMode: modeId,
-            harnessModeId,
-            hardnessMode: harnessModeId,
-            supervisorScope: modeId,
+            harnessMode: mode.harnessMode,
+            harnessModeId: mode.harnessModeId,
+            hardnessMode: mode.harnessModeId,
+            ...(mode.agentId === 'supervisor' ? { supervisorScope: mode.harnessMode } : { orchestratorMode: mode.harnessMode }),
         },
     };
-}
-function formatSupervisorScopePrompt(modeId) {
-    const prompt = {
-        base: 'Supervisor Lead Base:\n- Orchestrate the work pragmatically across scoping, planning, building, and verification.\n- Delegate only when a specialist can advance a bounded part of the task.\n- Keep ownership of the final answer, evidence quality, and next action.',
-        scope: 'Supervisor Lead Scope:\n- Identify the smallest useful slice, non-goals, assumptions, and evidence needed.\n- Route discovery to the right specialist before committing to implementation.\n- Stop for a decision when product scope or write boundaries are unclear.',
-        spec: 'Supervisor Lead Spec:\n- Convert the scoped slice into a concrete execution plan with boundaries and verification.\n- Use specialists to sharpen contracts, risks, and acceptance criteria.\n- Do not present implementation as complete while still planning.',
-        exec: 'Supervisor Lead Exec:\n- Drive implementation through the appropriate specialist agents while preserving the approved boundary.\n- Keep build progress tied to concrete files, behavior, and evidence.\n- Escalate if implementation requires a new scope or architecture decision.\n- Audit the completed or claimed work before final synthesis.',
-    };
-    return `<harness-mode id="supervisor.${modeId}" agent="supervisor" mode="${modeId}">\nAgent: Supervisor Lead\nMode: ${modeId}\n${prompt[modeId]}\n</harness-mode>`;
 }
