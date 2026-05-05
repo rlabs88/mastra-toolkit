@@ -1,5 +1,11 @@
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import type { MastraAcpSession } from './types.js';
-export declare const AVAILABLE_MODES: string[];
+export declare const SUPERVISOR_MODE_IDS: readonly ["base", "scope", "spec", "exec"];
+export type SupervisorModeId = typeof SUPERVISOR_MODE_IDS[number];
+export declare const DEFAULT_ACP_MODE_ID: SupervisorModeId;
+export declare const DEFAULT_ACP_MODEL_ID: string;
+export declare const AVAILABLE_MODES: ("base" | "scope" | "spec" | "exec")[];
 export declare const AVAILABLE_MODELS: string[];
+export declare function normalizeModeId(value: unknown): SupervisorModeId;
+export declare function normalizeModelId(value: unknown): string;
 export declare function buildConfigOptions(session: MastraAcpSession): SessionConfigOption[];

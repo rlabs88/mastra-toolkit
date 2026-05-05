@@ -21,6 +21,7 @@ export type MastraAgentHarnessState = {
   activeAgentId?: MastraAgentHarnessAgentId;
   supervisorScope?: SupervisorScopeId;
   orchestratorMode?: OrchestratorModeId;
+  currentModelId?: string;
   modelId?: string;
   workspaceSettings?: Record<string, unknown>;
   toolSettings?: Record<string, unknown>;

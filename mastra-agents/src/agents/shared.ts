@@ -1,5 +1,7 @@
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
+import type { RequestContext } from "@mastra/core/request-context";
+import type { MastraModelConfig } from "@mastra/core/llm";
 
 export const defaultMiniMaxModel = "minimax-coding-plan/MiniMax-M2.7";
 function optionalEnv(name: string) {
@@ -18,6 +20,20 @@ export const defaultSupervisorModel =
   optionalEnv("MASTRA_SUBAGENT_MODEL") ??
   optionalEnv("MASTRA_MODEL") ??
   defaultMiniMaxModel;
+
+export function resolveRuntimeSupervisorModel({
+  requestContext,
+}: {
+  requestContext: RequestContext;
+}): MastraModelConfig {
+  return (
+    stringContextValue(requestContext, "modelId") ??
+    stringRecordContextValue(requestContext, "acp", "modelId") ??
+    stringRecordContextValue(requestContext, "harness", "state", "currentModelId") ??
+    stringRecordContextValue(requestContext, "harness", "state", "modelId") ??
+    defaultSupervisorModel
+  );
+}
 
 const defaultToolCallConcurrency = 15;
 
@@ -136,6 +152,24 @@ export function composeAgentInstructions(
     "# Runtime Policy And Tooling",
     ...runtimePrompts,
   ].join("\n\n");
+}
+
+function stringContextValue(requestContext: RequestContext, key: string): string | undefined {
+  const value = requestContext.get(key);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringRecordContextValue(requestContext: RequestContext, key: string, ...path: string[]): string | undefined {
+  let value: unknown = requestContext.get(key);
+  for (const segment of path) {
+    if (!isRecord(value)) return undefined;
+    value = value[segment];
+  }
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function withAgentModes<TAgent extends object>(
