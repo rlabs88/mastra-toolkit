@@ -32,6 +32,13 @@ function isLinearAgentSessionThread(thread: ChannelThread, platform: string) {
   );
 }
 
+function isLinearActivitySourceCommentError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.includes("Failed to resolve source comment for Linear agent activity")
+  );
+}
+
 export function installLinearRichStreaming() {
   const prototype = AgentChannels.prototype as unknown as {
     [installMarker]?: boolean;
@@ -57,7 +64,12 @@ export function installLinearRichStreaming() {
       return consumeAgentStream.call(this, stream, thread, platform, approvalContext);
     }
 
-    return thread.post(new StreamingPlan(bridgeMastraStreamToLinearChunks(stream.fullStream)));
+    try {
+      return await thread.post(new StreamingPlan(bridgeMastraStreamToLinearChunks(stream.fullStream)));
+    } catch (error) {
+      if (isLinearActivitySourceCommentError(error)) return undefined;
+      throw error;
+    }
   };
 
   prototype[installMarker] = true;

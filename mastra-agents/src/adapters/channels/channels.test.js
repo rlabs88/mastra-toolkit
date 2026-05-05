@@ -449,3 +449,37 @@ test("Linear rich streaming wrapper delegates non-agent-session and approval pat
     }
   }
 });
+
+test("Linear rich streaming wrapper tolerates final activity source-comment parse failure", async () => {
+  buildChannelsBundle();
+  const originalConsume = AgentChannels.prototype.consumeAgentStream;
+  const originalMarker = AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+
+  AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = false;
+  AgentChannels.prototype.consumeAgentStream = async () => {
+    throw new Error("fallback should not run");
+  };
+
+  try {
+    const channels = await importFresh(bundlePath);
+    channels.installLinearRichStreaming();
+
+    await assert.doesNotReject(() => AgentChannels.prototype.consumeAgentStream(
+      { fullStream: (async function* () {})() },
+      {
+        id: "linear:issue-1:s:session-1",
+        post: async () => {
+          throw new Error("Failed to resolve source comment for Linear agent activity activity-1");
+        },
+      },
+      "linear",
+    ));
+  } finally {
+    AgentChannels.prototype.consumeAgentStream = originalConsume;
+    if (originalMarker === undefined) {
+      delete AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+    } else {
+      AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = originalMarker;
+    }
+  }
+});
