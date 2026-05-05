@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -40,10 +39,6 @@ function splitPathList(value: string | undefined): string[] {
     .filter((entry) => entry !== "");
 }
 
-function isSandboxLikeEnvironment(): boolean {
-  return Boolean(process.env.DAYTONA_SANDBOX_ID) || existsSync("/shared/volume");
-}
-
 export function isPathInsideRoot(candidatePath: string, rootPath: string): boolean {
   const relativePath = path.relative(rootPath, candidatePath);
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
@@ -77,11 +72,7 @@ function resolveWorkspaceAccessRootInputs(): string[] {
     return [workspaceRoot, ...explicitAccessRoots];
   }
 
-  if (isSandboxLikeEnvironment()) {
-    return [workspaceRoot, "/"];
-  }
-
-  return [workspaceRoot];
+  return [workspaceRoot, os.homedir(), "/container", "/shared"];
 }
 
 export const workspaceAccessRoots = compactAccessRoots(resolveWorkspaceAccessRootInputs());
