@@ -298,6 +298,14 @@ test("adapter-agnostic stream bridge maps Mastra runtime events to Chat SDK chun
   });
 
   assert.deepEqual(streamBridge.mastraChunkToChatStreamChunk({
+    type: "text-delta",
+    payload: { text: "linear deployed smoke ok with spaces" },
+  }), {
+    type: "markdown_text",
+    text: "linear deployed smoke ok with spaces",
+  });
+
+  assert.deepEqual(streamBridge.mastraChunkToChatStreamChunk({
     type: "reasoning-delta",
     payload: { text: "checking workspace context" },
   }), {
@@ -352,6 +360,14 @@ test("Linear agent-session streams are posted through Chat SDK rich streaming", 
               result: { files: ["src/a.ts"] },
             },
           };
+          yield {
+            type: "text-delta",
+            payload: { text: "linear deployed smoke ok " },
+          };
+          yield {
+            type: "text-delta",
+            payload: { text: "with preserved spaces" },
+          };
         })(),
       },
       {
@@ -391,6 +407,8 @@ test("Linear agent-session streams are posted through Chat SDK rich streaming", 
         output: "{\n  \"files\": [\n    \"src/a.ts\"\n  ]\n}",
         status: "complete",
       },
+      { type: "markdown_text", text: "linear deployed smoke ok " },
+      { type: "markdown_text", text: "with preserved spaces" },
     ]);
   } finally {
     AgentChannels.prototype.consumeAgentStream = originalConsume;

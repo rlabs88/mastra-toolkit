@@ -20,8 +20,17 @@ function toolChunkTitle(payload: Record<string, unknown>) {
   return name.replace(/[_-]+/g, " ");
 }
 
+function chunkText(payload: Record<string, unknown>) {
+  return typeof payload.text === "string" ? payload.text : "";
+}
+
 export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | null {
   const payload = chunkPayload(chunk);
+
+  if (chunk.type === "text-delta") {
+    const text = chunkText(payload);
+    return text ? { type: "markdown_text", text } : null;
+  }
 
   if (chunk.type === "reasoning-delta") {
     const text = typeof payload.text === "string" ? payload.text : "Thinking...";
@@ -67,8 +76,26 @@ export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | 
 }
 
 export async function* bridgeMastraStreamToChatChunks(chunks: AsyncIterable<MastraChunk>) {
+  let pendingReasoning = "";
+
   for await (const chunk of chunks) {
+    if (chunk.type === "reasoning-delta") {
+      pendingReasoning += chunkText(chunkPayload(chunk));
+      continue;
+    }
+
+    if (chunk.type === "text-delta") {
+      pendingReasoning = "";
+    }
+
     const mapped = mastraChunkToChatStreamChunk(chunk);
-    if (mapped) yield mapped;
+    if (!mapped) continue;
+
+    if (mapped.type === "task_update" && pendingReasoning) {
+      yield { type: "markdown_text", text: summarizeForChannel(pendingReasoning, 220) };
+      pendingReasoning = "";
+    }
+
+    yield mapped;
   }
 }
