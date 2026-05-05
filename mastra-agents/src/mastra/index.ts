@@ -15,7 +15,7 @@ import path from "node:path";
 import type { ApiRoute } from "@mastra/core/server";
 
 import { mastraAgents } from "../agents/agent.js";
-import { channelWebhookApiRoutesForAgents } from "../agents/channels.js";
+import { channelWebhookApiRoutesForAgents } from "../adapters/channels/index.js";
 import { workspaceTools } from "../tools/workspace.js";
 import { daytonaWorkflows } from "../workflows/daytona.js";
 import { asyncAgentJobWorkflows } from "../workflows/async-agent-job.js";

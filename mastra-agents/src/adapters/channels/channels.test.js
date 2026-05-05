@@ -4,16 +4,17 @@ import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-const packageRoot = path.resolve(import.meta.dirname, "../..");
+const packageRoot = path.resolve(import.meta.dirname, "../../..");
 const bundleDir = path.join(packageRoot, ".cache/channels-test");
 const bundlePath = path.join(bundleDir, "channels.mjs");
 const esbuildBin = path.resolve(packageRoot, "../node_modules/.bin/esbuild");
+const publicChannelAgentId = "supervisor-agent";
 
 function buildChannelsBundle() {
   rmSync(bundleDir, { recursive: true, force: true });
   mkdirSync(bundleDir, { recursive: true });
   execFileSync(esbuildBin, [
-    "src/agents/channels.ts",
+    "src/adapters/channels/index.ts",
     "--bundle",
     "--platform=node",
     "--format=esm",
@@ -28,9 +29,9 @@ function readChannelState(env) {
     import { pathToFileURL } from "node:url";
 
     const channels = await import(pathToFileURL(${JSON.stringify(bundlePath)}));
-    const channelConfig = channels.buildAgentChannels();
+    const channelConfig = channels.initChannels();
     const agent = new Agent({
-      id: channels.publicChannelAgentId,
+      id: ${JSON.stringify(publicChannelAgentId)},
       name: "Supervisor",
       instructions: "test",
       model: () => {
@@ -38,11 +39,20 @@ function readChannelState(env) {
       },
       channels: channelConfig,
     });
+    const orchestratorAgent = new Agent({
+      id: "orchestrator-agent",
+      name: "Orchestrator",
+      instructions: "test",
+      model: () => {
+        throw new Error("model should not be resolved during route inspection");
+      },
+    });
     const routes = agent.getChannels()?.getWebhookRoutes().map((route) => ({
       method: route.method,
       path: route.path,
     })) ?? [];
-    const apiRoutes = channels.channelWebhookApiRoutesForAgents({ orchestratorAgent: agent }).map((route) => ({
+    const orchestratorRoutes = orchestratorAgent.getChannels?.()?.getWebhookRoutes?.() ?? [];
+    const apiRoutes = channels.channelWebhookApiRoutesForAgents({ supervisorAgent: agent, orchestratorAgent }).map((route) => ({
       method: route.method,
       path: route.path,
       internal: route._mastraInternal,
@@ -50,9 +60,10 @@ function readChannelState(env) {
     const linearAdapter = channelConfig?.adapters?.linear;
     console.log(JSON.stringify({
       enabled: channels.listEnabledChannelPlatforms(),
-      expected: channels.expectedChannelWebhookRoutes().map(({ method, path }) => ({ method, path })),
+      expected: channels.expectedChannelWebhookRoutes(${JSON.stringify(publicChannelAgentId)}).map(({ method, path }) => ({ method, path })),
       supervisorExpected: channels.expectedChannelWebhookRoutes("supervisor-agent").map(({ method, path }) => ({ method, path })),
       apiRoutes,
+      orchestratorRoutes,
       routes,
       status: channels.resolveAgentChannelStatus(),
       linearAdapter: linearAdapter ? {
@@ -101,6 +112,7 @@ test("channel status requires webhook secrets and auth before enabling adapters"
   assert.equal(state.status.github.enabled, false);
   assert.equal(state.status.linear.enabled, false);
   assert.deepEqual(state.routes, []);
+  assert.deepEqual(state.orchestratorRoutes, []);
 });
 
 test("enabled channels generate supervisor webhook routes", () => {
@@ -135,6 +147,40 @@ test("enabled channels generate supervisor webhook routes", () => {
     { method: "POST", path: "/api/agents/supervisor-agent/channels/linear/webhook" },
   ]);
   assert.equal(state.status.linear.mode, "comments");
+  assert.deepEqual(state.orchestratorRoutes, []);
+});
+
+test("Slack and GitHub channel connectors are gated independently", () => {
+  buildChannelsBundle();
+  const slackOnly = readChannelState({
+    ENABLE_SLACK_CHANNEL: "true",
+    SLACK_SIGNING_SECRET: "slack-secret",
+    SLACK_BOT_TOKEN: "xoxb-test",
+    ENABLE_GITHUB_CHANNEL: "true",
+    GITHUB_WEBHOOK_SECRET: "",
+    GITHUB_TOKEN: "github-token",
+    LINEAR_WEBHOOK_SECRET: "",
+    LINEAR_API_KEY: "",
+  });
+  const githubOnly = readChannelState({
+    ENABLE_SLACK_CHANNEL: "true",
+    SLACK_SIGNING_SECRET: "",
+    SLACK_BOT_TOKEN: "xoxb-test",
+    ENABLE_GITHUB_CHANNEL: "true",
+    GITHUB_WEBHOOK_SECRET: "github-secret",
+    GITHUB_TOKEN: "github-token",
+    LINEAR_WEBHOOK_SECRET: "",
+    LINEAR_API_KEY: "",
+  });
+
+  assert.deepEqual(slackOnly.enabled, ["slack"]);
+  assert.deepEqual(slackOnly.routes, [
+    { method: "POST", path: "/api/agents/supervisor-agent/channels/slack/webhook" },
+  ]);
+  assert.deepEqual(githubOnly.enabled, ["github"]);
+  assert.deepEqual(githubOnly.routes, [
+    { method: "POST", path: "/api/agents/supervisor-agent/channels/github/webhook" },
+  ]);
 });
 
 test("Linear multi-tenant OAuth credentials take precedence over API key fallback", () => {

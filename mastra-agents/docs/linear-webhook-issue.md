@@ -18,12 +18,12 @@ Mastra's `Agent` class reads `config.channels` **only during construction** into
 
 ### 2. Constructor fix and agent-owned URLs
 
-We moved `buildAgentChannels()` into the `Agent` constructor for both `orchestratorAgent` and `supervisorAgent`:
+Channels must be passed into the `Agent` constructor. The current Palmer setup attaches initialized channels to `supervisorAgent` only:
 
 ```typescript
-export const orchestratorAgent = withAgentModes(new Agent({
-  id: "orchestrator-agent",
-  channels: buildAgentChannels(), // ← now in constructor
+export const supervisorAgent = withAgentModes(new Agent({
+  id: "supervisor-agent",
+  channels: initChannels(), // in constructor
   ...
 }), ...);
 ```
@@ -33,19 +33,18 @@ The dev server logs should confirm:
 - Linear auth completes (`botUserId`, `organizationId` populated)
 - Chat SDK reports: `Chat instance initialized { adapters: [ 'linear' ] }`
 
-Mastra owns the generated channel handlers from the agent constructor. In this dev server line, those generated routes must also be passed into `server.apiRoutes` early and marked `_mastraInternal` so the server accepts the `/api` path. Do not rewrite URLs or add a custom middleware bridge. Each configured agent owns its own route:
+Mastra owns the generated channel handlers from the agent constructor. In this dev server line, those generated routes must also be passed into `server.apiRoutes` early and marked `_mastraInternal` so the server accepts the `/api` path. Do not rewrite URLs or add a custom middleware bridge. The configured supervisor agent owns this route:
 
-- `/api/agents/orchestrator-agent/channels/linear/webhook`
 - `/api/agents/supervisor-agent/channels/linear/webhook`
 
 With the current local env, Slack and GitHub stay disabled unless `ENABLE_SLACK_CHANNEL=true` or `ENABLE_GITHUB_CHANNEL=true`; Linear is enabled when `LINEAR_WEBHOOK_SECRET` and Linear auth are present.
 
 ## Files Changed
 
-- `src/agents/channels.ts` — new generic `buildAgentChannels()` factory
-- `src/agents/channels.ts` — exposes `channelWebhookApiRoutesForAgents()` to pass Mastra-generated internal routes into server startup
-- `src/agents/orchestrator-agent.ts` — added `channels: buildAgentChannels()` to constructor
-- `src/agents/agent.ts` — removed broken post-construction assignment; added `channels: buildAgentChannels()` to `supervisorAgent`
+- `src/adapters/channels/` — generic `initChannels()` factory and Linear/Slack/GitHub connector modules
+- `src/adapters/channels/` — exposes `channelWebhookApiRoutesForAgents()` to pass Mastra-generated internal routes into server startup
+- `src/agents/orchestrator-agent.ts` — intentionally has no Palmer Linear channel attachment
+- `src/agents/agent.ts` — removed broken post-construction assignment; added `channels: initChannels()` to `supervisorAgent`
 - `src/mastra/index.ts` — registers the generated channel routes during server construction
 - `package.json` — updated `mastra` to `1.8.1` and `@mastra/core` to `1.32.1`
 
@@ -63,7 +62,6 @@ CLOUDFLARE_WEBHOOK_PUBLIC_URL=https://webb.renaissancelab.org
 1. **Full restart**: Restart `npm run dev` on port 4111 after changing constructor-level channel config.
 
 2. **Linear-only verification**: With Slack/GitHub disabled, verify only:
-   - `/api/agents/orchestrator-agent/channels/linear/webhook`
    - `/api/agents/supervisor-agent/channels/linear/webhook`
 
 3. **Route ownership**: Select the agent-specific URL in Linear based on which agent should handle the event. Do not share one custom handler across agents.

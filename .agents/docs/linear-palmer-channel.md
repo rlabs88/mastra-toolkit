@@ -4,20 +4,20 @@ Palmer is the Linear app actor currently connected to `supervisor-agent`.
 
 ## Architecture
 
-Keep the channel setup inside the Mastra agent definition:
+Keep the channel attachment inside the Mastra agent constructor, with adapter mechanics owned by `mastra-agents/src/adapters/channels/`:
 
 ```ts
+import { initChannels } from "../adapters/channels/index.js";
+
 new Agent({
   id: "supervisor-agent",
-  channels: {
-    adapters: {
-      linear: createLinearAdapter(...),
-    },
-  },
+  channels: initChannels(),
 });
 ```
 
 Do not create a separate Chat SDK app instance for Palmer, and do not create a custom OAuth subsystem under `src/`. Mastra core owns the `AgentChannels` bridge: it creates the internal Chat SDK instance, registers the webhook route, and routes Linear events into the agent stream.
+
+Linear, Slack, and GitHub connector setup belongs under `src/adapters/channels/{linear,slack,github}/`, not in agent composition files. The supervisor agent decides whether to attach the initialized channel runtime; the channel runtime owns Chat SDK adapter configuration, env gating, and shared persistent state.
 
 ## Current Palmer Target
 
