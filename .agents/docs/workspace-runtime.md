@@ -40,3 +40,11 @@ The implementation lives in:
 - `mastra-agents/src/workspace-paths.ts`
 
 The root `README.md` documents the user-facing environment variables and default access behavior.
+
+## ACP Source And Build Output
+
+ACP TypeScript source lives in `mastra-agents/acp`.
+
+The compiled ACP runtime is emitted to `mastra-agents/dist/acp` by `npm run acp:build --workspace @mastrasystem/agents`. That output is ignored by git through the root `dist/` ignore rule.
+
+Do not edit generated ACP files. Edit `mastra-agents/acp/*.ts`, then rebuild.
