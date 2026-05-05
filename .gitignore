@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 build/
+compiled/
 *.tsbuildinfo
 
 # Mastra generated runtime/build state
@@ -14,6 +15,8 @@ build/
 # Generated scratch artifacts
 test*/
 **/test*/
+!mastra-agents/test/
+!mastra-agents/test/**
 story*.md
 **/story*.md
 test*snapshot*.mjs

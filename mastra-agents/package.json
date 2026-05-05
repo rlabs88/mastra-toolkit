@@ -7,13 +7,13 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "acp": "node src/acp/stdio.js",
-    "acp:build": "tsc --ignoreConfig --target ESNext --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --types node --rootDir acp --outDir src/acp --declaration acp/*.ts",
-    "acp:smoke": "node src/acp/smoke-client.js",
+    "acp": "npm run acp:build && node ../compiled/mastra-agents/acp/stdio.js",
+    "acp:build": "tsc --ignoreConfig --target ESNext --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --types node --rootDir acp --outDir ../compiled/mastra-agents/acp --declaration acp/*.ts",
+    "acp:smoke": "npm run acp:build && node ../compiled/mastra-agents/acp/smoke-client.js",
     "dev": "node scripts/with-env.mjs mastra dev",
     "linear:install-url": "node scripts/linear-install-url.mjs",
     "build": "node scripts/with-env.mjs mastra build",
-    "test": "node --test \"src/**/*.test.js\" \"test/**/*.test.js\"",
+    "test": "npm run acp:build && node --test \"src/**/*.test.js\" \"test/**/*.test.js\"",
     "start": "node scripts/with-env.mjs mastra start",
     "studio": "node scripts/with-env.mjs node scripts/run-studio.mjs"
   },
@@ -37,7 +37,7 @@
     "zod": "3.25.76"
   },
   "bin": {
-    "mastra-agents-acp": "src/acp/stdio.js"
+    "mastra-agents-acp": "../compiled/mastra-agents/acp/stdio.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

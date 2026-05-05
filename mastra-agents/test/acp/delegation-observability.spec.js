@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mapMastraChunkToUpdates } from './event-mapper.js';
-import { createDelegationObservabilityOptions } from '../agents/delegation-observability.js';
-import { delegationPayloadFromEvent, subscribeDelegationEvents } from '../workflows/delegation-event.js';
+import { mapMastraChunkToUpdates } from '../../../compiled/mastra-agents/acp/event-mapper.js';
+import { createDelegationObservabilityOptions } from '../../src/agents/delegation-observability.js';
+import { delegationPayloadFromEvent, subscribeDelegationEvents } from '../../src/workflows/delegation-event.js';
 
 test('delegation payload preserves structured prompt/response/error fields', () => {
   const payload = delegationPayloadFromEvent({
