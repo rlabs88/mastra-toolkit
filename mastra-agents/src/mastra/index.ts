@@ -3,6 +3,7 @@ import { SpanType } from "@mastra/core/observability";
 import { FilesystemStore, MastraCompositeStore } from "@mastra/core/storage";
 import { DuckDBStore } from "@mastra/duckdb";
 import { MastraEditor } from "@mastra/editor";
+import { MCPServer } from "@mastra/mcp";
 import {
   DefaultExporter,
   Observability,
@@ -13,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { mastraAgents } from "../agents/agent.js";
+import { workspaceTools } from "../tools/workspace.js";
 import { daytonaWorkflows } from "../workflows/daytona.js";
 import { asyncAgentJobWorkflows } from "../workflows/async-agent-job.js";
 import { workspaceWorkflows } from "../workflows/workspace.js";
@@ -63,6 +65,22 @@ const studioPort = Number(
 const studioProtocol =
   process.env.MASTRA_SERVER_STUDIO_PROTOCOL === "https" ? "https" : "http";
 
+const workflows = {
+  ...daytonaWorkflows,
+  ...asyncAgentJobWorkflows,
+  ...workspaceWorkflows,
+};
+
+const projectMCPServer = new MCPServer({
+  id: "project-mcp-server",
+  name: "Project MCP Server",
+  version: "0.1.0",
+  description: "Exposes Mastra agents, tools, and workflows to external MCP clients.",
+  tools: workspaceTools,
+  agents: mastraAgents,
+  workflows,
+});
+
 function localCorsOriginsForPort(port: string | undefined) {
   if (!port) return [];
   return [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
@@ -91,13 +109,10 @@ function configuredCorsOrigins() {
 
 export const mastra = new Mastra({
   agents: mastraAgents,
-  workflows: {
-    ...daytonaWorkflows,
-    ...asyncAgentJobWorkflows,
-    ...workspaceWorkflows,
-  },
+  workflows,
   storage,
   editor,
+  mcpServers: { project: projectMCPServer },
   observability: new Observability({
     configs: {
       default: {

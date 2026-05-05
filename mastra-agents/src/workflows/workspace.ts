@@ -51,6 +51,7 @@ const workspaceSmokeStep = createStep({
 
 const workspaceSmokeWorkflow = createWorkflow({
   id: "workspace-smoke-workflow",
+  description: "Run a smoke test against the workspace sandbox to verify tooling and environment.",
   inputSchema: z.object({}),
   outputSchema: z.object({
     status: z.enum(["ok", "error"]),
