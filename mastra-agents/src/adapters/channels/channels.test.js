@@ -316,6 +316,20 @@ test("adapter-agnostic stream bridge maps Mastra runtime events to Chat SDK chun
   assert.equal(streamBridge.mastraChunkToChatStreamChunk({ type: "finish", payload: {} }), null);
 });
 
+test("Linear message text sanitizer removes Linear mention XML artifacts", async () => {
+  buildChannelsBundle();
+  const linear = await importFresh(linearBundlePath);
+
+  assert.equal(
+    linear.sanitizeLinearMessageText('<user id="ba4ef845-b543-4af7-a534-ebc8abb7d741">palmer</user> reply with spaces'),
+    "@palmer reply with spaces",
+  );
+  assert.equal(
+    linear.sanitizeLinearMessageText("before <custom>artifact</custom> after"),
+    "before artifact after",
+  );
+});
+
 test("Linear agent-session streams are posted through Chat SDK rich streaming", async () => {
   buildChannelsBundle();
   const originalConsume = AgentChannels.prototype.consumeAgentStream;
