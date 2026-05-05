@@ -4,6 +4,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { AgentChannels } from "@mastra/core/channels";
 
 const packageRoot = path.resolve(import.meta.dirname, "../../..");
 const bundleDir = path.join(packageRoot, ".cache/channels-test");
@@ -12,6 +13,12 @@ const linearBundlePath = path.join(bundleDir, "linear.mjs");
 const streamBridgeBundlePath = path.join(bundleDir, "stream-bridge.mjs");
 const esbuildBin = path.resolve(packageRoot, "../node_modules/.bin/esbuild");
 const publicChannelAgentId = "supervisor-agent";
+let importCounter = 0;
+
+async function importFresh(filePath) {
+  importCounter += 1;
+  return import(`${pathToFileURL(filePath).href}?v=${importCounter}`);
+}
 
 function buildChannelsBundle() {
   rmSync(bundleDir, { recursive: true, force: true });
@@ -23,6 +30,8 @@ function buildChannelsBundle() {
     "--format=esm",
     `--outfile=${bundlePath}`,
     "--external:@chat-adapter/*",
+    "--external:@mastra/core/*",
+    "--external:chat",
   ], { cwd: packageRoot, stdio: "pipe" });
   execFileSync(esbuildBin, [
     "src/adapters/channels/linear/index.ts",
@@ -31,6 +40,8 @@ function buildChannelsBundle() {
     "--format=esm",
     `--outfile=${linearBundlePath}`,
     "--external:@chat-adapter/*",
+    "--external:@mastra/core/*",
+    "--external:chat",
   ], { cwd: packageRoot, stdio: "pipe" });
   execFileSync(esbuildBin, [
     "src/adapters/channels/stream-bridge.ts",
@@ -295,4 +306,146 @@ test("adapter-agnostic stream bridge maps Mastra runtime events to Chat SDK chun
   });
 
   assert.equal(streamBridge.mastraChunkToChatStreamChunk({ type: "finish", payload: {} }), null);
+});
+
+test("Linear agent-session streams are posted through Chat SDK rich streaming", async () => {
+  buildChannelsBundle();
+  const originalConsume = AgentChannels.prototype.consumeAgentStream;
+  const originalMarker = AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+  const fallbackCalls = [];
+
+  AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = false;
+  AgentChannels.prototype.consumeAgentStream = async (...args) => {
+    fallbackCalls.push(args);
+    return "fallback";
+  };
+
+  try {
+    const channels = await importFresh(bundlePath);
+    channels.installLinearRichStreaming();
+
+    const posted = [];
+    const result = await AgentChannels.prototype.consumeAgentStream(
+      {
+        fullStream: (async function* () {
+          yield {
+            type: "step-start",
+            payload: {},
+          };
+          yield {
+            type: "reasoning-delta",
+            payload: { text: "checking context" },
+          };
+          yield {
+            type: "tool-call",
+            payload: {
+              toolCallId: "call-1",
+              toolName: "git_snapshot_query",
+              args: { query: "changed files" },
+            },
+          };
+          yield {
+            type: "tool-result",
+            payload: {
+              toolCallId: "call-1",
+              toolName: "git_snapshot_query",
+              result: { files: ["src/a.ts"] },
+            },
+          };
+        })(),
+      },
+      {
+        id: "linear:issue-1:c:comment-1:s:session-1",
+        post: async (message) => {
+          posted.push(message);
+          return { id: "activity-1" };
+        },
+      },
+      "linear",
+    );
+
+    assert.deepEqual(result, { id: "activity-1" });
+    assert.equal(fallbackCalls.length, 0);
+    assert.equal(posted.length, 1);
+    assert.equal(posted[0].kind, "stream");
+
+    const chunks = [];
+    for await (const chunk of posted[0].stream) {
+      chunks.push(chunk);
+    }
+
+    assert.deepEqual(chunks, [
+      { type: "plan_update", title: "Working" },
+      { type: "markdown_text", text: "checking context" },
+      {
+        type: "task_update",
+        id: "call-1",
+        title: "git snapshot query",
+        details: "{ \"query\": \"changed files\" }",
+        status: "in_progress",
+      },
+      {
+        type: "task_update",
+        id: "call-1",
+        title: "git snapshot query",
+        output: "{\n  \"files\": [\n    \"src/a.ts\"\n  ]\n}",
+        status: "complete",
+      },
+    ]);
+  } finally {
+    AgentChannels.prototype.consumeAgentStream = originalConsume;
+    if (originalMarker === undefined) {
+      delete AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+    } else {
+      AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = originalMarker;
+    }
+  }
+});
+
+test("Linear rich streaming wrapper delegates non-agent-session and approval paths", async () => {
+  buildChannelsBundle();
+  const originalConsume = AgentChannels.prototype.consumeAgentStream;
+  const originalMarker = AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+  const fallbackCalls = [];
+
+  AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = false;
+  AgentChannels.prototype.consumeAgentStream = async (...args) => {
+    fallbackCalls.push(args);
+    return "fallback";
+  };
+
+  try {
+    const channels = await importFresh(bundlePath);
+    channels.installLinearRichStreaming();
+    const stream = { fullStream: (async function* () {})() };
+    const thread = {
+      id: "linear:issue-1:c:comment-1",
+      post: async () => {
+        throw new Error("rich stream should not post for comments mode");
+      },
+    };
+
+    assert.equal(await AgentChannels.prototype.consumeAgentStream(stream, thread, "linear"), "fallback");
+    assert.equal(await AgentChannels.prototype.consumeAgentStream(stream, {
+      id: "linear:issue-1:s:session-1",
+      post: async () => {
+        throw new Error("rich stream should not post for approval resume");
+      },
+    }, "linear", { toolCallId: "call-1" }), "fallback");
+    assert.equal(await AgentChannels.prototype.consumeAgentStream(stream, {
+      id: "slack:C123:1",
+      post: async () => {
+        throw new Error("rich stream should not post for Slack");
+      },
+    }, "slack"), "fallback");
+
+    assert.equal(fallbackCalls.length, 3);
+  } finally {
+    AgentChannels.prototype.consumeAgentStream = originalConsume;
+    if (originalMarker === undefined) {
+      delete AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+    } else {
+      AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = originalMarker;
+    }
+  }
 });

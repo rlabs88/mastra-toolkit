@@ -1,4 +1,5 @@
 import { createLinearAdapter } from "@chat-adapter/linear";
+import type { LinearAdapterMode } from "@chat-adapter/linear";
 import type { ChannelAdapterConfig } from "@mastra/core/channels";
 
 import type { AgentChannelsConfig } from "../types.js";
@@ -6,7 +7,7 @@ import { getEnv } from "../types.js";
 import { formatLinearError } from "./format-linear-error.js";
 import { formatLinearToolCall } from "./format-linear-tool-call.js";
 
-export function getLinearMode(config: AgentChannelsConfig = {}) {
+export function getLinearMode(config: AgentChannelsConfig = {}): LinearAdapterMode {
   const linearMode =
     getEnv(config.linear?.modeKey ?? "LINEAR_CHANNEL_MODE") ??
     getEnv(config.linear?.fallbackModeKey ?? "LINEAR_MODE");
@@ -70,6 +71,7 @@ export function createLinearChannel(config: AgentChannelsConfig = {}) {
   return {
     adapter: createLinearAdapter(buildLinearAdapterConfig(config)),
     cards: true,
+    // Markdown fallback only; native Linear action UI comes from streamed task_update chunks.
     formatToolCall: formatLinearToolCall,
     formatError: formatLinearError,
   } satisfies ChannelAdapterConfig;

@@ -1,5 +1,5 @@
 import { createGitHubChannel } from "./github/index.js";
-import { createLinearChannel, getLinearMode } from "./linear/index.js";
+import { createLinearChannel, getLinearMode, installLinearRichStreaming } from "./linear/index.js";
 import { createSlackChannel } from "./slack/index.js";
 import { createChannelState } from "./state.js";
 import type { AgentChannelsConfig, ChannelStatusMap } from "./types.js";
@@ -110,6 +110,7 @@ export function initChannels(config: AgentChannelsConfig = {}) {
   }
 
   if (status.linear.enabled) {
+    installLinearRichStreaming();
     adapters.linear = createLinearChannel(config);
   }
 

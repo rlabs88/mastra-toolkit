@@ -13,6 +13,7 @@ export {
   bridgeMastraStreamToChatChunks,
   mastraChunkToChatStreamChunk,
 } from "./stream-bridge.js";
+export { installLinearRichStreaming } from "./linear/index.js";
 export type {
   AgentChannelsConfig,
   ChannelPlatform,
