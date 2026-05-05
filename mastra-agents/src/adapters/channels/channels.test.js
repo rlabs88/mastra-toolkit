@@ -434,6 +434,67 @@ test("Linear agent-session streams are posted through Chat SDK rich streaming", 
   }
 });
 
+test("Linear rich streaming wrapper logs stream and tool timing", async () => {
+  buildChannelsBundle();
+  const originalConsume = AgentChannels.prototype.consumeAgentStream;
+  const originalMarker = AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+  const logs = [];
+
+  AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = false;
+  AgentChannels.prototype.consumeAgentStream = async () => {
+    throw new Error("fallback should not run");
+  };
+
+  try {
+    const channels = await importFresh(bundlePath);
+    channels.installLinearRichStreaming();
+
+    await AgentChannels.prototype.consumeAgentStream.call(
+      {
+        logger: {
+          info: (message, args) => logs.push({ level: "info", message, args }),
+          error: (message, args) => logs.push({ level: "error", message, args }),
+        },
+      },
+      {
+        fullStream: (async function* () {
+          yield { type: "tool-call", payload: { toolCallId: "call-1", toolName: "read_file", args: {} } };
+          yield { type: "tool-result", payload: { toolCallId: "call-1", toolName: "read_file", result: "ok" } };
+          yield { type: "text-delta", payload: { text: "done" } };
+        })(),
+      },
+      {
+        id: "linear:issue-1:s:session-1",
+        post: async (message) => {
+          for await (const _chunk of message.stream) {
+            // Drain the stream so observability hooks run.
+          }
+          return { id: "activity-1" };
+        },
+      },
+      "linear",
+    );
+
+    assert.deepEqual(logs.map((log) => log.message), [
+      "[linear-rich-stream] start",
+      "[linear-rich-stream] tool call start",
+      "[linear-rich-stream] tool call finish",
+      "[linear-rich-stream] first response text",
+      "[linear-rich-stream] complete",
+    ]);
+    assert.equal(logs[1].args.toolCallId, "call-1");
+    assert.equal(logs[2].args.status, "complete");
+    assert.equal(typeof logs[4].args.durationMs, "number");
+  } finally {
+    AgentChannels.prototype.consumeAgentStream = originalConsume;
+    if (originalMarker === undefined) {
+      delete AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")];
+    } else {
+      AgentChannels.prototype[Symbol.for("mastra-system.linear-rich-streaming-installed")] = originalMarker;
+    }
+  }
+});
+
 test("Linear rich streaming wrapper delegates non-agent-session and approval paths", async () => {
   buildChannelsBundle();
   const originalConsume = AgentChannels.prototype.consumeAgentStream;
