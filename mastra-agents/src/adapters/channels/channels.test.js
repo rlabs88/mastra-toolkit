@@ -3,10 +3,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 const packageRoot = path.resolve(import.meta.dirname, "../../..");
 const bundleDir = path.join(packageRoot, ".cache/channels-test");
 const bundlePath = path.join(bundleDir, "channels.mjs");
+const linearBundlePath = path.join(bundleDir, "linear.mjs");
+const streamBridgeBundlePath = path.join(bundleDir, "stream-bridge.mjs");
 const esbuildBin = path.resolve(packageRoot, "../node_modules/.bin/esbuild");
 const publicChannelAgentId = "supervisor-agent";
 
@@ -20,6 +23,21 @@ function buildChannelsBundle() {
     "--format=esm",
     `--outfile=${bundlePath}`,
     "--external:@chat-adapter/*",
+  ], { cwd: packageRoot, stdio: "pipe" });
+  execFileSync(esbuildBin, [
+    "src/adapters/channels/linear/index.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    `--outfile=${linearBundlePath}`,
+    "--external:@chat-adapter/*",
+  ], { cwd: packageRoot, stdio: "pipe" });
+  execFileSync(esbuildBin, [
+    "src/adapters/channels/stream-bridge.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    `--outfile=${streamBridgeBundlePath}`,
   ], { cwd: packageRoot, stdio: "pipe" });
 }
 
@@ -57,7 +75,14 @@ function readChannelState(env) {
       path: route.path,
       internal: route._mastraInternal,
     }));
-    const linearAdapter = channelConfig?.adapters?.linear;
+    const linearConfig = channelConfig?.adapters?.linear;
+    const linearAdapter = linearConfig?.adapter ?? linearConfig;
+    const sampleToolMessage = linearConfig?.formatToolCall?.({
+      toolName: "read_file",
+      args: { path: "src/example.ts" },
+      result: "export const value = 1;",
+    });
+    const sampleErrorMessage = linearConfig?.formatError?.(new Error("boom"));
     console.log(JSON.stringify({
       enabled: channels.listEnabledChannelPlatforms(),
       expected: channels.expectedChannelWebhookRoutes(${JSON.stringify(publicChannelAgentId)}).map(({ method, path }) => ({ method, path })),
@@ -66,11 +91,17 @@ function readChannelState(env) {
       orchestratorRoutes,
       routes,
       status: channels.resolveAgentChannelStatus(),
-      linearAdapter: linearAdapter ? {
-        mode: linearAdapter.mode,
-        hasDefaultClient: Boolean(linearAdapter.defaultClient),
-        hasClientCredentials: Boolean(linearAdapter.clientCredentials),
-        hasOAuthClient: Boolean(linearAdapter.oauthClientId),
+      hasHandlers: Boolean(channelConfig?.handlers?.onMention),
+      linearAdapter: linearConfig ? {
+        mode: linearAdapter?.mode,
+        cards: linearConfig.cards,
+        hasFormatToolCall: typeof linearConfig.formatToolCall === "function",
+        hasFormatError: typeof linearConfig.formatError === "function",
+        sampleToolMessage,
+        sampleErrorMessage,
+        hasDefaultClient: Boolean(linearAdapter?.defaultClient),
+        hasClientCredentials: Boolean(linearAdapter?.clientCredentials),
+        hasOAuthClient: Boolean(linearAdapter?.oauthClientId),
       } : null,
     }));
     process.exit(0);
@@ -147,6 +178,13 @@ test("enabled channels generate supervisor webhook routes", () => {
     { method: "POST", path: "/api/agents/supervisor-agent/channels/linear/webhook" },
   ]);
   assert.equal(state.status.linear.mode, "comments");
+  assert.equal(state.hasHandlers, true);
+  assert.equal(state.linearAdapter.cards, true);
+  assert.equal(state.linearAdapter.hasFormatToolCall, true);
+  assert.equal(state.linearAdapter.hasFormatError, true);
+  assert.match(state.linearAdapter.sampleToolMessage, /Tool completed: Read file/);
+  assert.match(state.linearAdapter.sampleToolMessage, /src\/example\.ts/);
+  assert.match(state.linearAdapter.sampleErrorMessage, /Error/);
   assert.deepEqual(state.orchestratorRoutes, []);
 });
 
@@ -197,8 +235,64 @@ test("Linear multi-tenant OAuth credentials take precedence over API key fallbac
   assert.equal(state.status.linear.mode, "agent-sessions");
   assert.deepEqual(state.linearAdapter, {
     mode: "agent-sessions",
+    cards: true,
+    hasFormatToolCall: true,
+    hasFormatError: true,
+    sampleToolMessage: state.linearAdapter.sampleToolMessage,
+    sampleErrorMessage: state.linearAdapter.sampleErrorMessage,
     hasDefaultClient: false,
     hasClientCredentials: false,
     hasOAuthClient: true,
   });
+  assert.match(state.linearAdapter.sampleToolMessage, /Tool completed: Read file/);
+  assert.match(state.linearAdapter.sampleErrorMessage, /boom/);
+});
+
+test("adapter-agnostic stream bridge maps Mastra runtime events to Chat SDK chunks", async () => {
+  buildChannelsBundle();
+  const streamBridge = await import(pathToFileURL(streamBridgeBundlePath));
+  const linear = await import(pathToFileURL(linearBundlePath));
+
+  const toolCall = {
+    type: "tool-call",
+    payload: {
+      toolCallId: "call-1",
+      toolName: "git_snapshot_query",
+      args: { query: "changed files" },
+    },
+  };
+
+  assert.deepEqual(streamBridge.mastraChunkToChatStreamChunk(toolCall), {
+    type: "task_update",
+    id: "call-1",
+    title: "git snapshot query",
+    details: "{ \"query\": \"changed files\" }",
+    status: "in_progress",
+  });
+  assert.deepEqual(linear.mastraChunkToLinearStreamChunk(toolCall), streamBridge.mastraChunkToChatStreamChunk(toolCall));
+
+  assert.deepEqual(streamBridge.mastraChunkToChatStreamChunk({
+    type: "tool-result",
+    payload: {
+      toolCallId: "call-1",
+      toolName: "git_snapshot_query",
+      result: { files: ["src/a.ts"] },
+    },
+  }), {
+    type: "task_update",
+    id: "call-1",
+    title: "git snapshot query",
+    output: "{\n  \"files\": [\n    \"src/a.ts\"\n  ]\n}",
+    status: "complete",
+  });
+
+  assert.deepEqual(streamBridge.mastraChunkToChatStreamChunk({
+    type: "reasoning-delta",
+    payload: { text: "checking workspace context" },
+  }), {
+    type: "markdown_text",
+    text: "checking workspace context",
+  });
+
+  assert.equal(streamBridge.mastraChunkToChatStreamChunk({ type: "finish", payload: {} }), null);
 });

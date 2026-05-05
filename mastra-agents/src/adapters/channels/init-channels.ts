@@ -5,6 +5,37 @@ import { createChannelState } from "./state.js";
 import type { AgentChannelsConfig, ChannelStatusMap } from "./types.js";
 import { channelPlatforms, getEnv } from "./types.js";
 
+type ChannelThread = {
+  id?: string;
+  startTyping?: (status?: string) => Promise<void>;
+};
+
+type ChannelMessage = unknown;
+type DefaultChannelHandler = (thread: ChannelThread, message: ChannelMessage) => Promise<void>;
+
+function isLinearThread(thread: ChannelThread) {
+  return typeof thread.id === "string" && thread.id.startsWith("linear:");
+}
+
+async function startLinearThought(thread: ChannelThread, status: string) {
+  if (!isLinearThread(thread) || typeof thread.startTyping !== "function") return;
+
+  try {
+    await thread.startTyping(status);
+  } catch {
+    // Typing/thought activity is best-effort. Linear comments mode does not support it.
+  }
+}
+
+async function handleChannelMessageWithLinearThoughts(
+  thread: ChannelThread,
+  message: ChannelMessage,
+  defaultHandler: DefaultChannelHandler,
+) {
+  await startLinearThought(thread, "Working...");
+  await defaultHandler(thread, message);
+}
+
 export function resolveChannelStatus(config: AgentChannelsConfig = {}): ChannelStatusMap {
   const slackEnable = getEnv(config.slack?.enableKey ?? "ENABLE_SLACK_CHANNEL");
   const slackSigningSecret = getEnv(config.slack?.signingSecretKey ?? "SLACK_SIGNING_SECRET");
@@ -86,6 +117,11 @@ export function initChannels(config: AgentChannelsConfig = {}) {
     ? {
       adapters,
       state: createChannelState(),
+      handlers: {
+        onDirectMessage: handleChannelMessageWithLinearThoughts,
+        onMention: handleChannelMessageWithLinearThoughts,
+        onSubscribedMessage: handleChannelMessageWithLinearThoughts,
+      },
     }
     : undefined;
 }

@@ -9,6 +9,10 @@ export {
   expectedChannelWebhookRoutes,
   listConfiguredChannelWebhookRoutes,
 } from "./routes.js";
+export {
+  bridgeMastraStreamToChatChunks,
+  mastraChunkToChatStreamChunk,
+} from "./stream-bridge.js";
 export type {
   AgentChannelsConfig,
   ChannelPlatform,

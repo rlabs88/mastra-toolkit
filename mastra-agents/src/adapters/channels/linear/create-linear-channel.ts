@@ -1,7 +1,10 @@
 import { createLinearAdapter } from "@chat-adapter/linear";
+import type { ChannelAdapterConfig } from "@mastra/core/channels";
 
 import type { AgentChannelsConfig } from "../types.js";
 import { getEnv } from "../types.js";
+import { formatLinearError } from "./format-linear-error.js";
+import { formatLinearToolCall } from "./format-linear-tool-call.js";
 
 export function getLinearMode(config: AgentChannelsConfig = {}) {
   const linearMode =
@@ -64,5 +67,10 @@ function buildLinearAdapterConfig(config: AgentChannelsConfig = {}) {
 }
 
 export function createLinearChannel(config: AgentChannelsConfig = {}) {
-  return createLinearAdapter(buildLinearAdapterConfig(config));
+  return {
+    adapter: createLinearAdapter(buildLinearAdapterConfig(config)),
+    cards: true,
+    formatToolCall: formatLinearToolCall,
+    formatError: formatLinearError,
+  } satisfies ChannelAdapterConfig;
 }
