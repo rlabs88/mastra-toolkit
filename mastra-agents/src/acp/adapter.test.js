@@ -93,3 +93,94 @@ test("ACP prompt sends selected mode and model as live execution inputs", async 
   assert.equal(capturedRequest.requestContext.harnessModeId, "supervisor.exec");
   assert.match(capturedRequest.messages[0].content, /Supervisor Lead Exec/);
 });
+
+test("ACP prompt reports applied thinking metadata for OpenAI reasoning models", async (t) => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "model", value: "openai/gpt-5.2" });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "thinking", value: "high" });
+
+  let capturedRequest;
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_url, init) => {
+    capturedRequest = JSON.parse(init.body);
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, statusText: "OK" },
+    );
+  };
+
+  await agent.prompt({
+    sessionId: session.sessionId,
+    prompt: [{ type: "text", text: "Use deeper reasoning." }],
+  });
+
+  assert.deepEqual(capturedRequest.providerOptions, {
+    openai: {
+      reasoningEffort: "high",
+    },
+  });
+  assert.deepEqual(capturedRequest.requestContext.acp.thinking, {
+    requestedLevel: "high",
+    status: "applied",
+    provider: "openai",
+    providerOptionPath: "providerOptions.openai.reasoningEffort",
+    providerOptionValue: "high",
+  });
+});
+
+test("ACP prompt omits thinking providerOptions and reports unsupported provider", async (t) => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "model", value: "minimax-coding-plan/MiniMax-M2.7" });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "thinking", value: "high" });
+
+  let capturedRequest;
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_url, init) => {
+    capturedRequest = JSON.parse(init.body);
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, statusText: "OK" },
+    );
+  };
+
+  await agent.prompt({
+    sessionId: session.sessionId,
+    prompt: [{ type: "text", text: "Use deeper reasoning." }],
+  });
+
+  assert.equal(capturedRequest.providerOptions, undefined);
+  assert.deepEqual(capturedRequest.requestContext.acp.thinking, {
+    requestedLevel: "high",
+    status: "unsupported_provider",
+    provider: "minimax-coding-plan",
+    reason: "No ACP thinking mapping is defined for provider minimax-coding-plan",
+  });
+});

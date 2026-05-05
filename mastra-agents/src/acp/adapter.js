@@ -3,6 +3,7 @@ import { mapMastraChunkToUpdates } from './event-mapper.js';
 import { streamMastraAgent } from './mastra-stream.js';
 import { MastraAcpSessionStore } from './session-store.js';
 import { getSlashCommands } from './slash-commands.js';
+import { resolveThinkingProviderOptions } from './thinking-options.js';
 export function createMastraAcpAgentHandler(conn, options) {
     const store = new MastraAcpSessionStore();
     const runtimeConfig = () => loadAcpRuntimeConfig(options.agentId, options.mastraBaseUrl);
@@ -122,10 +123,12 @@ function buildPromptPayload(session, content, config) {
     const mode = modeDefinitionForSession(session, config);
     const modeId = mode.id;
     const modelId = normalizeModelId(session.modelId, config);
+    const thinkingOptions = resolveThinkingProviderOptions({ modelId, thinkingLevel: session.thinkingOptionId });
     return {
         messages: [{ role: 'user', content: `${mode.prompt}\n\n${content}` }],
         memory: { thread: session.threadId, resource: session.resourceId },
         model: modelId,
+        ...(thinkingOptions.providerOptions ? { providerOptions: thinkingOptions.providerOptions } : {}),
         requestContext: {
             acp: {
                 sessionId: session.sessionId,
@@ -133,6 +136,7 @@ function buildPromptPayload(session, content, config) {
                 modeId,
                 modelId,
                 thinkingOptionId: session.thinkingOptionId,
+                thinking: thinkingOptions.metadata,
             },
             activeAgentId: mode.agentId,
             modeId,
