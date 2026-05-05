@@ -7,4 +7,4 @@
 ## Agent Docs Index
 
 - `.agents/docs/workspace-runtime.md` records the workspace runtime configuration for agent tarball packaging: home, `/container`, and `/shared` file access; built-in `execute_command`; and project plus home skill imports.
-- ACP source lives in `mastra-agents/acp`; compiled runtime output belongs in ignored `mastra-agents/dist/acp`, not `mastra-agents/src/acp`.
+- ACP source lives in `mastra-agents/acp`; compiled runtime output belongs in ignored `compiled/mastra-agents/acp`, not `mastra-agents/src/acp`.

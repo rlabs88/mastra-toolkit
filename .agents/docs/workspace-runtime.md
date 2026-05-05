@@ -45,6 +45,6 @@ The root `README.md` documents the user-facing environment variables and default
 
 ACP TypeScript source lives in `mastra-agents/acp`.
 
-The compiled ACP runtime is emitted to `mastra-agents/dist/acp` by `npm run acp:build --workspace @mastrasystem/agents`. That output is ignored by git through the root `dist/` ignore rule.
+The compiled ACP runtime is emitted to `compiled/mastra-agents/acp` by `npm run acp:build --workspace @mastrasystem/agents`. That output is ignored by git through the root `compiled/` ignore rule.
 
 Do not edit generated ACP files. Edit `mastra-agents/acp/*.ts`, then rebuild.

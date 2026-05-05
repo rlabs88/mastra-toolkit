@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createMastraAcpAgentHandler } from "../../dist/acp/adapter.js";
+import { createMastraAcpAgentHandler } from "../../../compiled/mastra-agents/acp/adapter.js";
 
 class FakeConnection {
   updates = [];

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mapMastraChunkToUpdates } from '../../dist/acp/event-mapper.js';
+import { mapMastraChunkToUpdates } from '../../../compiled/mastra-agents/acp/event-mapper.js';
 import { createDelegationObservabilityOptions } from '../agents/delegation-observability.js';
 import { delegationPayloadFromEvent, subscribeDelegationEvents } from '../workflows/delegation-event.js';
 
