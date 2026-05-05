@@ -21,7 +21,7 @@ import { createDelegationObservabilityOptions } from "./delegation-observability
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
 import { scoutAgent } from "./scout-agent.js";
-import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, resolveRuntimeSupervisorModel, withAgentModes } from "./shared.js";
+import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, resolveRuntimeModel, withAgentModes } from "./shared.js";
 import { validatorAgent } from "./validator-agent.js";
 
 function createSupervisorChannelsConfig() {
@@ -81,7 +81,7 @@ export const supervisorAgent = withAgentModes(new Agent({
     supervisorPolicyPrompts,
     supervisorToolPrompts,
   ),
-  model: resolveRuntimeSupervisorModel,
+  model: resolveRuntimeModel,
   memory: createAgentMemory(),
   workspace,
   defaultOptions: {

@@ -21,7 +21,7 @@ export const defaultSupervisorModel =
   optionalEnv("MASTRA_MODEL") ??
   defaultMiniMaxModel;
 
-export function resolveRuntimeSupervisorModel({
+export function resolveRuntimeModel({
   requestContext,
 }: {
   requestContext: RequestContext;
