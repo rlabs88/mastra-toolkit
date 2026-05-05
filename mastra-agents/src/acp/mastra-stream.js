@@ -11,12 +11,41 @@ async function* parseSse(stream) { const d = new TextDecoder(); let b = ''; for 
     }
 } }
 export async function* streamMastraAgent(baseUrl, agentId, payload, signal) {
-    const response = await fetch(`${normalizeBaseUrl(baseUrl)}/api/agents/${agentId}/stream`, { method: 'POST', headers: { accept: 'text/event-stream', 'content-type': 'application/json' }, body: JSON.stringify(payload), signal });
-    if (!response.ok || !response.body)
-        throw new Error(`Mastra stream failed: ${response.status} ${response.statusText}`);
+    const url = `${normalizeBaseUrl(baseUrl)}/api/agents/${encodeURIComponent(agentId)}/stream`;
+    let response;
+    try {
+        response = await fetch(url, { method: 'POST', headers: { accept: 'text/event-stream', 'content-type': 'application/json' }, body: JSON.stringify(payload), signal });
+    }
+    catch (error) {
+        throw new Error(`Mastra stream request failed for ${url}: ${errorMessage(error)}`);
+    }
+    if (!response.ok || !response.body) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`Mastra stream failed for ${url}: ${response.status} ${response.statusText}${body ? ` - ${body.slice(0, 500)}` : ''}`);
+    }
     for await (const data of parseSse(response.body)) {
         if (data === '[DONE]')
             return;
-        yield JSON.parse(data);
+        const chunk = JSON.parse(data);
+        const streamError = mastraErrorMessage(chunk);
+        if (streamError)
+            throw new Error(`Mastra stream error: ${streamError}`);
+        yield chunk;
     }
+}
+function mastraErrorMessage(chunk) {
+    if (!isRecord(chunk) || chunk.type !== 'error')
+        return undefined;
+    const payload = isRecord(chunk.payload) ? chunk.payload : undefined;
+    const error = isRecord(payload?.error) ? payload.error : isRecord(chunk.error) ? chunk.error : undefined;
+    return str(error?.message) ?? str(payload?.message) ?? str(chunk.message) ?? 'Unknown Mastra stream error';
+}
+function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+function isRecord(value) {
+    return typeof value === 'object' && value !== null;
+}
+function str(value) {
+    return typeof value === 'string' && value.trim() ? value : undefined;
 }

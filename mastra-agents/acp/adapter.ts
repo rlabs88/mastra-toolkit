@@ -118,23 +118,25 @@ function buildPromptPayload(session: MastraAcpSession, content: string, config: 
   const modeId = mode.id;
   const modelId = normalizeModelId(session.modelId, config);
   const thinkingOptions = resolveThinkingProviderOptions({ modelId, thinkingLevel: session.thinkingOptionId });
+  const effectiveModelId = thinkingOptions.modelId ?? modelId;
   return {
     messages: [{ role: 'user', content: `${mode.prompt}\n\n${content}` }],
     memory: { thread: session.threadId, resource: session.resourceId },
-    model: modelId,
+    model: effectiveModelId,
     ...(thinkingOptions.providerOptions ? { providerOptions: thinkingOptions.providerOptions } : {}),
     requestContext: {
       acp: {
         sessionId: session.sessionId,
         cwd: session.cwd,
         modeId,
-        modelId,
+        modelId: effectiveModelId,
+        selectedModelId: modelId,
         thinkingOptionId: session.thinkingOptionId,
         thinking: thinkingOptions.metadata,
       },
       activeAgentId: mode.agentId,
       modeId,
-      modelId,
+      modelId: effectiveModelId,
       harnessMode: mode.harnessMode,
       harnessModeId: mode.harnessModeId,
       hardnessMode: mode.harnessModeId,

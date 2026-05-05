@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createMastraAcpAgentHandler } from "./adapter.js";
+import { loadAcpRuntimeConfig } from "./config-options.js";
 
 class FakeConnection {
   updates = [];
@@ -94,6 +95,62 @@ test("ACP prompt sends selected mode and model as live execution inputs", async 
   assert.match(capturedRequest.messages[0].content, /Supervisor Lead Exec/);
 });
 
+test("ACP runtime config prefers explicit env model over API metadata fallback", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalModel = process.env.MASTRA_SUPERVISOR_MODEL;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalModel === undefined) {
+      delete process.env.MASTRA_SUPERVISOR_MODEL;
+    } else {
+      process.env.MASTRA_SUPERVISOR_MODEL = originalModel;
+    }
+  });
+
+  process.env.MASTRA_SUPERVISOR_MODEL = "proxy/openai/gpt-5.5";
+  globalThis.fetch = async () => Response.json({ provider: "openai", modelId: "gpt-5.5" });
+
+  const config = await loadAcpRuntimeConfig("supervisor-agent", "http://model-precedence.test");
+
+  assert.equal(config.defaultModelId, "proxy/openai/gpt-5.5");
+  assert.equal(config.models[0], "proxy/openai/gpt-5.5");
+  assert.ok(config.models.includes("openai/gpt-5.5"));
+});
+
+test("ACP prompt surfaces Mastra stream error chunks", async (t) => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          'data: {"type":"error","payload":{"error":{"message":"Could not find API key process.env.OPENAI_API_KEY"}}}\n\n',
+        ));
+        controller.close();
+      },
+    }),
+    { status: 200, statusText: "OK" },
+  );
+
+  await assert.rejects(
+    agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: "text", text: "Do the work." }],
+    }),
+    /Mastra stream error: Could not find API key process\.env\.OPENAI_API_KEY/,
+  );
+});
+
 test("ACP prompt reports applied thinking metadata for OpenAI reasoning models", async (t) => {
   const conn = new FakeConnection();
   const agent = createMastraAcpAgentHandler(conn, {
@@ -137,8 +194,57 @@ test("ACP prompt reports applied thinking metadata for OpenAI reasoning models",
     requestedLevel: "high",
     status: "applied",
     provider: "openai",
+    strategy: "provider_options",
     providerOptionPath: "providerOptions.openai.reasoningEffort",
     providerOptionValue: "high",
+  });
+});
+
+test("ACP prompt maps proxy gateway thinking to CLIProxy model suffix", async (t) => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "model", value: "proxy/openai/gpt-5.5" });
+  await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: "thinking", value: "high" });
+
+  let capturedRequest;
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_url, init) => {
+    capturedRequest = JSON.parse(init.body);
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, statusText: "OK" },
+    );
+  };
+
+  await agent.prompt({
+    sessionId: session.sessionId,
+    prompt: [{ type: "text", text: "Use proxy reasoning." }],
+  });
+
+  assert.equal(capturedRequest.model, "proxy/openai/gpt-5.5(high)");
+  assert.equal(capturedRequest.providerOptions, undefined);
+  assert.equal(capturedRequest.requestContext.modelId, "proxy/openai/gpt-5.5(high)");
+  assert.equal(capturedRequest.requestContext.acp.selectedModelId, "proxy/openai/gpt-5.5");
+  assert.deepEqual(capturedRequest.requestContext.acp.thinking, {
+    requestedLevel: "high",
+    status: "applied",
+    provider: "proxy",
+    strategy: "model_name_suffix",
+    providerOptionPath: "model",
+    providerOptionValue: "proxy/openai/gpt-5.5(high)",
   });
 });
 

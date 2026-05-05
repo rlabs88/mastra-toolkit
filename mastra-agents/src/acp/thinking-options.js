@@ -1,3 +1,15 @@
+const thinkingLevelAdapters = [
+    {
+        provider: 'openai',
+        strategy: 'provider_options',
+        supportsModel: isOpenAiReasoningModel,
+    },
+    {
+        provider: 'proxy',
+        strategy: 'model_name_suffix',
+        supportsModel: isOpenAiReasoningModel,
+    },
+];
 export function resolveThinkingProviderOptions({ modelId, thinkingLevel, }) {
     const normalizedLevel = normalizeThinkingLevel(thinkingLevel);
     if (!thinkingLevel?.trim()) {
@@ -18,7 +30,8 @@ export function resolveThinkingProviderOptions({ modelId, thinkingLevel, }) {
         };
     }
     const provider = providerFromModelId(modelId);
-    if (provider === 'openai' && isOpenAiReasoningModel(modelId)) {
+    const adapter = thinkingLevelAdapters.find((candidate) => candidate.provider === provider && candidate.supportsModel(modelId));
+    if (adapter?.strategy === 'provider_options') {
         return {
             providerOptions: {
                 openai: {
@@ -29,8 +42,23 @@ export function resolveThinkingProviderOptions({ modelId, thinkingLevel, }) {
                 requestedLevel: normalizedLevel,
                 status: 'applied',
                 provider,
+                strategy: adapter.strategy,
                 providerOptionPath: 'providerOptions.openai.reasoningEffort',
                 providerOptionValue: normalizedLevel,
+            },
+        };
+    }
+    if (adapter?.strategy === 'model_name_suffix') {
+        const effectiveModelId = appendThinkingLevelSuffix(modelId, normalizedLevel);
+        return {
+            modelId: effectiveModelId,
+            metadata: {
+                requestedLevel: normalizedLevel,
+                status: 'applied',
+                provider,
+                strategy: adapter.strategy,
+                providerOptionPath: 'model',
+                providerOptionValue: effectiveModelId,
             },
         };
     }
@@ -65,10 +93,16 @@ function providerFromModelId(modelId) {
     return 'unknown';
 }
 function isOpenAiReasoningModel(modelId) {
-    const modelName = modelNameFromModelId(modelId.trim().toLowerCase());
+    const modelName = stripThinkingLevelSuffix(modelNameFromModelId(modelId.trim().toLowerCase()));
     return (modelName.startsWith('gpt-5') ||
         /^o\d/.test(modelName));
 }
 function modelNameFromModelId(modelId) {
     return modelId.includes('/') ? modelId.split('/').at(-1) ?? modelId : modelId;
+}
+function appendThinkingLevelSuffix(modelId, thinkingLevel) {
+    return `${stripThinkingLevelSuffix(modelId.trim())}(${thinkingLevel})`;
+}
+function stripThinkingLevelSuffix(modelId) {
+    return modelId.replace(/\([^()/]*\)\s*$/, '');
 }

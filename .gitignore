@@ -9,6 +9,7 @@ build/
 # Mastra generated runtime/build state
 .mastra/
 .agents/exec/snapshots/
+.pi-lens/
 
 # Generated scratch artifacts
 test*/

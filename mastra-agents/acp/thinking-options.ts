@@ -5,6 +5,7 @@ export type ThinkingMetadata =
       requestedLevel: ThinkingLevel;
       status: 'applied';
       provider: string;
+      strategy: 'provider_options' | 'model_name_suffix';
       providerOptionPath: string;
       providerOptionValue: unknown;
     }
@@ -21,9 +22,29 @@ export type ThinkingMetadata =
     };
 
 export type ThinkingProviderOptionsResult = {
+  modelId?: string;
   providerOptions?: Record<string, unknown>;
   metadata: ThinkingMetadata;
 };
+
+type ThinkingLevelAdapter = {
+  provider: string;
+  strategy: 'provider_options' | 'model_name_suffix';
+  supportsModel: (modelId: string) => boolean;
+};
+
+const thinkingLevelAdapters: ThinkingLevelAdapter[] = [
+  {
+    provider: 'openai',
+    strategy: 'provider_options',
+    supportsModel: isOpenAiReasoningModel,
+  },
+  {
+    provider: 'proxy',
+    strategy: 'model_name_suffix',
+    supportsModel: isOpenAiReasoningModel,
+  },
+];
 
 export function resolveThinkingProviderOptions({
   modelId,
@@ -52,7 +73,8 @@ export function resolveThinkingProviderOptions({
   }
 
   const provider = providerFromModelId(modelId);
-  if (provider === 'openai' && isOpenAiReasoningModel(modelId)) {
+  const adapter = thinkingLevelAdapters.find((candidate) => candidate.provider === provider && candidate.supportsModel(modelId));
+  if (adapter?.strategy === 'provider_options') {
     return {
       providerOptions: {
         openai: {
@@ -63,8 +85,23 @@ export function resolveThinkingProviderOptions({
         requestedLevel: normalizedLevel,
         status: 'applied',
         provider,
+        strategy: adapter.strategy,
         providerOptionPath: 'providerOptions.openai.reasoningEffort',
         providerOptionValue: normalizedLevel,
+      },
+    };
+  }
+  if (adapter?.strategy === 'model_name_suffix') {
+    const effectiveModelId = appendThinkingLevelSuffix(modelId, normalizedLevel);
+    return {
+      modelId: effectiveModelId,
+      metadata: {
+        requestedLevel: normalizedLevel,
+        status: 'applied',
+        provider,
+        strategy: adapter.strategy,
+        providerOptionPath: 'model',
+        providerOptionValue: effectiveModelId,
       },
     };
   }
@@ -97,7 +134,7 @@ function providerFromModelId(modelId: string): string {
 }
 
 function isOpenAiReasoningModel(modelId: string): boolean {
-  const modelName = modelNameFromModelId(modelId.trim().toLowerCase());
+  const modelName = stripThinkingLevelSuffix(modelNameFromModelId(modelId.trim().toLowerCase()));
   return (
     modelName.startsWith('gpt-5') ||
     /^o\d/.test(modelName)
@@ -106,4 +143,12 @@ function isOpenAiReasoningModel(modelId: string): boolean {
 
 function modelNameFromModelId(modelId: string): string {
   return modelId.includes('/') ? modelId.split('/').at(-1) ?? modelId : modelId;
+}
+
+function appendThinkingLevelSuffix(modelId: string, thinkingLevel: ThinkingLevel): string {
+  return `${stripThinkingLevelSuffix(modelId.trim())}(${thinkingLevel})`;
+}
+
+function stripThinkingLevelSuffix(modelId: string): string {
+  return modelId.replace(/\([^()/]*\)\s*$/, '');
 }

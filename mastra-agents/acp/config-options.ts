@@ -107,8 +107,8 @@ async function loadMastraRuntimeConfig(agentId: AcpRuntimeAgentId, apiAgentId: s
   const defaultMode = modes.find((mode: AcpModeDefinition) => mode.default) ?? modes[0];
   const configuredModels = unique([
     ...modes.map((mode: AcpModeDefinition & { defaultModelId?: string }) => mode.defaultModelId),
-    await modelIdFromMastraAgentApi(apiAgentId, mastraBaseUrl),
     ...configuredModelEnvValues(agentId),
+    await modelIdFromMastraAgentApi(apiAgentId, mastraBaseUrl),
   ]);
   const defaultModelId = configuredModels[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
 
@@ -131,14 +131,14 @@ async function modelIdFromMastraAgentApi(agentId: string | undefined, mastraBase
     const provider = typeof agentConfig.provider === 'string' ? agentConfig.provider.trim() : '';
     const modelId = typeof agentConfig.modelId === 'string' ? agentConfig.modelId.trim() : '';
     if (!modelId) return undefined;
-    return provider && !modelId.includes('/') ? `${provider}/${modelId}` : modelId;
+    return provider && !modelId.startsWith(`${provider}/`) ? `${provider}/${modelId}` : modelId;
   } catch {
     return undefined;
   }
 }
 
 function fallbackRuntimeConfig(agentId: AcpRuntimeAgentId, apiModelId?: string): AcpRuntimeConfig {
-  const models = unique([apiModelId, ...configuredModelEnvValues(agentId)]);
+  const models = unique([...configuredModelEnvValues(agentId), apiModelId]);
   const defaultModelId = models[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
   const fallbackModes: AcpModeDefinition[] = agentId === 'orchestrator'
     ? ['quick', 'precision', 'auto'].map((id) => fallbackMode(agentId, id, id === 'auto'))

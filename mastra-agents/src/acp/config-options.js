@@ -73,8 +73,8 @@ async function loadMastraRuntimeConfig(agentId, apiAgentId, mastraBaseUrl) {
     const defaultMode = modes.find((mode) => mode.default) ?? modes[0];
     const configuredModels = unique([
         ...modes.map((mode) => mode.defaultModelId),
-        await modelIdFromMastraAgentApi(apiAgentId, mastraBaseUrl),
         ...configuredModelEnvValues(agentId),
+        await modelIdFromMastraAgentApi(apiAgentId, mastraBaseUrl),
     ]);
     const defaultModelId = configuredModels[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
     return {
@@ -98,14 +98,14 @@ async function modelIdFromMastraAgentApi(agentId, mastraBaseUrl) {
         const modelId = typeof agentConfig.modelId === 'string' ? agentConfig.modelId.trim() : '';
         if (!modelId)
             return undefined;
-        return provider && !modelId.includes('/') ? `${provider}/${modelId}` : modelId;
+        return provider && !modelId.startsWith(`${provider}/`) ? `${provider}/${modelId}` : modelId;
     }
     catch {
         return undefined;
     }
 }
 function fallbackRuntimeConfig(agentId, apiModelId) {
-    const models = unique([apiModelId, ...configuredModelEnvValues(agentId)]);
+    const models = unique([...configuredModelEnvValues(agentId), apiModelId]);
     const defaultModelId = models[0] ?? 'minimax-coding-plan/MiniMax-M2.7';
     const fallbackModes = agentId === 'orchestrator'
         ? ['quick', 'precision', 'auto'].map((id) => fallbackMode(agentId, id, id === 'auto'))

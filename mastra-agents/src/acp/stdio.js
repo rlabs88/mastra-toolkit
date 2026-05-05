@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { AgentSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { createMastraAcpAgent } from './index.js';
 function readCliOptions(argv, env) {
     const options = {
@@ -26,9 +29,59 @@ function readCliOptions(argv, env) {
     }
     return options;
 }
+function unquoteEnvValue(value) {
+    const trimmed = value.trim();
+    if (trimmed.length < 2)
+        return trimmed;
+    const quote = trimmed[0];
+    if ((quote !== '"' && quote !== "'") || trimmed.at(-1) !== quote)
+        return trimmed;
+    const body = trimmed.slice(1, -1);
+    return quote === '"' ? body.replace(/\\n/g, '\n').replace(/\\"/g, '"') : body;
+}
+function parseEnvFile(filePath) {
+    const values = {};
+    if (!existsSync(filePath))
+        return values;
+    for (const rawLine of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#'))
+            continue;
+        const assignment = line.startsWith('export ') ? line.slice(7).trim() : line;
+        const equalsIndex = assignment.indexOf('=');
+        if (equalsIndex <= 0)
+            continue;
+        const key = assignment.slice(0, equalsIndex).trim();
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+            continue;
+        values[key] = unquoteEnvValue(assignment.slice(equalsIndex + 1));
+    }
+    return values;
+}
+function mergeNonEmpty(...sources) {
+    const merged = {};
+    for (const source of sources) {
+        for (const [key, value] of Object.entries(source)) {
+            if (value === '' && merged[key])
+                continue;
+            merged[key] = value;
+        }
+    }
+    return merged;
+}
+function loadProjectEnv(options) {
+    const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const fileEnv = mergeNonEmpty(parseEnvFile(path.join(options.cwd, '.env')), parseEnvFile(path.join(packageRoot, '.env')));
+    for (const [key, value] of Object.entries(fileEnv)) {
+        if (!process.env[key])
+            process.env[key] = value;
+    }
+}
+const options = readCliOptions(process.argv.slice(2), process.env);
+loadProjectEnv(options);
 const output = Writable.toWeb(process.stdout);
 const input = Readable.toWeb(process.stdin);
 const stream = ndJsonStream(output, input);
-const agent = createMastraAcpAgent(readCliOptions(process.argv.slice(2), process.env));
+const agent = createMastraAcpAgent(options);
 const connection = new AgentSideConnection(agent, stream);
 await connection.closed;

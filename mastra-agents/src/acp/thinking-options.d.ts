@@ -3,6 +3,7 @@ export type ThinkingMetadata = {
     requestedLevel: ThinkingLevel;
     status: 'applied';
     provider: string;
+    strategy: 'provider_options' | 'model_name_suffix';
     providerOptionPath: string;
     providerOptionValue: unknown;
 } | {
@@ -16,6 +17,7 @@ export type ThinkingMetadata = {
     reason: string;
 };
 export type ThinkingProviderOptionsResult = {
+    modelId?: string;
     providerOptions?: Record<string, unknown>;
     metadata: ThinkingMetadata;
 };
