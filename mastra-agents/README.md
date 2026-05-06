@@ -63,6 +63,18 @@ The Linear OAuth app should enable both Comments and Agent session events, plus 
 
 Use `npm run linear:install-url` to generate the Linear app-actor install URL from `LINEAR_CLIENT_ID`, `LINEAR_REDIRECT_URI`, and `LINEAR_OAUTH_SCOPES`. This is an operator helper only; runtime traffic still uses the Mastra channel webhook route.
 
+## linear-acp-client Integration
+
+`linear-acp-client` is the direct Linear Agent Session to ACP bridge. It is separate from Palmer and does not use the Chat SDK Linear adapter.
+
+- Webhook endpoint: `/api/linear-acp-client/linear/webhook`
+- Enable flag: `ENABLE_LINEAR_ACP_CLIENT=true`
+- Required webhook secret: `LINEAR_ACP_CLIENT_WEBHOOK_SECRET`
+- Required outbound Linear auth for smoke testing: `LINEAR_ACP_CLIENT_API_KEY` or `LINEAR_ACP_CLIENT_ACCESS_TOKEN`
+- Default state file: `.mastra/linear-acp-client-state.json`
+
+For a production Linear agent app, create a separate Linear OAuth app for `linear-acp-client`, enable Agent session events, request `read,write,comments:create,issues:create,app:mentionable,app:assignable`, and install with `actor=app`. The current bridge can consume an app actor token through env for a smoke test; full multi-workspace OAuth callback and token storage is a follow-up if this app needs normal install/upgrade flow.
+
 ## GitHub Channel Integration
 
 The shared `orchestratorAgent` and `supervisorAgent` support Mastra Channels with the official Chat SDK GitHub adapter.
@@ -149,4 +161,5 @@ https://webbb.renaissancelab.org/api/agents/orchestrator-agent/channels/github/w
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/slack/webhook
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/linear/webhook
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/github/webhook
+https://webbb.renaissancelab.org/api/linear-acp-client/linear/webhook
 ```
