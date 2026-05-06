@@ -91,13 +91,43 @@ The Mastra server registers the hosted OpenAI-compatible proxy as a custom model
 
 The proxy expects the upstream model name without the gateway/provider namespace, for example `gpt-5.5`. ACP thinking levels use CLIProxy's model suffix shape, for example `proxy/openai/gpt-5.5` with `High` thinking is sent through Mastra as `proxy/openai/gpt-5.5(high)` and reaches the proxy as `gpt-5.5(high)`.
 
-## Webhook Server With Cloudflare Tunnel
+## Compose Dev Stack
 
-The stack in `compose.webhooks.yml` runs:
+The stack in top-level `compose.yml` runs:
 
+- `mastra-server`: Mastra dev server and Studio via `npm run dev`, exposed on port `4111` by default.
+- `mastra-sandbox`: the DockerSandbox execution container. It uses the prebuilt `daytona-agents` snapshot image as a coding image artifact; it does not start Daytona services.
 - `mastra-postgres`: Postgres storage for Mastra memory, workflows, and control-plane state.
-- `webhook-server`: a small raw-body HTTP proxy that forwards webhook requests to the Mastra server already running on the Docker host.
-- `cloudflare-webhook-tunnel`: a Cloudflare Tunnel connector forwarding public HTTPS traffic to `webhook-server`.
+- `webhook-server`: a small raw-body HTTP proxy that forwards webhook requests to `mastra-server` over the Compose network.
+- `cloudflare-webhook-tunnel`: an optional Cloudflare Tunnel connector forwarding public HTTPS traffic to `webhook-server`.
+
+The stack intentionally does not run the Daytona control plane. Daytona remains a reference/source repo for the sandbox image and PTY/computer-use research, not a service in this Compose graph.
+
+Start the local stack:
+
+```bash
+docker compose --env-file mastra-agents/.env up -d --build
+```
+
+The deployed internal Docker network endpoints are:
+
+```text
+http://mastra-server:4111
+http://webhook-server:8080
+postgresql://mastra:mastra@mastra-postgres:5432/mastra
+```
+
+From the Docker host, the default endpoints are:
+
+```text
+http://localhost:4111
+postgresql://mastra:mastra@localhost:5432/mastra
+```
+
+Set `MASTRA_SERVER_HOST_PORT` or `POSTGRES_HOST_PORT` if either host port is already in use.
+Set `WEBHOOK_MASTRA_UPSTREAM_URL` only when the webhook relay should forward somewhere other than the Compose-managed `mastra-server`.
+
+## Public Webhook Tunnel
 
 Create a remotely managed Cloudflare Tunnel in Cloudflare Zero Trust, copy its connector token into `CLOUDFLARED_TUNNEL_TOKEN`, and configure a public hostname for the tunnel with this service target:
 
@@ -105,30 +135,10 @@ Create a remotely managed Cloudflare Tunnel in Cloudflare Zero Trust, copy its c
 http://webhook-server:8080
 ```
 
-The deployed internal Docker network endpoint is:
-
-```text
-http://webhook-server:8080
-```
-
-By default the proxy forwards to host Mastra at:
-
-```text
-http://host.docker.internal:4111
-```
-
-If Docker cannot reach `host.docker.internal` from this workspace, set `MASTRA_UPSTREAM_URL` to the workspace container IP, for example `http://172.30.10.102:4111`.
-
-The stack exposes Postgres on the Docker host at:
-
-```text
-postgresql://mastra:mastra@localhost:5432/mastra
-```
-
-Then start the webhook stack:
+Start the stack with the public tunnel profile:
 
 ```bash
-docker compose -f compose.webhooks.yml --env-file mastra-agents/.env up -d --build
+docker compose --env-file mastra-agents/.env --profile public-webhook up -d --build
 ```
 
 Use the deployed public hostname for platform webhooks:

@@ -1,0 +1,137 @@
+# compose.yml — Mastra-System local dev stack.
+#
+# This file intentionally does not start the Daytona control plane. The default
+# sandbox image is built in the daytona-agents repo, but it is only an agent
+# execution image artifact.
+#
+# Services:
+#   mastra-server    — Mastra dev server + Studio (`npm run dev`)
+#   mastra-sandbox   — Agent execution container (DockerSandbox reconnects by label)
+#   mastra-postgres  — Storage for Mastra Memory + control state
+#   webhook-server   — Webhook relay for GitHub/Linear/Slack
+#   cloudflare-webhook-tunnel — Optional public webhook tunnel; enable with
+#                               --profile public-webhook and CLOUDFLARED_TUNNEL_TOKEN
+#
+# The sandbox container has the `mastra.sandbox.id` label set.
+# DockerSandbox in workspace.ts reconnects to it by matching that label.
+#
+# Usage: docker compose up
+
+name: mastra-system
+
+services:
+  mastra-server:
+    build:
+      context: .
+      dockerfile: docker/mastra-server.Dockerfile
+    command: ["npm", "run", "dev"]
+    working_dir: /app/mastra-agents
+    restart: unless-stopped
+    depends_on:
+      mastra-postgres:
+        condition: service_healthy
+      mastra-sandbox:
+        condition: service_started
+    env_file:
+      - path: .env
+        required: false
+      - path: mastra-agents/.env
+        required: false
+    environment:
+      NODE_ENV: development
+      MASTRA_SERVER_HOST: 0.0.0.0
+      MASTRA_SERVER_PORT: ${MASTRA_SERVER_PORT:-4111}
+      MASTRA_SERVER_STUDIO_HOST: ${MASTRA_SERVER_STUDIO_HOST:-localhost}
+      MASTRA_SERVER_STUDIO_PORT: ${MASTRA_SERVER_STUDIO_PORT:-4111}
+      MASTRA_WORKSPACE_SANDBOX: docker
+      MASTRA_DOCKER_SANDBOX_ID: mastra-agents-coding
+      MASTRA_DOCKER_SANDBOX_NETWORK: mastra-system_default
+      MASTRA_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
+      DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
+    ports:
+      - "${MASTRA_SERVER_HOST_PORT:-4111}:4111"
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-.}:/app
+      - mastra-server-node-modules:/app/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+
+  mastra-sandbox:
+    image: ${MASTRA_DOCKER_SANDBOX_IMAGE:-ghcr.io/eugenechan00/daytona-agents/snapshot-mastra-agents:dev}
+    command: ["sleep", "infinity"]
+    environment:
+      SERENA_PROJECT: /workspace
+      SERENA_CONTEXT: codex
+      SERENA_MCP_PORT: "8084"
+      CODE_REVIEW_GRAPH_REPO: /workspace
+      CODE_REVIEW_GRAPH_MCP_PORT: "8085"
+      AGENT_SERVICES_AUTOSTART: "false"
+      LOCAL_MCP_AUTOSTART: "false"
+      JUPYTER_AUTOSTART: "false"
+      PASEO_AUTOSTART: "false"
+      # Postgres reachable via Docker DNS on the shared network
+      DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-.}:/workspace
+      - /container/shared:/shared
+    networks:
+      - default
+    labels:
+      mastra.sandbox: "true"
+      mastra.sandbox.id: "mastra-agents-coding"
+    restart: unless-stopped
+
+  mastra-postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mastra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mastra}
+      POSTGRES_DB: ${POSTGRES_DB:-mastra}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - mastra-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  webhook-server:
+    build:
+      context: .
+      dockerfile: webhook-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      WEBHOOK_SERVER_HOST: ${WEBHOOK_SERVER_HOST:-0.0.0.0}
+      WEBHOOK_SERVER_PORT: ${WEBHOOK_SERVER_PORT:-8080}
+      MASTRA_UPSTREAM_URL: ${WEBHOOK_MASTRA_UPSTREAM_URL:-http://mastra-server:4111}
+      WEBHOOK_FORWARD_TIMEOUT_MS: ${WEBHOOK_FORWARD_TIMEOUT_MS:-30000}
+    depends_on:
+      - mastra-server
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.WEBHOOK_SERVER_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cloudflare-webhook-tunnel:
+    profiles: ["public-webhook"]
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    restart: unless-stopped
+    depends_on:
+      - webhook-server
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:-}
+      TUNNEL_METRICS: ${CLOUDFLARED_METRICS:-0.0.0.0:2000}
+      TUNNEL_LOGLEVEL: ${CLOUDFLARED_LOGLEVEL:-info}
+
+volumes:
+  mastra-server-node-modules:
+  mastra-postgres-data:
