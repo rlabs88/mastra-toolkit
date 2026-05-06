@@ -1,12 +1,20 @@
 import { existsSync } from "node:fs";
 
 import { LocalFilesystem, LocalSandbox, Workspace, WORKSPACE_TOOLS } from "@mastra/core/workspace";
+import { DockerSandbox } from "@mastra/docker";
 
 import { DaytonaAgentsDaytonaSandbox } from "./daytona/mastra-sandbox.js";
 import {
   resolveDaytonaVolumeMounts,
   resolveSandboxRuntimeEnv,
 } from "./daytona/sandbox-config.js";
+import {
+  defaultDockerSandboxId,
+  defaultDockerSandboxImage,
+  defaultDockerSandboxNetwork,
+  resolveDockerBindMounts,
+  resolveDockerSandboxRuntimeEnv,
+} from "./docker-sandbox-config.js";
 import {
   allowedWorkspaceRootsDescription,
   isWorkspaceRootExposed,
@@ -22,11 +30,12 @@ const defaultSnapshot =
 const allowedLanguages = ["typescript", "javascript", "python"] as const;
 const allowedLocalIsolation = ["none", "seatbelt", "bwrap"] as const;
 const localSandboxAliases = new Set(["local", "current", "host"]);
+const dockerSandboxAliases = new Set(["docker", "container"]);
 const daytonaSandboxAliases = new Set(["daytona", "remote"]);
 
 type DaytonaWorkspaceLanguage = (typeof allowedLanguages)[number];
 type WorkspaceLocalIsolation = (typeof allowedLocalIsolation)[number];
-type WorkspaceSandboxProvider = "local" | "daytona";
+type WorkspaceSandboxProvider = "local" | "docker" | "daytona";
 
 function resolveBooleanEnv(value: string | undefined, fallback: boolean) {
   if (value === undefined || value === "") {
@@ -58,6 +67,10 @@ function resolveWorkspaceSandboxProvider(value: string | undefined): WorkspaceSa
 
   if (normalizedValue !== undefined && localSandboxAliases.has(normalizedValue)) {
     return "local";
+  }
+
+  if (normalizedValue !== undefined && dockerSandboxAliases.has(normalizedValue)) {
+    return "docker";
   }
 
   if (normalizedValue !== undefined && daytonaSandboxAliases.has(normalizedValue)) {
@@ -106,6 +119,25 @@ function createLocalSandbox() {
   });
 }
 
+function createDockerSandbox() {
+  return new DockerSandbox({
+    id: process.env.MASTRA_DOCKER_SANDBOX_ID ?? defaultDockerSandboxId,
+    image: process.env.MASTRA_DOCKER_SANDBOX_IMAGE ?? defaultDockerSandboxImage,
+    network: process.env.MASTRA_DOCKER_SANDBOX_NETWORK ?? defaultDockerSandboxNetwork,
+    volumes: resolveDockerBindMounts(),
+    env: resolveDockerSandboxRuntimeEnv(),
+    timeout: resolveNumberEnv(process.env.MASTRA_WORKSPACE_COMMAND_TIMEOUT_MS) ?? 300_000,
+    workingDir: process.env.MASTRA_DOCKER_SANDBOX_WORKDIR ?? "/workspace",
+    labels: {
+      app: "daytona-agents",
+      role: "mastra-workspace",
+      managedBy: "mastra-control",
+    },
+    instructions: ({ defaultInstructions }) =>
+      `${defaultInstructions} This is the Docker execution sandbox. Shell commands run in /workspace with configured bind mounts for the active repository and shared volumes.`,
+  });
+}
+
 function createDaytonaSandbox() {
   return new DaytonaAgentsDaytonaSandbox({
     id: process.env.DAYTONA_WORKSPACE_SANDBOX_ID ?? "daytona-agents-global-coding",
@@ -147,7 +179,20 @@ function createLocalFilesystem(root: string) {
   });
 }
 
+function resolveDockerWorkspaceFilesystemRoot() {
+  return process.env.MASTRA_WORKSPACE_FILESYSTEM_ROOT ?? (existsSync("/app") ? "/app" : workspaceRoot);
+}
+
 function createWorkspaceFilesystemConfig() {
+  if (workspaceSandboxProvider === "docker") {
+    const mountRoot = process.env.MASTRA_WORKSPACE_MOUNT_ROOT ?? "/workspace";
+    return {
+      mounts: {
+        [mountRoot]: createLocalFilesystem(resolveDockerWorkspaceFilesystemRoot()),
+      },
+    };
+  }
+
   if (isWorkspaceRootExposed()) {
     return {
       filesystem: createLocalFilesystem(workspaceAccessRoots[0]!),
@@ -171,7 +216,9 @@ export const workspaceSandboxProvider = resolveWorkspaceSandboxProvider(
 
 export const codingSandbox = workspaceSandboxProvider === "local"
   ? createLocalSandbox()
-  : createDaytonaSandbox();
+  : workspaceSandboxProvider === "docker"
+    ? createDockerSandbox()
+    : createDaytonaSandbox();
 
 export const workspace = new Workspace({
   id: "daytona-agents",
@@ -198,6 +245,10 @@ export const workspace = new Workspace({
     }
 
     if (sandbox?.provider === "local") {
+      return { success: true, mountPath };
+    }
+
+    if (sandbox?.provider === "docker" && mountPath === (process.env.MASTRA_WORKSPACE_MOUNT_ROOT ?? "/workspace")) {
       return { success: true, mountPath };
     }
 

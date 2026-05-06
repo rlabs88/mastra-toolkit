@@ -89,6 +89,7 @@ export const defaultObservationalMemoryModel =
   optionalEnv("MASTRA_OBSERVATIONAL_MEMORY_MODEL") ?? defaultAgentModel;
 
 export const defaultObservationalMemoryOptions = {
+  enabled: true,
   model: defaultObservationalMemoryModel,
 } as const;
 

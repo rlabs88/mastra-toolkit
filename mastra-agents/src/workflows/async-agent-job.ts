@@ -521,6 +521,14 @@ async function streamHarnessMessage({
       return;
     }
 
+    if (typeof event.type === "string" && event.type.startsWith("om_")) {
+      emitChunk({
+        type: "observational-memory-event",
+        payload: event,
+      });
+      return;
+    }
+
     if (event.type === "error") {
       emitChunk({
         type: "error",

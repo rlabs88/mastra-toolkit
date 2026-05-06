@@ -64,7 +64,9 @@ export function normalizeModeId(value: unknown, config: AcpRuntimeConfig): strin
 }
 
 export function normalizeModelId(value: unknown, config: AcpRuntimeConfig): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : config.defaultModelId;
+  if (typeof value !== 'string' || !value.trim()) return config.defaultModelId;
+  const modelId = value.trim();
+  return modelId.startsWith('rl/') ? config.defaultModelId : modelId;
 }
 
 export function modeDefinitionForSession(session: MastraAcpSession, config: AcpRuntimeConfig): AcpModeDefinition {
@@ -206,9 +208,6 @@ function configuredModelEnvValues(agentId: AcpRuntimeAgentId): string[] {
     process.env.MASTRA_AGENT_MODEL,
     process.env.MASTRA_SUBAGENT_MODEL,
     process.env.MASTRA_MODEL,
-    ...Object.entries(process.env)
-      .filter(([key]) => /^MASTRA_.*MODEL$/.test(key))
-      .map(([, value]) => value),
   ]);
 }
 

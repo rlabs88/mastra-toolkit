@@ -46,7 +46,11 @@ function readEnv(name: string): string | undefined {
 export function resolveDockerBindMounts(): Record<string, string> {
   const mounts: Record<string, string> = {};
 
-  const workspaceRoot = readEnv("MASTRA_WORKSPACE_ROOT") ?? path.resolve(process.cwd(), "../..");
+  const workspaceRoot =
+    readEnv("MASTRA_DOCKER_SANDBOX_HOST_WORKSPACE_ROOT") ??
+    readEnv("HOST_WORKSPACE_ROOT") ??
+    readEnv("MASTRA_WORKSPACE_ROOT") ??
+    path.resolve(process.cwd(), "../..");
   mounts[workspaceRoot] = "/workspace";
 
   // Host /container/shared is mounted as /shared in the sandbox.

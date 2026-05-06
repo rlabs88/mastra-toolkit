@@ -1,6 +1,7 @@
 import type { AgentSideConnection, InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
+import path from 'node:path';
 import { buildConfigOptions, loadAcpRuntimeConfig, modeDefinitionForSession, modelOptionsForSession, normalizeModeId, normalizeModelId, type AcpRuntimeConfig } from './config-options.js';
-import { mapMastraChunkToUpdates } from './event-mapper.js';
+import { createMastraChunkMapper } from './event-mapper.js';
 import { streamMastraAgent } from './mastra-stream.js';
 import { MastraAcpSessionStore } from './session-store.js';
 import type { ACPAgent, MastraAcpAgentOptions, MastraAcpSession } from './types.js';
@@ -25,9 +26,10 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
     },
     async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
       const config = await runtimeConfig();
+      const cwd = resolveSessionCwd(params.cwd, options.cwd);
       const session = await store.create({
         agentId: options.agentId,
-        cwd: params.cwd,
+        cwd,
         resourceId: options.defaultResourceId,
         threadId: options.defaultThreadId,
         defaultModeId: config.defaultModeId,
@@ -38,10 +40,11 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
     },
     async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
       const config = await runtimeConfig();
+      const cwd = resolveSessionCwd(params.cwd, options.cwd);
       const session = await store.load({
         sessionId: params.sessionId,
         agentId: options.agentId,
-        cwd: params.cwd,
+        cwd,
         resourceId: options.defaultResourceId,
         threadId: options.defaultThreadId ?? params.sessionId,
         defaultModeId: config.defaultModeId,
@@ -58,6 +61,7 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       const content = (last && 'text' in last) ? last.text : '';
       const ac = new AbortController();
       session.abortController = ac; await store.update(session);
+      const mapMastraChunkToUpdates = createMastraChunkMapper();
       for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content, config), ac.signal)) {
         for (const update of mapMastraChunkToUpdates(chunk)) {
           await conn.sessionUpdate({ sessionId: session.sessionId, update });
@@ -100,6 +104,12 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
     },
     async authenticate() {},
   };
+}
+
+function resolveSessionCwd(clientCwd: string, configuredCwd: string): string {
+  if (path.isAbsolute(clientCwd)) return clientCwd;
+  if (path.win32.isAbsolute(clientCwd) && path.isAbsolute(configuredCwd)) return configuredCwd;
+  return configuredCwd || clientCwd;
 }
 
 function newSessionStateResponse(session: MastraAcpSession, config: AcpRuntimeConfig): NewSessionResponse {

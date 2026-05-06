@@ -18,6 +18,12 @@ Delegation lifecycle events are emitted from orchestration `delegation` hooks an
 
 The emitted payload includes delegated target, delegated prompt, response/error, run/thread/resource correlation fields, and duration. The async harness stream subscribes to those hook payloads for the current thread/resource pair and forwards them as `delegation-event` chunks.
 
+For Mastra agent-tool delegation (`agent-*` tools), ACP also maps the raw tool stream:
+
+- The delegated prompt is normalized into `rawInput.query` and visible `query:` content so clients that ignore `rawInput` still show the scout/delegated task.
+- Nested subagent `tool-output` chunks accumulate visible thought, response, and activity updates under the parent agent tool call.
+- Non-renderable nested lifecycle chunks and partial agent-tool JSON deltas are suppressed until they produce visible content, avoiding blank ACP tool updates.
+
 ## Default tool stream events vs hook-style delegation events
 
 - Existing generic tool stream events (`tool-call`, `tool-result`, `tool-error`) are still emitted unchanged.

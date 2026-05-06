@@ -40,7 +40,7 @@ The command will normally wait for ACP JSON-RPC over stdio. Use `command -v` as 
 
 ## Runtime Env And Proxy Model
 
-`mastra-agents-acp` loads `.env` from the workspace passed with `--cwd` before it creates the ACP agent. Keep `--cwd` pointed at the Mastra workspace root so editor-spawned ACP processes see the same model and proxy settings as the local Mastra server.
+`mastra-agents-acp` loads `.env` from the workspace passed with `--cwd` before it creates the ACP agent. When `--cwd` points at the repository root, the launcher also loads `mastra-agents/.env` after the root `.env` so this app's model and proxy settings win over legacy workspace settings. Keep `--cwd` pointed at the Mastra workspace root so editor-spawned ACP processes bind sessions to the right working tree.
 
 The expected proxy-backed model config is:
 

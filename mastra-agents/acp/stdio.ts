@@ -66,11 +66,10 @@ function parseEnvFile(filePath: string): Record<string, string> {
   return values;
 }
 
-function mergeNonEmpty(...sources: Array<Record<string, string>>): Record<string, string> {
+function mergeEnvValues(...sources: Array<Record<string, string>>): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const source of sources) {
     for (const [key, value] of Object.entries(source)) {
-      if (value === '' && merged[key]) continue;
       merged[key] = value;
     }
   }
@@ -79,8 +78,9 @@ function mergeNonEmpty(...sources: Array<Record<string, string>>): Record<string
 
 function loadProjectEnv(options: CliOptions): void {
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const fileEnv = mergeNonEmpty(
+  const fileEnv = mergeEnvValues(
     parseEnvFile(path.join(options.cwd, '.env')),
+    parseEnvFile(path.join(options.cwd, 'mastra-agents', '.env')),
     parseEnvFile(path.join(packageRoot, '.env')),
   );
 

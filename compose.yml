@@ -47,12 +47,17 @@ services:
       MASTRA_WORKSPACE_SANDBOX: docker
       MASTRA_DOCKER_SANDBOX_ID: mastra-agents-coding
       MASTRA_DOCKER_SANDBOX_NETWORK: mastra-system_default
-      MASTRA_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
+      MASTRA_WORKSPACE_ROOT: /app
+      MASTRA_WORKSPACE_FILESYSTEM_ROOT: /app
+      MASTRA_WORKSPACE_MOUNT_ROOT: /workspace
+      MASTRA_WORKSPACE_ACCESS_ROOTS: /app,/root,/container,/shared
+      MASTRA_DOCKER_SANDBOX_HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
       DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
     ports:
       - "${MASTRA_SERVER_HOST_PORT:-4111}:4111"
     volumes:
       - ${HOST_WORKSPACE_ROOT:-.}:/app
+      - /container/shared:/container/shared
       - mastra-server-node-modules:/app/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

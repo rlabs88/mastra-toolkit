@@ -98,6 +98,23 @@ test("ACP new sessions bind request cwd to fallback resource and opaque session 
   assert.equal(capturedRequest.requestContext.acp.cwd, "/request-workspace");
 });
 
+test("ACP new sessions use configured WSL cwd when Windows clients send Windows cwd", async () => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/container/shared/workspace/projects/mastra-system",
+    mastraBaseUrl: "http://mastra.test",
+    memoryStore,
+  });
+
+  const session = await agent.newSession({ cwd: "C:\\Users\\eugen", mcpServers: [] });
+  const thread = memoryStore.threads.get(session.sessionId);
+
+  assert.match(session.sessionId, /^[0-9a-f-]{36}$/);
+  assert.equal(thread.metadata.acp.localCwd, "/container/shared/workspace/projects/mastra-system");
+});
+
 test("ACP loadSession restores durable Mastra memory thread binding", async (t) => {
   const conn = new FakeConnection();
   const memoryStore = new FakeMemoryStore([
@@ -325,6 +342,33 @@ test("ACP runtime config prefers explicit env model over API metadata fallback",
   assert.equal(config.defaultModelId, "proxy/openai/gpt-5.5");
   assert.equal(config.models[0], "proxy/openai/gpt-5.5");
   assert.ok(config.models.includes("openai/gpt-5.5"));
+});
+
+test("ACP model config migrates legacy rl model ids to the configured default", async (t) => {
+  const originalModel = process.env.MASTRA_SUPERVISOR_MODEL;
+  t.after(() => {
+    if (originalModel === undefined) {
+      delete process.env.MASTRA_SUPERVISOR_MODEL;
+    } else {
+      process.env.MASTRA_SUPERVISOR_MODEL = originalModel;
+    }
+  });
+  process.env.MASTRA_SUPERVISOR_MODEL = "proxy/openai/gpt-5.5";
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://legacy-model.test",
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  const result = await agent.setSessionConfigOption({
+    sessionId: session.sessionId,
+    configId: "model",
+    value: "rl/gpt-5.5",
+  });
+
+  assert.equal(optionValue(result.configOptions, "model"), "proxy/openai/gpt-5.5");
 });
 
 test("ACP prompt surfaces Mastra stream error chunks", async (t) => {
