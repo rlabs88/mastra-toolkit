@@ -330,6 +330,67 @@ test("Linear message text sanitizer removes Linear mention XML artifacts", async
   );
 });
 
+test("Linear agent-session prompts keep one persistent Mastra thread", async () => {
+  buildChannelsBundle();
+  const linear = await importFresh(linearBundlePath);
+
+  const firstPrompt = linear.normalizeLinearMessage(
+    {
+      kind: "agent_session_comment",
+      agentSessionId: "session-1",
+      comment: {
+        id: "source-comment-1",
+        issueId: "issue-1",
+      },
+    },
+    {
+      threadId: "linear:issue-1:c:source-comment-1:s:session-1",
+      text: '<user id="user-1">palmer</user> first prompt',
+    },
+  );
+  const followUpPrompt = linear.normalizeLinearMessage(
+    {
+      kind: "agent_session_comment",
+      agentSessionId: "session-1",
+      comment: {
+        id: "source-comment-2",
+        issueId: "issue-1",
+      },
+    },
+    {
+      threadId: "linear:issue-1:c:source-comment-2:s:session-1",
+      text: "follow-up prompt",
+    },
+  );
+
+  assert.equal(firstPrompt.threadId, "linear:issue-1:s:session-1");
+  assert.equal(followUpPrompt.threadId, "linear:issue-1:s:session-1");
+  assert.equal(firstPrompt.text, "@palmer first prompt");
+});
+
+test("Linear comment thread prompts keep Chat SDK root-comment thread ids", async () => {
+  buildChannelsBundle();
+  const linear = await importFresh(linearBundlePath);
+
+  const message = linear.normalizeLinearMessage(
+    {
+      kind: "comment",
+      comment: {
+        id: "reply-comment-1",
+        issueId: "issue-1",
+        parentId: "root-comment-1",
+      },
+    },
+    {
+      threadId: "linear:issue-1:c:root-comment-1",
+      text: "thread reply",
+    },
+  );
+
+  assert.equal(message.threadId, "linear:issue-1:c:root-comment-1");
+  assert.equal(message.text, "thread reply");
+});
+
 test("Linear agent-session streams are posted through Chat SDK rich streaming", async () => {
   buildChannelsBundle();
   const originalConsume = AgentChannels.prototype.consumeAgentStream;

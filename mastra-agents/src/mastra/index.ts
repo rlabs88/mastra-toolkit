@@ -16,6 +16,7 @@ import type { ApiRoute } from "@mastra/core/server";
 
 import { mastraAgents } from "../agents/agent.js";
 import { channelWebhookApiRoutesForAgents } from "../adapters/channels/index.js";
+import { linearAcpClientApiRoutes } from "../adapters/linear-acp-client/index.js";
 import { workspaceTools } from "../tools/workspace.js";
 import { daytonaWorkflows } from "../workflows/daytona.js";
 import { asyncAgentJobWorkflows } from "../workflows/async-agent-job.js";
@@ -75,6 +76,7 @@ const workflows = {
   ...workspaceWorkflows,
 };
 const channelApiRoutes = channelWebhookApiRoutesForAgents(mastraAgents);
+const linearAcpClientWebhookRoutes = linearAcpClientApiRoutes();
 
 type LinearOAuthAdapter = {
   handleOAuthCallback: (
@@ -249,7 +251,7 @@ export const mastra = new Mastra({
   server: {
     host: process.env.MASTRA_SERVER_HOST ?? "0.0.0.0",
     port: serverPort,
-    apiRoutes: [...channelApiRoutes, linearCallbackApiRoute],
+    apiRoutes: [...channelApiRoutes, linearCallbackApiRoute, ...linearAcpClientWebhookRoutes],
     studioHost: process.env.MASTRA_SERVER_STUDIO_HOST ?? "localhost",
     studioProtocol,
     studioPort,

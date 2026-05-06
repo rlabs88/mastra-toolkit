@@ -9,6 +9,7 @@ import { formatLinearToolCall } from "./format-linear-tool-call.js";
 
 type LinearMessage = {
   text?: string;
+  threadId?: string;
 };
 
 type LinearAdapterWithParseMessage = ReturnType<typeof createLinearAdapter> & {
@@ -83,17 +84,49 @@ export function sanitizeLinearMessageText(text: string) {
     .trim();
 }
 
-function withSanitizedLinearMessages(adapter: ReturnType<typeof createLinearAdapter>) {
+function getStableLinearAgentSessionThreadId(raw: unknown) {
+  if (!raw || typeof raw !== "object") return undefined;
+
+  const candidate = raw as {
+    kind?: unknown;
+    agentSessionId?: unknown;
+    comment?: { issueId?: unknown };
+  };
+
+  const agentSessionId = candidate.agentSessionId;
+  const issueId = candidate.comment?.issueId;
+
+  if (candidate.kind !== "agent_session_comment") return undefined;
+  if (typeof agentSessionId !== "string" || !agentSessionId) return undefined;
+  if (typeof issueId !== "string" || !issueId) return undefined;
+
+  // Chat SDK currently builds prompted Linear Agent Session thread ids from
+  // sourceCommentId. That id changes for each follow-up, which fragments Mastra
+  // memory, subscription state, and locks. The Linear Agent Session id is the
+  // durable conversation boundary, so normalize all session prompts to it.
+  return `linear:${issueId}:s:${agentSessionId}`;
+}
+
+export function normalizeLinearMessage(raw: unknown, message: LinearMessage) {
+  if (typeof message.text === "string") {
+    message.text = sanitizeLinearMessageText(message.text);
+  }
+
+  const stableAgentSessionThreadId = getStableLinearAgentSessionThreadId(raw);
+  if (stableAgentSessionThreadId) {
+    message.threadId = stableAgentSessionThreadId;
+  }
+
+  return message;
+}
+
+function withNormalizedLinearMessages(adapter: ReturnType<typeof createLinearAdapter>) {
   const linearAdapter = adapter as LinearAdapterWithParseMessage;
   const parseMessage = linearAdapter.parseMessage?.bind(linearAdapter);
   if (!parseMessage) return adapter;
 
   linearAdapter.parseMessage = (raw: unknown) => {
-    const message = parseMessage(raw);
-    if (typeof message.text === "string") {
-      message.text = sanitizeLinearMessageText(message.text);
-    }
-    return message;
+    return normalizeLinearMessage(raw, parseMessage(raw));
   };
 
   return adapter;
@@ -101,7 +134,7 @@ function withSanitizedLinearMessages(adapter: ReturnType<typeof createLinearAdap
 
 export function createLinearChannel(config: AgentChannelsConfig = {}) {
   return {
-    adapter: withSanitizedLinearMessages(createLinearAdapter(buildLinearAdapterConfig(config))),
+    adapter: withNormalizedLinearMessages(createLinearAdapter(buildLinearAdapterConfig(config))),
     cards: true,
     // Markdown fallback only; native Linear action UI comes from streamed task_update chunks.
     formatToolCall: formatLinearToolCall,
