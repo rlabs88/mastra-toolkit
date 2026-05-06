@@ -7,22 +7,25 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "acp": "node src/acp/stdio.js",
-    "acp:build": "tsc --ignoreConfig --target ESNext --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --types node --rootDir acp --outDir src/acp --declaration acp/*.ts",
-    "acp:smoke": "node src/acp/smoke-client.js",
+    "acp": "npm run acp:build && node ../compiled/mastra-agents/acp/stdio.js",
+    "acp:build": "tsc --ignoreConfig --target ESNext --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --types node --rootDir acp --outDir ../compiled/mastra-agents/acp --declaration acp/*.ts",
+    "acp:smoke": "npm run acp:build && node ../compiled/mastra-agents/acp/smoke-client.js",
     "dev": "node scripts/with-env.mjs mastra dev",
+    "linear:install-url": "node scripts/linear-install-url.mjs",
     "build": "node scripts/with-env.mjs mastra build",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "npm run acp:build && node --test \"src/**/*.test.js\" \"test/**/*.test.js\"",
     "start": "node scripts/with-env.mjs mastra start",
     "studio": "node scripts/with-env.mjs node scripts/run-studio.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
+    "@ai-sdk/openai-compatible": "1.0.39",
     "@chat-adapter/github": "^4.27.0",
     "@chat-adapter/linear": "^4.27.0",
     "@chat-adapter/slack": "^4.27.0",
+    "@chat-adapter/state-pg": "^4.27.0",
     "@daytona/sdk": "0.169.0",
-    "@mastra/core": "1.28.0",
+    "@mastra/core": "1.32.1",
     "@mastra/daytona": "0.3.0",
     "@mastra/duckdb": "1.2.0",
     "@mastra/editor": "0.7.19",
@@ -34,11 +37,11 @@
     "zod": "3.25.76"
   },
   "bin": {
-    "mastra-agents-acp": "src/acp/stdio.js"
+    "mastra-agents-acp": "../compiled/mastra-agents/acp/stdio.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
-    "mastra": "1.6.3",
+    "mastra": "1.8.1",
     "typescript": "^6.0.3"
   }
 }

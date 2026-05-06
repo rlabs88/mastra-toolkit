@@ -1,5 +1,7 @@
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
+import type { RequestContext } from "@mastra/core/request-context";
+import type { MastraModelConfig } from "@mastra/core/llm";
 
 export const defaultMiniMaxModel = "minimax-coding-plan/MiniMax-M2.7";
 function optionalEnv(name: string) {
@@ -19,6 +21,20 @@ export const defaultSupervisorModel =
   optionalEnv("MASTRA_MODEL") ??
   defaultMiniMaxModel;
 
+export function resolveRuntimeModel({
+  requestContext,
+}: {
+  requestContext: RequestContext;
+}): MastraModelConfig {
+  return (
+    stringContextValue(requestContext, "modelId") ??
+    stringRecordContextValue(requestContext, "acp", "modelId") ??
+    stringRecordContextValue(requestContext, "harness", "state", "currentModelId") ??
+    stringRecordContextValue(requestContext, "harness", "state", "modelId") ??
+    defaultSupervisorModel
+  );
+}
+
 const defaultToolCallConcurrency = 15;
 
 export type AgentModeMetadata = {
@@ -28,11 +44,17 @@ export type AgentModeMetadata = {
 };
 
 export const sharedAgentModeNames = {
+  base: "Base",
   balanced: "Balanced",
   scope: "Scope",
+  spec: "Spec",
+  exec: "Execution",
   plan: "Plan",
   build: "Build",
   verify: "Verify",
+  quick: "Quick",
+  precision: "Precision",
+  auto: "Auto",
   research: "Research",
   brainstorm: "Brainstorm",
   analysis: "Analysis",
@@ -130,6 +152,24 @@ export function composeAgentInstructions(
     "# Runtime Policy And Tooling",
     ...runtimePrompts,
   ].join("\n\n");
+}
+
+function stringContextValue(requestContext: RequestContext, key: string): string | undefined {
+  const value = requestContext.get(key);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringRecordContextValue(requestContext: RequestContext, key: string, ...path: string[]): string | undefined {
+  let value: unknown = requestContext.get(key);
+  for (const segment of path) {
+    if (!isRecord(value)) return undefined;
+    value = value[segment];
+  }
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function withAgentModes<TAgent extends object>(

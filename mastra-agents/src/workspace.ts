@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import { LocalFilesystem, LocalSandbox, Workspace, WORKSPACE_TOOLS } from "@mastra/core/workspace";
 
 import { DaytonaAgentsDaytonaSandbox } from "./daytona/mastra-sandbox.js";
@@ -18,10 +20,12 @@ const defaultSnapshot =
   process.env.MASTRA_DEFAULT_SNAPSHOT ??
   "daytona-agents/snapshot-coding-base:local";
 const allowedLanguages = ["typescript", "javascript", "python"] as const;
+const allowedLocalIsolation = ["none", "seatbelt", "bwrap"] as const;
 const localSandboxAliases = new Set(["local", "current", "host"]);
 const daytonaSandboxAliases = new Set(["daytona", "remote"]);
 
 type DaytonaWorkspaceLanguage = (typeof allowedLanguages)[number];
+type WorkspaceLocalIsolation = (typeof allowedLocalIsolation)[number];
 type WorkspaceSandboxProvider = "local" | "daytona";
 
 function resolveBooleanEnv(value: string | undefined, fallback: boolean) {
@@ -70,8 +74,18 @@ function resolveWorkspaceSandboxProvider(value: string | undefined): WorkspaceSa
   return "daytona";
 }
 
+function resolveLocalSandboxIsolation(value: string | undefined): WorkspaceLocalIsolation {
+  if (allowedLocalIsolation.includes(value as WorkspaceLocalIsolation)) {
+    return value as WorkspaceLocalIsolation;
+  }
+
+  const detected = LocalSandbox.detectIsolation();
+  return detected.available ? detected.backend : "none";
+}
+
 function createLocalSandbox() {
   const runtimeEnv = resolveSandboxRuntimeEnv();
+  const isolation = resolveLocalSandboxIsolation(process.env.MASTRA_WORKSPACE_LOCAL_ISOLATION);
 
   return new LocalSandbox({
     id: process.env.MASTRA_LOCAL_WORKSPACE_SANDBOX_ID ?? "daytona-agents-current-sandbox",
@@ -81,9 +95,14 @@ function createLocalSandbox() {
       ...runtimeEnv,
     },
     timeout: resolveNumberEnv(process.env.MASTRA_WORKSPACE_COMMAND_TIMEOUT_MS) ?? 300_000,
-    isolation: "none",
+    isolation,
+    nativeSandbox: {
+      allowNetwork: true,
+      allowSystemBinaries: true,
+      readWritePaths: workspaceAccessRoots.filter((root) => existsSync(root)),
+    },
     instructions: ({ defaultInstructions }) =>
-      `${defaultInstructions} This is the current sandbox environment. Shell commands can access the configured workspace roots directly: ${allowedWorkspaceRootsDescription()}.`,
+      `${defaultInstructions} This is the current sandbox environment. Shell commands and file tools are scoped to the configured workspace roots when local native isolation is available: ${allowedWorkspaceRootsDescription()}.`,
   });
 }
 
@@ -159,14 +178,19 @@ export const workspace = new Workspace({
   name: "Daytona Agents Workspace",
   sandbox: codingSandbox,
   ...createWorkspaceFilesystemConfig(),
+  skills: [
+    resolveConfiguredPath(".agents/skills", workspaceCommandCwd),
+    resolveConfiguredPath("~/.agents/skills"),
+  ],
   tools: {
     enabled: false,
-    [WORKSPACE_TOOLS.FILESYSTEM.LIST_FILES]: { enabled: true, name: "list_files" },
-    [WORKSPACE_TOOLS.FILESYSTEM.READ_FILE]: { enabled: true, name: "read_file" },
-    [WORKSPACE_TOOLS.FILESYSTEM.WRITE_FILE]: { enabled: true, name: "write_file" },
-    [WORKSPACE_TOOLS.FILESYSTEM.EDIT_FILE]: { enabled: true, name: "edit_file" },
-    [WORKSPACE_TOOLS.FILESYSTEM.GREP]: { enabled: true, name: "grep" },
-    [WORKSPACE_TOOLS.SANDBOX.EXECUTE_COMMAND]: { enabled: true, name: "bash" },
+    [WORKSPACE_TOOLS.FILESYSTEM.LIST_FILES]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.READ_FILE]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.FILE_STAT]: { enabled: true },
+    [WORKSPACE_TOOLS.FILESYSTEM.GREP]: { enabled: true },
+    [WORKSPACE_TOOLS.SANDBOX.EXECUTE_COMMAND]: { enabled: true },
+    [WORKSPACE_TOOLS.SEARCH.SEARCH]: { enabled: true },
+    [WORKSPACE_TOOLS.LSP.LSP_INSPECT]: { enabled: true },
   },
   onMount: ({ filesystem, mountPath, sandbox }) => {
     if (filesystem.provider !== "local") {

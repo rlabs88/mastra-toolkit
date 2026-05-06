@@ -1,7 +1,4 @@
-import { createLinearAdapter } from "@chat-adapter/linear";
-import { createGitHubAdapter } from "@chat-adapter/github";
 import { Agent } from "@mastra/core/agent";
-import { createSlackAdapter } from "@chat-adapter/slack";
 
 import {
   supervisorAgentDescription,
@@ -13,59 +10,17 @@ import {
 import { sharedPolicyPrompts } from "../prompts/policy.js";
 import { sharedToolPrompts } from "../prompts/tools.js";
 import { workspaceTools } from "../tools/workspace.js";
+import { workspace } from "../workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
 import { orchestratorAgent } from "./orchestrator-agent.js";
 import { architectAgent } from "./architect-agent.js";
+import { createDelegationObservabilityOptions } from "./delegation-observability.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
 import { scoutAgent } from "./scout-agent.js";
-import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, defaultSupervisorModel, withAgentModes } from "./shared.js";
+import { initChannels } from "../adapters/channels/index.js";
+import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, resolveRuntimeModel, withAgentModes } from "./shared.js";
 import { validatorAgent } from "./validator-agent.js";
-
-function createSupervisorChannelsConfig() {
-  const adapters = {
-    ...(process.env.ENABLE_SLACK_CHANNEL === "true"
-      ? {
-          slack: createSlackAdapter(),
-        }
-      : {}),
-  };
-
-  const githubWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-  const githubAuthConfigured = Boolean(
-    process.env.GITHUB_TOKEN ||
-      (process.env.GITHUB_APP_ID && process.env.GITHUB_PRIVATE_KEY),
-  );
-
-  if (process.env.ENABLE_GITHUB_CHANNEL === "true" && githubWebhookSecret && githubAuthConfigured) {
-    Object.assign(adapters, {
-      github: createGitHubAdapter(),
-    });
-  }
-
-  const linearWebhookSecret = process.env.LINEAR_WEBHOOK_SECRET;
-  const linearAuthConfigured = Boolean(
-    process.env.LINEAR_API_KEY ||
-      process.env.LINEAR_ACCESS_TOKEN ||
-      (process.env.LINEAR_CLIENT_CREDENTIALS_CLIENT_ID &&
-        process.env.LINEAR_CLIENT_CREDENTIALS_CLIENT_SECRET) ||
-      (process.env.LINEAR_CLIENT_ID && process.env.LINEAR_CLIENT_SECRET),
-  );
-
-  if (linearWebhookSecret && linearAuthConfigured) {
-    const linearMode = process.env.LINEAR_CHANNEL_MODE ?? process.env.LINEAR_MODE;
-
-    Object.assign(adapters, {
-      linear: createLinearAdapter({
-        mode: linearMode === "agent-sessions" ? "agent-sessions" : "comments",
-      }),
-    });
-  }
-
-  return Object.keys(adapters).length > 0 ? { adapters } : undefined;
-}
-
-orchestratorAgent.channels = createSupervisorChannelsConfig();
 
 export const supervisorAgent = withAgentModes(new Agent({
   id: "supervisor-agent",
@@ -73,15 +28,23 @@ export const supervisorAgent = withAgentModes(new Agent({
   description: supervisorAgentDescription,
   instructions: composeAgentInstructions(
     supervisorInstructionsPrompt,
-    supervisorModePrompts.balanced, // Active mode prompt injected into instruction string
+    supervisorModePrompts.base, // Active scope prompt injected into instruction string
     sharedPolicyPrompts.supervisor,
     sharedToolPrompts.supervisor,
     supervisorPolicyPrompts,
     supervisorToolPrompts,
   ),
-  model: defaultSupervisorModel,
+  model: resolveRuntimeModel,
+  channels: initChannels(),
   memory: createAgentMemory(),
-  defaultOptions: agentDefaultOptions.supervisor,
+  workspace,
+  defaultOptions: {
+    ...agentDefaultOptions.supervisor,
+    delegation: createDelegationObservabilityOptions({
+      parentAgentId: "supervisor-agent",
+      parentAgentName: "Supervisor Lead",
+    }),
+  },
   agents: {
     scoutAgent,
     researcherAgent,
@@ -99,7 +62,7 @@ export const supervisorAgent = withAgentModes(new Agent({
     git_snapshot_query: workspaceTools.gitSnapshotQuery,
     capture_snapshot: workspaceTools.captureSnapshot,
   },
-}), agentModesFromPrompts(supervisorModePrompts));
+}), agentModesFromPrompts(supervisorModePrompts, "base"));
 
 export const mastraAgents = {
   orchestratorAgent,

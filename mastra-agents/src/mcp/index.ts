@@ -18,7 +18,7 @@ import { MCPClient } from "@mastra/mcp";
  * - Feature engineering
  * - Reverse engineering
  */
-export const deepWikiMCP = new MCPClient({
+const deepWikiMCP = new MCPClient({
   id: "deepwiki-mcp-client",
   servers: {
     deepwiki: {

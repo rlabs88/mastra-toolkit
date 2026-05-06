@@ -76,7 +76,7 @@ cp .env.example .env
 
 ### 3. Workspace sandbox (optional, for @mastrasystem/agents)
 
-When running inside an existing Daytona sandbox (`DAYTONA_SANDBOX_ID` is present), the Mastra workspace defaults to the current sandbox so agents can see `/home`, `/workspace`, and `/shared` volume mounts. Set `MASTRA_WORKSPACE_SANDBOX=daytona` plus `DAYTONA_API_KEY`/`DAYTONA_API_URL` to force a nested Daytona workspace sandbox.
+The Mastra workspace defaults to the current sandbox/local environment with filesystem access limited to the user home directory, `/container`, and `/shared`, so agents can inspect normal coding-agent paths without reading root-owned system areas such as `/root` or `/etc/systemd`. Set `MASTRA_WORKSPACE_ACCESS_ROOTS` to override file-tool roots. Set `MASTRA_WORKSPACE_SANDBOX=daytona` plus `DAYTONA_API_KEY`/`DAYTONA_API_URL` to force a nested Daytona workspace sandbox.
 
 ## Environment variables
 
@@ -88,8 +88,9 @@ When running inside an existing Daytona sandbox (`DAYTONA_SANDBOX_ID` is present
 | `DAYTONA_API_KEY` | Daytona sandbox API |
 | `MASTRA_DAYTONA_ENDPOINT` | Daytona server endpoint |
 | `MASTRA_WORKSPACE_SANDBOX` | `auto`/empty, `local`, or `daytona` workspace command sandbox |
-| `MASTRA_WORKSPACE_ACCESS_ROOTS` | Comma-separated absolute file-tool roots (defaults to `/` inside Daytona; use `/home/daytona,/shared` to narrow) |
+| `MASTRA_WORKSPACE_ACCESS_ROOTS` | Comma-separated absolute file-tool roots (defaults to the user home directory, `/container`, and `/shared`) |
 | `MASTRA_WORKSPACE_COMMAND_CWD` | Command cwd for the local/current sandbox workspace |
+| `MASTRA_WORKSPACE_LOCAL_ISOLATION` | Local command isolation backend: `bwrap`, `seatbelt`, or `none` (defaults to the detected native backend when available) |
 | `MASTRA_CODE_MODEL` | Orchestrator model (default: rl/gpt-5.5) |
 | `MASTRA_SUBAGENT_MODEL` | Subagent model (default: minimax-coding-plan/MiniMax-M2.7) |
 

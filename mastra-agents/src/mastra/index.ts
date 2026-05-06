@@ -3,6 +3,7 @@ import { SpanType } from "@mastra/core/observability";
 import { FilesystemStore, MastraCompositeStore } from "@mastra/core/storage";
 import { DuckDBStore } from "@mastra/duckdb";
 import { MastraEditor } from "@mastra/editor";
+import { MCPServer } from "@mastra/mcp";
 import {
   DefaultExporter,
   Observability,
@@ -11,11 +12,15 @@ import {
 import { PostgresStore } from "@mastra/pg";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import type { ApiRoute } from "@mastra/core/server";
 
 import { mastraAgents } from "../agents/agent.js";
+import { channelWebhookApiRoutesForAgents } from "../adapters/channels/index.js";
+import { workspaceTools } from "../tools/workspace.js";
 import { daytonaWorkflows } from "../workflows/daytona.js";
 import { asyncAgentJobWorkflows } from "../workflows/async-agent-job.js";
 import { workspaceWorkflows } from "../workflows/workspace.js";
+import { ProxyGateway } from "../models/proxy-gateway.js";
 import { resolveWorkspacePath, workspace } from "../workspace.js";
 
 const postgresStorage = new PostgresStore({
@@ -48,6 +53,7 @@ const storage = new MastraCompositeStore({
     observability: observabilityStorage.observability,
   },
 });
+
 const editor = new MastraEditor();
 
 const serverPort = Number(
@@ -62,6 +68,94 @@ const studioPort = Number(
 );
 const studioProtocol =
   process.env.MASTRA_SERVER_STUDIO_PROTOCOL === "https" ? "https" : "http";
+
+const workflows = {
+  ...daytonaWorkflows,
+  ...asyncAgentJobWorkflows,
+  ...workspaceWorkflows,
+};
+const channelApiRoutes = channelWebhookApiRoutesForAgents(mastraAgents);
+
+type LinearOAuthAdapter = {
+  handleOAuthCallback: (
+    request: Request,
+    options: { redirectUri: string },
+  ) => Promise<{ organizationId: string; installation: unknown }>;
+  isMultiTenantMode?: () => boolean;
+  setInstallation?: (organizationId: string, installation: unknown) => Promise<void>;
+};
+
+function isLinearOAuthAdapter(adapter: unknown): adapter is LinearOAuthAdapter {
+  return Boolean(
+    adapter &&
+      typeof adapter === "object" &&
+      "handleOAuthCallback" in adapter &&
+      typeof (adapter as { handleOAuthCallback?: unknown }).handleOAuthCallback === "function",
+  );
+}
+
+const linearCallbackApiRoute = {
+  path: "/api/linear/callback",
+  method: "GET",
+  _mastraInternal: true,
+  requiresAuth: false,
+  createHandler: async ({ mastra }) => {
+    return async (c) => {
+      const redirectUri = process.env.LINEAR_REDIRECT_URI?.trim();
+      if (!redirectUri) {
+        return c.json({ error: "LINEAR_REDIRECT_URI is not configured" }, 400);
+      }
+      if (!c.req.query("code") && !c.req.query("error")) {
+        return c.json({ error: "Missing Linear OAuth code" }, 400);
+      }
+
+      const linearAdapters: LinearOAuthAdapter[] = [];
+      for (const agent of Object.values(mastraAgents)) {
+        const channels = agent.getChannels?.();
+        if (!channels) continue;
+        if (!channels.sdk) {
+          await channels.initialize?.(mastra);
+        }
+
+        const adapter = channels.adapters?.linear;
+        if (isLinearOAuthAdapter(adapter)) {
+          linearAdapters.push(adapter);
+        }
+      }
+
+      const primaryAdapter =
+        linearAdapters.find((adapter) => adapter.isMultiTenantMode?.()) ?? linearAdapters[0];
+      if (!primaryAdapter) {
+        return c.json({ error: "Linear OAuth adapter is not enabled" }, 503);
+      }
+
+      const result = await primaryAdapter.handleOAuthCallback(c.req.raw, {
+        redirectUri,
+      });
+
+      await Promise.all(
+        linearAdapters
+          .filter((adapter) => adapter !== primaryAdapter && adapter.setInstallation)
+          .map((adapter) => adapter.setInstallation?.(result.organizationId, result.installation)),
+      );
+
+      return c.json({
+        installed: true,
+        organizationId: result.organizationId,
+      });
+    };
+  },
+} satisfies ApiRoute;
+
+const projectMCPServer = new MCPServer({
+  id: "project-mcp-server",
+  name: "Project MCP Server",
+  version: "0.1.0",
+  description: "Exposes Mastra agents, tools, and workflows to external MCP clients.",
+  tools: workspaceTools,
+  agents: mastraAgents,
+  workflows,
+});
 
 function localCorsOriginsForPort(port: string | undefined) {
   if (!port) return [];
@@ -91,13 +185,13 @@ function configuredCorsOrigins() {
 
 export const mastra = new Mastra({
   agents: mastraAgents,
-  workflows: {
-    ...daytonaWorkflows,
-    ...asyncAgentJobWorkflows,
-    ...workspaceWorkflows,
+  gateways: {
+    proxy: new ProxyGateway(),
   },
+  workflows,
   storage,
   editor,
+  mcpServers: { project: projectMCPServer },
   observability: new Observability({
     configs: {
       default: {
@@ -135,6 +229,7 @@ export const mastra = new Mastra({
               "MASTRA_OPENAI_API_KEY",
               "MASTRA_ANTHROPIC_API_KEY",
               "MASTRA_MINIMAX_API_KEY",
+              "PROXY_API_KEY",
               "CLI_PROXY_API_KEY",
               "CLI_PROXY_STACK_API_KEY",
               "GH_TOKEN",
@@ -154,6 +249,7 @@ export const mastra = new Mastra({
   server: {
     host: process.env.MASTRA_SERVER_HOST ?? "0.0.0.0",
     port: serverPort,
+    apiRoutes: [...channelApiRoutes, linearCallbackApiRoute],
     studioHost: process.env.MASTRA_SERVER_STUDIO_HOST ?? "localhost",
     studioProtocol,
     studioPort,

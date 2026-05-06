@@ -10,12 +10,14 @@ import {
 import { sharedPolicyPrompts } from "../prompts/policy.js";
 import { sharedToolPrompts } from "../prompts/tools.js";
 import { workspaceTools } from "../tools/workspace.js";
+import { workspace } from "../workspace.js";
 import { advisorAgent } from "./advisor-agent.js";
 import { architectAgent } from "./architect-agent.js";
+import { createDelegationObservabilityOptions } from "./delegation-observability.js";
 import { developerAgent } from "./developer-agent.js";
 import { researcherAgent } from "./researcher-agent.js";
 import { scoutAgent } from "./scout-agent.js";
-import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, defaultSupervisorModel, withAgentModes } from "./shared.js";
+import { agentDefaultOptions, agentModesFromPrompts, composeAgentInstructions, createAgentMemory, resolveRuntimeModel, withAgentModes } from "./shared.js";
 import { validatorAgent } from "./validator-agent.js";
 
 export const orchestratorAgent = withAgentModes(new Agent({
@@ -24,15 +26,22 @@ export const orchestratorAgent = withAgentModes(new Agent({
   description: orchestratorAgentDescription,
   instructions: composeAgentInstructions(
     orchestratorInstructionsPrompt,
-    orchestratorModePrompts.balanced,
+    orchestratorModePrompts.auto,
     sharedPolicyPrompts.supervisor,
     sharedToolPrompts.supervisor,
     orchestratorPolicyPrompts,
     orchestratorToolPrompts,
   ),
-  model: defaultSupervisorModel,
+  model: resolveRuntimeModel,
   memory: createAgentMemory(),
-  defaultOptions: agentDefaultOptions.orchestrator,
+  workspace,
+  defaultOptions: {
+    ...agentDefaultOptions.orchestrator,
+    delegation: createDelegationObservabilityOptions({
+      parentAgentId: "orchestrator-agent",
+      parentAgentName: "Orchestrator",
+    }),
+  },
   agents: {
     scoutAgent,
     researcherAgent,
@@ -50,4 +59,4 @@ export const orchestratorAgent = withAgentModes(new Agent({
     git_snapshot_query: workspaceTools.gitSnapshotQuery,
     capture_snapshot: workspaceTools.captureSnapshot,
   },
-}), agentModesFromPrompts(orchestratorModePrompts));
+}), agentModesFromPrompts(orchestratorModePrompts, "auto"));

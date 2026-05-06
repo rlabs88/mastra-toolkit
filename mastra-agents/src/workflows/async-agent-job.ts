@@ -23,6 +23,7 @@ import {
 import { captureTurnSnapshot, initializeSessionSnapshot, type SnapshotCapture } from "../tools/snapshots.js";
 import { resolveWorkspacePath } from "../workspace.js";
 import { setSessionId } from "../session.js";
+import { delegationPayloadFromEvent, subscribeDelegationEvents } from "./delegation-event.js";
 
 const inputArgsSchema = z.record(z.string()).optional();
 const modePromptTrackerStore = new PostgresStore({
@@ -144,6 +145,8 @@ export const runAsyncAgentJobStep = createStep({
         [REQUEST_CONTEXT_HARNESS_MODE_KEY]: resolvedMode.harnessMode,
         [REQUEST_CONTEXT_HARNESS_MODE_ID_KEY]: resolvedMode.harnessModeId,
         [REQUEST_CONTEXT_HARDNESS_MODE_KEY]: resolvedMode.harnessModeId,
+        ...(resolvedMode.supervisorScope ? { supervisorScope: resolvedMode.supervisorScope } : {}),
+        ...(resolvedMode.orchestratorMode ? { orchestratorMode: resolvedMode.orchestratorMode } : {}),
         ...(inputData.input_args && Object.keys(inputData.input_args).length > 0 ? { input_args: inputData.input_args } : {}),
         snapshotRepoPath: initialSnapshot.snapshotRepoPath,
         snapshot: initialSnapshot.snapshot,
@@ -510,6 +513,14 @@ async function streamHarnessMessage({
       return;
     }
 
+    if (event.type === "delegation_start" || event.type === "delegation_complete") {
+      emitChunk({
+        type: "delegation-event",
+        payload: delegationPayloadFromEvent(event),
+      });
+      return;
+    }
+
     if (event.type === "error") {
       emitChunk({
         type: "error",
@@ -520,6 +531,16 @@ async function streamHarnessMessage({
 
   const onAbort = () => harness.abort();
   abortSignal?.addEventListener("abort", onAbort, { once: true });
+  const unsubscribeDelegationEvents = subscribeDelegationEvents((payload) => {
+    if (!isCurrentRunDelegationPayload(payload, threadId, resourceId)) {
+      return;
+    }
+
+    emitChunk({
+      type: "delegation-event",
+      payload,
+    });
+  });
 
   try {
     await harness.init();
@@ -532,6 +553,8 @@ async function streamHarnessMessage({
       activeAgentId: resolvedMode.activeAgentId,
       harnessMode: resolvedMode.harnessMode,
       harnessModeId: resolvedMode.harnessModeId,
+      supervisorScope: resolvedMode.supervisorScope,
+      orchestratorMode: resolvedMode.orchestratorMode,
       hardnessMode: resolvedMode.harnessModeId,
     });
     const shouldSubmitModePrompt = await shouldSubmitHarnessModePrompt({
@@ -570,8 +593,21 @@ async function streamHarnessMessage({
   } finally {
     await writeQueue;
     abortSignal?.removeEventListener("abort", onAbort);
+    unsubscribeDelegationEvents();
     unsubscribe();
   }
+}
+
+function isCurrentRunDelegationPayload(
+  payload: unknown,
+  threadId: string,
+  resourceId: string,
+): payload is Record<string, unknown> {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return payload.threadId === threadId && payload.resourceId === resourceId;
 }
 
 function requestContextFromRecord(
