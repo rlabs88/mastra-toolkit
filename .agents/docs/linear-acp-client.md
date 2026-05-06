@@ -1,66 +1,47 @@
-# linear-acp-client
+# Linear ACP Adapter Extraction
 
-linear-acp-client is the new Linear app path for direct Linear Agent Session integration. Palmer remains the legacy Chat SDK Linear channel during migration.
+The direct Linear Agent Session to ACP bridge now lives in the private `EugeneChan00/linear-acp-adapter` repo.
 
-## Route
+This repo keeps the Mastra ACP agent/server surface in `mastra-agents/acp/*` and the Palmer Chat SDK Linear channel under `mastra-agents/src/adapters/channels/linear/*`. The extracted adapter owns Linear OAuth, webhook verification, Linear Agent Activity rendering, adapter state, and ACP client transport configuration.
 
-linear-acp-client registers one webhook route when explicitly enabled:
+## Deployment Boundary
 
 ```txt
-POST /api/linear-acp-client/linear/webhook
+Linear Agent Session
+  -> linear-acp-adapter
+  -> Mastra ACP target by stdio command/args or future ACP URL
+  -> Mastra runtime
 ```
 
-Required runtime env:
+Use `LINEAR_ACP_ADAPTER_*` env keys in the adapter repo. Do not add another first-class Linear ACP app config surface to `mastra-system`.
+
+## Mastra Integration
+
+The adapter should be coupled as a deployment neighbor to `mastra-server`, not imported into Mastra code. In local Docker, the adapter can launch:
 
 ```txt
-LINEAR_ACP_CLIENT_WEBHOOK_SECRET=<linear webhook secret, or leave empty to reuse LINEAR_WEBHOOK_SECRET>
-```
-
-The route is active when a Linear webhook secret is available. Set `ENABLE_LINEAR_ACP_CLIENT=false` to force-disable it.
-
-Outbound Linear SDK writes reuse the current Chat SDK Linear OAuth installation by default. The bridge reads `linear:installation:{organizationId}` from `@chat-adapter/state-pg` using `DATABASE_URL` and `MASTRA_CHANNEL_STATE_PREFIX`, then passes the stored access token into `@linear/sdk`.
-
-Set `ENABLE_LINEAR_OAUTH_CALLBACK=true` to keep the existing `/api/linear/callback` route active through the Chat SDK Linear OAuth adapter while `ENABLE_LINEAR_CHANNEL=false` keeps the legacy webhook route unexposed.
-
-`LINEAR_ACP_CLIENT_ACCESS_TOKEN` or `LINEAR_ACP_CLIENT_API_KEY` can still be used as manual smoke-test overrides.
-
-Optional env:
-
-```txt
-LINEAR_ACP_CLIENT_WEBHOOK_PATH=/api/linear-acp-client/linear/webhook
-LINEAR_ACP_CLIENT_DATABASE_URL=postgresql://mastra:mastra@mastra-postgres:5432/mastra
-LINEAR_ACP_CLIENT_OAUTH_STATE_PREFIX=mastra-agents-channels
-LINEAR_ACP_CLIENT_CLIENT_ID=<defaults to LINEAR_CLIENT_ID>
-LINEAR_ACP_CLIENT_CLIENT_SECRET=<defaults to LINEAR_CLIENT_SECRET>
-LINEAR_ACP_CLIENT_STATE_FILE=.mastra/linear-acp-client-state.json
-LINEAR_ACP_CLIENT_CREATE_AS_USER=linear-acp-client
-LINEAR_ACP_CLIENT_ACP_COMMAND=node
-LINEAR_ACP_CLIENT_ACP_ARGS='["compiled/mastra-agents/acp/stdio.js","--agent-id","supervisor-agent"]'
-LINEAR_ACP_CLIENT_ACP_CWD=/container/shared/workspace/projects/mastra-system-rt88-90-acp-linear
-LINEAR_ACP_CLIENT_ACP_AGENT_ID=supervisor-agent
-LINEAR_ACP_CLIENT_MASTRA_BASE_URL=http://mastra-server:4111
-LINEAR_ACP_CLIENT_EXTERNAL_URLS='Runtime|https://example.test/session'
+node compiled/mastra-agents/acp/stdio.js --agent-id supervisor-agent --mastra-base-url http://mastra-server:4111
 ```
 
 ## Interface Boundaries
 
-Linear Agent Session is the durable Linear runtime surface for a user interaction with linear-acp-client. It maps one-to-one to a persisted linear-acp-client session binding and carries the ACP session id once created.
+Linear Agent Session is the durable Linear runtime surface for a user interaction with the extracted adapter. It maps one-to-one to an adapter-owned session binding and carries the ACP session id once created.
 
-ACP session is the durable agent execution surface. linear-acp-client reuses the ACP session id attached to a Linear Agent Session when a later `prompted` webhook arrives.
+ACP session is the durable agent execution surface. The adapter reuses the ACP session id attached to a Linear Agent Session when a later `prompted` webhook arrives, subject to the target ACP server's advertised `loadSession` support.
 
-Linear Agent Activity is the streaming runtime surface. linear-acp-client writes tool calls as `action`, agent replies as `response`, thoughts as ephemeral `thought`, and failures as `error`.
+Linear Agent Activity is the streaming runtime surface. The adapter writes tool calls as `action`, agent replies as `response`, thoughts as ephemeral `thought`, and failures as `error`.
 
-Linear comment is the issue-visible observability surface. linear-acp-client creates one comment per Linear issue/session binding and updates it as observable ACP events arrive.
+Linear comment is the issue-visible observability surface. The adapter creates one comment per Linear issue/session binding and updates it as observable ACP events arrive.
 
-Thread remains owned by the legacy Palmer Chat SDK adapter. linear-acp-client does not depend on Chat SDK thread state.
+Mastra thread and resource ids remain owned by the Mastra ACP target. The adapter should pass through ACP session identity and avoid inventing Mastra memory identifiers unless the ACP target explicitly exposes them.
 
 ## Observability Event Contract
 
 Layer 1 already exists in the ACP adapter: Mastra runtime event to ACP runtime event.
 
-Layer 2 is owned by linear-acp-client: ACP runtime event to Linear runtime event.
+Layer 2 is owned by the extracted adapter: ACP runtime event to Linear runtime event.
 
-| ACP update | linear-acp-client event | Linear surface |
+| ACP update | adapter event | Linear surface |
 | --- | --- | --- |
 | `agent_message_chunk` | `agent.response.delta` | response buffer, issue observability comment |
 | `agent_thought_chunk` | `agent.thought.delta` | ephemeral thought activity, issue observability comment buffer |
@@ -90,6 +71,6 @@ The issue-visible comment must account for payload content by case:
 - ACP session id.
 - Observability comment id.
 - Processed webhook ids.
-- Emitted linear-acp-client event ids.
+- Emitted adapter event ids.
 - Per-turn response and thought text.
 - Latest snapshot for each tool call.

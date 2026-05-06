@@ -65,19 +65,11 @@ The Linear OAuth app should enable both Comments and Agent session events, plus 
 
 Use `npm run linear:install-url` to generate the Linear app-actor install URL from `LINEAR_CLIENT_ID`, `LINEAR_REDIRECT_URI`, and `LINEAR_OAUTH_SCOPES`. This is an operator helper only; runtime traffic still uses the Mastra channel webhook route.
 
-## linear-acp-client Integration
+## Linear ACP Adapter
 
-`linear-acp-client` is the direct Linear Agent Session to ACP bridge. It is separate from the Palmer webhook path, but can reuse the Chat SDK Linear OAuth installation stored in Postgres.
+The direct Linear Agent Session to ACP bridge has been extracted to the private `EugeneChan00/linear-acp-adapter` repo. This repo should keep owning the Mastra ACP agent/server and Palmer Chat SDK channel, while the extracted adapter owns Linear app OAuth, webhooks, rendering, and adapter state.
 
-- Webhook endpoint: `/api/linear-acp-client/linear/webhook`
-- Enablement: active when a Linear webhook secret is configured; set `ENABLE_LINEAR_ACP_CLIENT=false` to force-disable
-- Required webhook secret: `LINEAR_ACP_CLIENT_WEBHOOK_SECRET`; falls back to `LINEAR_WEBHOOK_SECRET`
-- Default outbound auth: Chat SDK OAuth installation state at `linear:installation:{organizationId}`
-- Optional outbound auth overrides: `LINEAR_ACP_CLIENT_API_KEY` or `LINEAR_ACP_CLIENT_ACCESS_TOKEN`
-- Default state file: `.mastra/linear-acp-client-state.json`
-
-For end-to-end testing with the current Linear OAuth app, keep the Chat SDK OAuth credentials available, set `ENABLE_LINEAR_OAUTH_CALLBACK=true`, install the app so Postgres contains the `linear:installation:{organizationId}` row, set `ENABLE_LINEAR_ACP_CLIENT=true`, and leave `ENABLE_LINEAR_CHANNEL=false` unless the legacy webhook route is intentionally being tested.
-The existing `/api/linear/callback` route is then handled by the Chat SDK Linear OAuth adapter, while the legacy Linear webhook route remains unexposed.
+For Docker development, run `linear-acp-adapter` as a neighboring service and point it at this repo's ACP binary or future ACP endpoint. Configure the extracted adapter with `LINEAR_ACP_ADAPTER_*` env keys rather than adding a second first-class Linear app surface here.
 
 ## GitHub Channel Integration
 
@@ -165,5 +157,6 @@ https://webbb.renaissancelab.org/api/agents/orchestrator-agent/channels/github/w
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/slack/webhook
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/linear/webhook
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/github/webhook
-https://webbb.renaissancelab.org/api/linear-acp-client/linear/webhook
 ```
+
+The Linear ACP adapter has its own deployment and webhook route in the `linear-acp-adapter` repo.
