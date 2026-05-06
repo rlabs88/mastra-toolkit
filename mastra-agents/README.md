@@ -65,12 +65,6 @@ The Linear OAuth app should enable both Comments and Agent session events, plus 
 
 Use `npm run linear:install-url` to generate the Linear app-actor install URL from `LINEAR_CLIENT_ID`, `LINEAR_REDIRECT_URI`, and `LINEAR_OAUTH_SCOPES`. This is an operator helper only; runtime traffic still uses the Mastra channel webhook route.
 
-## Linear ACP Adapter
-
-The direct Linear Agent Session to ACP bridge has been extracted to the private `EugeneChan00/linear-acp-adapter` repo. This repo should keep owning the Mastra ACP agent/server and Palmer Chat SDK channel, while the extracted adapter owns Linear app OAuth, webhooks, rendering, and adapter state.
-
-For Docker development, run `linear-acp-adapter` as a neighboring service and point it at this repo's ACP binary or future ACP endpoint. Configure the extracted adapter with `LINEAR_ACP_ADAPTER_*` env keys rather than adding a second first-class Linear app surface here.
-
 ## GitHub Channel Integration
 
 The shared `orchestratorAgent` and `supervisorAgent` support Mastra Channels with the official Chat SDK GitHub adapter.
@@ -158,5 +152,3 @@ https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/slack/webh
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/linear/webhook
 https://webbb.renaissancelab.org/api/agents/supervisor-agent/channels/github/webhook
 ```
-
-The Linear ACP adapter has its own deployment and webhook route in the `linear-acp-adapter` repo.

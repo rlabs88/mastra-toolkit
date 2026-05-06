@@ -25,7 +25,6 @@
     "@chat-adapter/slack": "^4.27.0",
     "@chat-adapter/state-pg": "^4.27.0",
     "@daytona/sdk": "0.169.0",
-    "@linear/sdk": "^83.0.0",
     "@mastra/core": "1.32.1",
     "@mastra/daytona": "0.3.0",
     "@mastra/duckdb": "1.2.0",
