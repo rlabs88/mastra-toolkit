@@ -121,7 +121,7 @@ From the Docker host, the default endpoints are:
 
 ```text
 http://localhost:4111
-postgresql://mastra:mastra@localhost:5432/mastra
+postgresql://mastra:mastra@localhost:5433/mastra
 ```
 
 Set `MASTRA_SERVER_HOST_PORT` or `POSTGRES_HOST_PORT` if either host port is already in use.
