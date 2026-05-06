@@ -1,6 +1,6 @@
 import type { StreamChunk } from "chat";
 
-import { summarizeForChannel, stringifyForChannel, stripToolPrefix } from "./text-format.js";
+import { stringifyForChannel, stripToolPrefix } from "./text-format.js";
 
 type MastraChunk = {
   type?: string;
@@ -34,7 +34,7 @@ export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | 
 
   if (chunk.type === "reasoning-delta") {
     const text = typeof payload.text === "string" ? payload.text : "Thinking...";
-    return { type: "markdown_text", text: summarizeForChannel(text, 220) };
+    return { type: "markdown_text", text };
   }
 
   if (chunk.type === "tool-call") {
@@ -42,7 +42,7 @@ export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | 
       type: "task_update",
       id: toolChunkId(payload),
       title: toolChunkTitle(payload),
-      details: summarizeForChannel(payload.args ?? {}, 500),
+      details: stringifyForChannel(payload.args ?? {}, 2000),
       status: "in_progress",
     };
   }
@@ -53,7 +53,7 @@ export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | 
       type: "task_update",
       id: toolChunkId(payload),
       title: toolChunkTitle(payload),
-      output: stringifyForChannel(payload.result, isError ? 1200 : 1800),
+      output: stringifyForChannel(payload.result, isError ? 2000 : 4000),
       status: isError ? "error" : "complete",
     };
   }
@@ -63,7 +63,7 @@ export function mastraChunkToChatStreamChunk(chunk: MastraChunk): StreamChunk | 
       type: "task_update",
       id: toolChunkId(payload),
       title: toolChunkTitle(payload),
-      output: stringifyForChannel(payload.error, 1200),
+      output: stringifyForChannel(payload.error, 2000),
       status: "error",
     };
   }
@@ -92,7 +92,7 @@ export async function* bridgeMastraStreamToChatChunks(chunks: AsyncIterable<Mast
     if (!mapped) continue;
 
     if (mapped.type === "task_update" && pendingReasoning) {
-      yield { type: "markdown_text", text: summarizeForChannel(pendingReasoning, 220) };
+      yield { type: "markdown_text", text: pendingReasoning };
       pendingReasoning = "";
     }
 
