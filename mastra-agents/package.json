@@ -9,6 +9,7 @@
   "scripts": {
     "acp": "npm run acp:build && node ../compiled/mastra-agents/acp/stdio.js",
     "acp:build": "tsc --ignoreConfig --target ESNext --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --types node --rootDir acp --outDir ../compiled/mastra-agents/acp --declaration acp/*.ts",
+    "acp:pack": "npm run acp:build && node scripts/pack-acp.mjs",
     "acp:smoke": "npm run acp:build && node ../compiled/mastra-agents/acp/smoke-client.js",
     "dev": "node scripts/with-env.mjs mastra dev",
     "linear:install-url": "node scripts/linear-install-url.mjs",

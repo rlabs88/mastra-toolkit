@@ -7,32 +7,33 @@ Use this when `mastra-agents-acp` needs to be installed as a user-global binary 
 From the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-system/mastra-agents
-npm run acp:build
-npm version patch --no-git-tag-version
-npm pack
+cd /container/shared/workspace/projects/mastra-system
+npm run acp:pack --workspace mastra-agents
 ```
 
 This creates a package like:
 
 ```bash
-mastrasystem-agents-0.1.1.tgz
+compiled/mastra-agents/tarballs/mastrasystem-agents-0.1.0.tgz
 ```
 
-If the version should not be bumped, skip `npm version patch --no-git-tag-version`, but prefer bumping before sharing upgrades so the receiving machine can clearly identify the installed build.
+If the version should be bumped before sharing an upgrade, update `mastra-agents/package.json` first. Do not use raw `npm pack --workspace mastra-agents` for ACP distribution because the workspace package's development `bin` points at ignored repo-local compiled output.
 
 ## Install On Another Machine
 
 Copy the `.tgz` file to the target machine, then install it globally for the current user:
 
 ```bash
-npm install -g ./mastrasystem-agents-0.1.1.tgz
+mkdir -p "$HOME/.local/bin"
+npm install -g --prefix "$HOME/.local" ./mastrasystem-agents-0.1.0.tgz
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile";; esac
 ```
 
 Verify the binary:
 
 ```bash
 command -v mastra-agents-acp
+readlink -f "$(command -v mastra-agents-acp)"
 mastra-agents-acp --agent-id orchestrator-agent --cwd "$PWD" --mastra-base-url http://127.0.0.1:4111
 ```
 
@@ -58,16 +59,14 @@ Do not use `rl/openai/...` model IDs for this ACP app. The Mastra gateway regist
 On the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-system/mastra-agents
-npm run acp:build
-npm version patch --no-git-tag-version
-npm pack
+cd /container/shared/workspace/projects/mastra-system
+npm run acp:pack --workspace mastra-agents
 ```
 
 On the target machine:
 
 ```bash
-npm install -g ./mastrasystem-agents-0.1.2.tgz
+npm install -g --prefix "$HOME/.local" ./mastrasystem-agents-0.1.0.tgz
 ```
 
 Reinstalling a newer tarball updates the global `mastra-agents-acp` command.
