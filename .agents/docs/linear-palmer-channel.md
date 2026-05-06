@@ -41,6 +41,8 @@ scope=read,write,comments:create,issues:create,app:mentionable,app:assignable
 Runtime env should use app-tenant OAuth credentials:
 
 ```txt
+ENABLE_LINEAR_CHANNEL=true
+ENABLE_LINEAR_OAUTH_CALLBACK=true
 LINEAR_BOT_USERNAME=Palmer
 LINEAR_CHANNEL_MODE=agent-sessions
 LINEAR_MODE=agent-sessions
@@ -50,6 +52,8 @@ LINEAR_REDIRECT_URI=https://webbb.renaissancelab.org/api/linear/callback
 LINEAR_WEBHOOK_SECRET=<linear webhook secret>
 LINEAR_OAUTH_SCOPES=read,write,comments:create,issues:create,app:mentionable,app:assignable
 ```
+
+During ACP migration, `ENABLE_LINEAR_CHANNEL=false` and `ENABLE_LINEAR_OAUTH_CALLBACK=true` keeps the OAuth installation callback available without exposing the legacy Chat SDK Linear webhook route.
 
 Leave personal fallback auth empty for this app-actor install:
 

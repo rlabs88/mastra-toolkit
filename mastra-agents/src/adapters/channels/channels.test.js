@@ -166,6 +166,7 @@ test("enabled channels generate supervisor webhook routes", () => {
     ENABLE_GITHUB_CHANNEL: "true",
     GITHUB_WEBHOOK_SECRET: "github-secret",
     GITHUB_TOKEN: "github-token",
+    ENABLE_LINEAR_CHANNEL: "true",
     LINEAR_WEBHOOK_SECRET: "linear-secret",
     LINEAR_API_KEY: "linear-api-key",
     LINEAR_CHANNEL_MODE: "comments",
@@ -197,6 +198,38 @@ test("enabled channels generate supervisor webhook routes", () => {
   assert.match(state.linearAdapter.sampleToolMessage, /src\/example\.ts/);
   assert.match(state.linearAdapter.sampleErrorMessage, /Error/);
   assert.deepEqual(state.orchestratorRoutes, []);
+});
+
+test("Linear channel stays disabled unless explicitly enabled", () => {
+  buildChannelsBundle();
+  const state = readChannelState({
+    LINEAR_WEBHOOK_SECRET: "linear-secret",
+    LINEAR_API_KEY: "linear-api-key",
+    LINEAR_CHANNEL_MODE: "agent-sessions",
+  });
+
+  assert.deepEqual(state.enabled, []);
+  assert.equal(state.status.linear.enabled, false);
+  assert.equal(state.status.linear.reason, "ENABLE_LINEAR_CHANNEL is not true");
+  assert.deepEqual(state.routes, []);
+});
+
+test("Linear OAuth callback can be enabled without exposing legacy webhook route", () => {
+  buildChannelsBundle();
+  const state = readChannelState({
+    ENABLE_LINEAR_CHANNEL: "false",
+    ENABLE_LINEAR_OAUTH_CALLBACK: "true",
+    LINEAR_WEBHOOK_SECRET: "linear-secret",
+    LINEAR_CLIENT_ID: "linear-client-id",
+    LINEAR_CLIENT_SECRET: "linear-client-secret",
+    LINEAR_CHANNEL_MODE: "agent-sessions",
+  });
+
+  assert.deepEqual(state.enabled, []);
+  assert.equal(state.status.linear.enabled, false);
+  assert.equal(state.status.linear.reason, "ENABLE_LINEAR_CHANNEL is not true");
+  assert.equal(state.linearAdapter.hasOAuthClient, true);
+  assert.deepEqual(state.apiRoutes, []);
 });
 
 test("Slack and GitHub channel connectors are gated independently", () => {
@@ -235,6 +268,7 @@ test("Slack and GitHub channel connectors are gated independently", () => {
 test("Linear multi-tenant OAuth credentials take precedence over API key fallback", () => {
   buildChannelsBundle();
   const state = readChannelState({
+    ENABLE_LINEAR_CHANNEL: "true",
     LINEAR_WEBHOOK_SECRET: "linear-secret",
     LINEAR_API_KEY: "stale-local-api-key",
     LINEAR_CLIENT_ID: "linear-client-id",

@@ -8,7 +8,11 @@ export interface LinearAcpClientConfig {
   webhookSecret?: string;
   linearApiKey?: string;
   linearAccessToken?: string;
+  linearClientId?: string;
+  linearClientSecret?: string;
   linearCreateAsUser?: string;
+  databaseUrl: string;
+  linearOauthStatePrefix: string;
   stateFile: string;
   acpCommand: string;
   acpArgs: string[];
@@ -20,9 +24,20 @@ export interface LinearAcpClientConfig {
 
 export function resolveLinearAcpClientConfig(env: NodeJS.ProcessEnv = process.env): LinearAcpClientConfig {
   const webhookPath = env.LINEAR_ACP_CLIENT_WEBHOOK_PATH?.trim() || "/api/linear-acp-client/linear/webhook";
-  const webhookSecret = env.LINEAR_ACP_CLIENT_WEBHOOK_SECRET?.trim();
+  const webhookSecret = env.LINEAR_ACP_CLIENT_WEBHOOK_SECRET?.trim() || env.LINEAR_WEBHOOK_SECRET?.trim();
   const linearApiKey = env.LINEAR_ACP_CLIENT_API_KEY?.trim();
   const linearAccessToken = env.LINEAR_ACP_CLIENT_ACCESS_TOKEN?.trim();
+  const linearClientId = env.LINEAR_ACP_CLIENT_CLIENT_ID?.trim() || env.LINEAR_CLIENT_ID?.trim();
+  const linearClientSecret = env.LINEAR_ACP_CLIENT_CLIENT_SECRET?.trim() || env.LINEAR_CLIENT_SECRET?.trim();
+  const databaseUrl =
+    env.LINEAR_ACP_CLIENT_DATABASE_URL?.trim() ||
+    env.POSTGRES_URL?.trim() ||
+    env.DATABASE_URL?.trim() ||
+    "postgresql://mastra:mastra@mastra-postgres:5432/mastra";
+  const linearOauthStatePrefix =
+    env.LINEAR_ACP_CLIENT_OAUTH_STATE_PREFIX?.trim() ||
+    env.MASTRA_CHANNEL_STATE_PREFIX?.trim() ||
+    "mastra-agents-channels";
   const acpCwd = env.LINEAR_ACP_CLIENT_ACP_CWD?.trim() || process.cwd();
   const acpAgentId = env.LINEAR_ACP_CLIENT_ACP_AGENT_ID?.trim() || env.MASTRA_ACP_AGENT_ID?.trim() || "supervisor-agent";
   const mastraBaseUrl = env.LINEAR_ACP_CLIENT_MASTRA_BASE_URL?.trim() || env.MASTRA_BASE_URL?.trim() || env.MASTRA_ACP_BASE_URL?.trim();
@@ -34,12 +49,12 @@ export function resolveLinearAcpClientConfig(env: NodeJS.ProcessEnv = process.en
     env.LINEAR_ACP_CLIENT_ACP_ARGS,
     defaultAcpArgs({ acpCwd, acpAgentId, mastraBaseUrl }),
   );
-  const explicitEnable = env.ENABLE_LINEAR_ACP_CLIENT?.trim() === "true";
+  const acpEnable = env.ENABLE_LINEAR_ACP_CLIENT?.trim();
+  const explicitEnable = acpEnable !== "false" && Boolean(webhookSecret);
 
   let disabledReason: string | undefined;
-  if (!explicitEnable) disabledReason = "ENABLE_LINEAR_ACP_CLIENT is not true";
+  if (acpEnable === "false" || !explicitEnable) disabledReason = "ENABLE_LINEAR_ACP_CLIENT is not true";
   else if (!webhookSecret) disabledReason = "LINEAR_ACP_CLIENT_WEBHOOK_SECRET is not set";
-  else if (!linearApiKey && !linearAccessToken) disabledReason = "linear-acp-client Linear auth is not configured";
 
   return {
     enabled: !disabledReason,
@@ -48,7 +63,11 @@ export function resolveLinearAcpClientConfig(env: NodeJS.ProcessEnv = process.en
     webhookSecret,
     linearApiKey,
     linearAccessToken,
+    linearClientId,
+    linearClientSecret,
     linearCreateAsUser: env.LINEAR_ACP_CLIENT_CREATE_AS_USER?.trim() || "linear-acp-client",
+    databaseUrl,
+    linearOauthStatePrefix,
     stateFile,
     acpCommand,
     acpArgs,

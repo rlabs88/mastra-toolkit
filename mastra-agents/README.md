@@ -48,6 +48,8 @@ Recommended Slack behavior for this integration:
 The shared `supervisorAgent` supports the Palmer Linear app actor through Mastra Channels with the official Chat SDK Linear adapter.
 
 - Adapter package: `@chat-adapter/linear`
+- Enable flag: `ENABLE_LINEAR_CHANNEL=true`
+- OAuth-only enable flag: `ENABLE_LINEAR_OAUTH_CALLBACK=true`
 - Required webhook secret: `LINEAR_WEBHOOK_SECRET`
 - Required auth for the production app: `LINEAR_CLIENT_ID` + `LINEAR_CLIENT_SECRET`
 - Required mode for the app actor: `LINEAR_CHANNEL_MODE=agent-sessions`
@@ -55,7 +57,7 @@ The shared `supervisorAgent` supports the Palmer Linear app actor through Mastra
 - Install scopes: `read,write,comments:create,issues:create,app:mentionable,app:assignable`
 - Persistent channel state: `@chat-adapter/state-pg` using `DATABASE_URL`
 
-When configured, Mastra exposes the supervisor-owned webhook endpoint for Palmer Linear events:
+When explicitly enabled and configured, Mastra exposes the supervisor-owned webhook endpoint for Palmer Linear events:
 
 - `/api/agents/supervisor-agent/channels/linear/webhook`
 
@@ -65,15 +67,17 @@ Use `npm run linear:install-url` to generate the Linear app-actor install URL fr
 
 ## linear-acp-client Integration
 
-`linear-acp-client` is the direct Linear Agent Session to ACP bridge. It is separate from Palmer and does not use the Chat SDK Linear adapter.
+`linear-acp-client` is the direct Linear Agent Session to ACP bridge. It is separate from the Palmer webhook path, but can reuse the Chat SDK Linear OAuth installation stored in Postgres.
 
 - Webhook endpoint: `/api/linear-acp-client/linear/webhook`
-- Enable flag: `ENABLE_LINEAR_ACP_CLIENT=true`
-- Required webhook secret: `LINEAR_ACP_CLIENT_WEBHOOK_SECRET`
-- Required outbound Linear auth for smoke testing: `LINEAR_ACP_CLIENT_API_KEY` or `LINEAR_ACP_CLIENT_ACCESS_TOKEN`
+- Enablement: active when a Linear webhook secret is configured; set `ENABLE_LINEAR_ACP_CLIENT=false` to force-disable
+- Required webhook secret: `LINEAR_ACP_CLIENT_WEBHOOK_SECRET`; falls back to `LINEAR_WEBHOOK_SECRET`
+- Default outbound auth: Chat SDK OAuth installation state at `linear:installation:{organizationId}`
+- Optional outbound auth overrides: `LINEAR_ACP_CLIENT_API_KEY` or `LINEAR_ACP_CLIENT_ACCESS_TOKEN`
 - Default state file: `.mastra/linear-acp-client-state.json`
 
-For a production Linear agent app, create a separate Linear OAuth app for `linear-acp-client`, enable Agent session events, request `read,write,comments:create,issues:create,app:mentionable,app:assignable`, and install with `actor=app`. The current bridge can consume an app actor token through env for a smoke test; full multi-workspace OAuth callback and token storage is a follow-up if this app needs normal install/upgrade flow.
+For end-to-end testing with the current Linear OAuth app, keep the Chat SDK OAuth credentials available, set `ENABLE_LINEAR_OAUTH_CALLBACK=true`, install the app so Postgres contains the `linear:installation:{organizationId}` row, set `ENABLE_LINEAR_ACP_CLIENT=true`, and leave `ENABLE_LINEAR_CHANNEL=false` unless the legacy webhook route is intentionally being tested.
+The existing `/api/linear/callback` route is then handled by the Chat SDK Linear OAuth adapter, while the legacy Linear webhook route remains unexposed.
 
 ## GitHub Channel Integration
 

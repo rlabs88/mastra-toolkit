@@ -23,23 +23,15 @@ export interface LinearAcpClientRouteDeps {
 }
 
 export function createLinearAcpClientWebhookRoute(deps: LinearAcpClientRouteDeps = {}): ApiRoute {
-  const config = deps.config ?? resolveLinearAcpClientConfig();
+  const routeConfig = deps.config ?? resolveLinearAcpClientConfig();
   return {
-    path: config.webhookPath,
+    path: routeConfig.webhookPath,
     method: "POST",
     _mastraInternal: true,
     requiresAuth: false,
     createHandler: async () => {
-      const verifier = deps.verifier ?? new LinearSdkWebhookVerifier(config.webhookSecret ?? "");
-      const bridge = new LinearAcpClientBridge({
-        state: deps.state ?? new FileLinearAcpClientStateStore(config.stateFile),
-        linear: deps.linear ?? new LinearAcpClientSdkClient(config),
-        acp: deps.acp ?? new StdioLinearAcpRuntimeClient(config),
-        config,
-        logger: deps.logger,
-      });
-
       return async (c) => {
+        const config = deps.config ?? resolveLinearAcpClientConfig();
         if (!config.enabled) {
           return c.json({ error: config.disabledReason ?? "linear-acp-client is disabled" }, 404);
         }
@@ -49,12 +41,20 @@ export function createLinearAcpClientWebhookRoute(deps: LinearAcpClientRouteDeps
 
         let payload;
         try {
+          const verifier = deps.verifier ?? new LinearSdkWebhookVerifier(config.webhookSecret ?? "");
           const rawBody = Buffer.from(await c.req.raw.arrayBuffer());
           payload = await verifier.parse(rawBody, signature, c.req.raw.headers.get("linear-timestamp"));
         } catch {
           return c.json({ error: "Invalid Linear webhook" }, 400);
         }
 
+        const bridge = new LinearAcpClientBridge({
+          state: deps.state ?? new FileLinearAcpClientStateStore(config.stateFile),
+          linear: deps.linear ?? new LinearAcpClientSdkClient(config),
+          acp: deps.acp ?? new StdioLinearAcpRuntimeClient(config),
+          config,
+          logger: deps.logger,
+        });
         void bridge.handleAgentSessionEvent(payload).catch((error) => {
           deps.logger?.error?.("[linear-acp-client] async webhook handling failed", {
             error: error instanceof Error ? error.message : String(error),
@@ -66,6 +66,6 @@ export function createLinearAcpClientWebhookRoute(deps: LinearAcpClientRouteDeps
   } satisfies ApiRoute;
 }
 
-export function linearAcpClientApiRoutes(config = resolveLinearAcpClientConfig()): ApiRoute[] {
-  return config.enabled ? [createLinearAcpClientWebhookRoute({ config })] : [];
+export function linearAcpClientApiRoutes(config?: LinearAcpClientConfig): ApiRoute[] {
+  return [createLinearAcpClientWebhookRoute(config ? { config } : {})];
 }

@@ -100,6 +100,7 @@ export class MemoryLinearAcpClientStateStore implements LinearAcpClientStateStor
 
 export function createInitialBinding(params: {
   linearAgentSessionId: string;
+  linearOrganizationId?: string;
   linearIssueId?: string;
   linearRootCommentId?: string;
   linearSourceCommentId?: string;
@@ -108,6 +109,7 @@ export function createInitialBinding(params: {
   const now = new Date().toISOString();
   return {
     linearAgentSessionId: params.linearAgentSessionId,
+    linearOrganizationId: params.linearOrganizationId,
     linearIssueId: params.linearIssueId,
     linearRootCommentId: params.linearRootCommentId,
     linearSourceCommentId: params.linearSourceCommentId,

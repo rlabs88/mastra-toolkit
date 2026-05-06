@@ -53,6 +53,7 @@ export function resolveChannelStatus(config: AgentChannelsConfig = {}): ChannelS
         getEnv(config.github?.privateKeyKey ?? "GITHUB_PRIVATE_KEY")),
   );
 
+  const linearEnable = getEnv(config.linear?.enableKey ?? "ENABLE_LINEAR_CHANNEL");
   const linearWebhookSecret = getEnv(config.linear?.webhookSecretKey ?? "LINEAR_WEBHOOK_SECRET");
   const linearClientId = getEnv(config.linear?.clientIdKey ?? "LINEAR_CLIENT_ID");
   const linearClientSecret = getEnv(config.linear?.clientSecretKey ?? "LINEAR_CLIENT_SECRET");
@@ -82,15 +83,25 @@ export function resolveChannelStatus(config: AgentChannelsConfig = {}): ChannelS
             ? { enabled: false, reason: "GitHub auth is not configured" }
             : { enabled: true, mode: "webhook" },
     linear:
-      !linearWebhookSecret
-        ? { enabled: false, reason: "LINEAR_WEBHOOK_SECRET is not set" }
-        : !linearAuthConfigured
-          ? { enabled: false, reason: "Linear auth is not configured" }
-          : { enabled: true, mode: getLinearMode(config) },
+      linearEnable !== "true"
+        ? { enabled: false, reason: "ENABLE_LINEAR_CHANNEL is not true" }
+        : !linearWebhookSecret
+          ? { enabled: false, reason: "LINEAR_WEBHOOK_SECRET is not set" }
+          : !linearAuthConfigured
+            ? { enabled: false, reason: "Linear auth is not configured" }
+            : { enabled: true, mode: getLinearMode(config) },
   };
 }
 
 export const resolveAgentChannelStatus = resolveChannelStatus;
+
+function isLinearOauthCallbackEnabled(config: AgentChannelsConfig = {}) {
+  const enable = getEnv(config.linear?.oauthCallbackEnableKey ?? "ENABLE_LINEAR_OAUTH_CALLBACK");
+  const webhookSecret = getEnv(config.linear?.webhookSecretKey ?? "LINEAR_WEBHOOK_SECRET");
+  const clientId = getEnv(config.linear?.clientIdKey ?? "LINEAR_CLIENT_ID");
+  const clientSecret = getEnv(config.linear?.clientSecretKey ?? "LINEAR_CLIENT_SECRET");
+  return enable === "true" && Boolean(webhookSecret && clientId && clientSecret);
+}
 
 export function listEnabledChannelPlatforms(config: AgentChannelsConfig = {}) {
   const status = resolveChannelStatus(config);
@@ -109,7 +120,7 @@ export function initChannels(config: AgentChannelsConfig = {}) {
     adapters.github = createGitHubChannel();
   }
 
-  if (status.linear.enabled) {
+  if (status.linear.enabled || isLinearOauthCallbackEnabled(config)) {
     installLinearRichStreaming();
     adapters.linear = createLinearChannel(config);
   }

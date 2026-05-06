@@ -19,6 +19,8 @@ export interface AgentChannelsConfig {
     privateKeyKey?: string;
   };
   linear?: {
+    enableKey?: string;
+    oauthCallbackEnableKey?: string;
     webhookSecretKey?: string;
     apiKeyKey?: string;
     accessTokenKey?: string;

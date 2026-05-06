@@ -1,6 +1,11 @@
 import type { AgentChannelsConfig } from "./types.js";
 import { listEnabledChannelPlatforms } from "./init-channels.js";
 
+function shouldExposeChannelWebhookRoute(platform: string) {
+  if (platform !== "linear") return true;
+  return process.env.ENABLE_LINEAR_CHANNEL?.trim() === "true";
+}
+
 export function expectedChannelWebhookRoutes(agentId: string, config: AgentChannelsConfig = {}) {
   return listEnabledChannelPlatforms(config).map((platform) => ({
     method: "POST",
@@ -23,6 +28,8 @@ export function channelWebhookApiRoutesForAgents(
 
   for (const agent of Object.values(agents)) {
     for (const route of agent.getChannels?.()?.getWebhookRoutes?.() ?? []) {
+      const platform = platformForWebhookRoute(route);
+      if (platform && !shouldExposeChannelWebhookRoute(platform)) continue;
       const routeKey = routeKeyFor(route);
       if (seen.has(routeKey)) continue;
       seen.add(routeKey);
@@ -45,4 +52,12 @@ function routeKeyFor(route: unknown) {
   if (!route || typeof route !== "object") return String(route);
   const candidate = route as { method?: unknown; path?: unknown };
   return `${String(candidate.method ?? "")} ${String(candidate.path ?? "")}`;
+}
+
+function platformForWebhookRoute(route: unknown) {
+  if (!route || typeof route !== "object") return undefined;
+  const path = (route as { path?: unknown }).path;
+  if (typeof path !== "string") return undefined;
+  const match = path.match(/\/channels\/([^/]+)\/webhook$/);
+  return match?.[1];
 }

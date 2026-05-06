@@ -31,6 +31,7 @@ export interface LinearAcpClientRuntimeEvent {
 
 export interface LinearAcpClientSessionBinding {
   linearAgentSessionId: string;
+  linearOrganizationId?: string;
   linearIssueId?: string;
   linearRootCommentId?: string;
   linearSourceCommentId?: string;
@@ -61,6 +62,7 @@ export interface LinearAcpClientToolSnapshot {
 export interface LinearAcpClientAgentSessionWebhook {
   action: string;
   type?: string;
+  organizationId?: string;
   webhookId?: string;
   webhookTimestamp?: number;
   promptContext?: string;
@@ -70,6 +72,7 @@ export interface LinearAcpClientAgentSessionWebhook {
   };
   agentSession: {
     id: string;
+    organizationId?: string | null;
     issueId?: string | null;
     commentId?: string | null;
     sourceCommentId?: string | null;
@@ -87,14 +90,15 @@ export interface LinearAcpClientStateStore {
 
 export interface LinearAgentSessionClient {
   createAgentActivity(input: {
+    organizationId?: string;
     agentSessionId: string;
     content: Record<string, unknown>;
     ephemeral?: boolean;
     signal?: string;
   }): Promise<{ id?: string } | unknown>;
-  updateAgentSession(id: string, input: Record<string, unknown>): Promise<unknown>;
-  createComment(input: { issueId: string; body: string; createAsUser?: string }): Promise<{ id?: string } | unknown>;
-  updateComment(id: string, input: { body: string }): Promise<unknown>;
+  updateAgentSession(id: string, input: Record<string, unknown> & { organizationId?: string }): Promise<unknown>;
+  createComment(input: { organizationId?: string; issueId: string; body: string; createAsUser?: string }): Promise<{ id?: string } | unknown>;
+  updateComment(id: string, input: { organizationId?: string; body: string }): Promise<unknown>;
 }
 
 export interface LinearAcpRuntimeClient {

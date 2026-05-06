@@ -39,6 +39,8 @@ export class LinearAcpClientBridge {
     }
 
     const linearAgentSessionId = payload.agentSession.id;
+    const linearOrganizationId =
+      optionalString(payload.organizationId) ?? optionalString(payload.agentSession.organizationId);
     const webhookId = payload.webhookId ?? `${linearAgentSessionId}:${payload.action}:${payload.webhookTimestamp ?? Date.now()}`;
     if (await this.deps.state.hasProcessedWebhook(webhookId)) {
       return { accepted: true, reason: "duplicate_webhook" };
@@ -47,11 +49,15 @@ export class LinearAcpClientBridge {
     const existingBinding = await this.deps.state.getSession(linearAgentSessionId);
     let binding: LinearAcpClientSessionBinding = existingBinding ?? createInitialBinding({
       linearAgentSessionId,
+      linearOrganizationId,
       linearIssueId: optionalString(payload.agentSession.issueId),
       linearRootCommentId: optionalString(payload.agentSession.commentId),
       linearSourceCommentId: optionalString(payload.agentSession.sourceCommentId),
       linearSessionUrl: optionalString(payload.agentSession.url),
     });
+    if (linearOrganizationId && binding.linearOrganizationId !== linearOrganizationId) {
+      binding = { ...binding, linearOrganizationId };
+    }
     await this.deps.state.saveSession(binding);
     await this.deps.state.markWebhookProcessed(webhookId, linearAgentSessionId);
 

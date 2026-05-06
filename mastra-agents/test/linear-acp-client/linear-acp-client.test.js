@@ -26,6 +26,7 @@ function buildLinearAcpClientBundle() {
     "--format=esm",
     `--outfile=${bundlePath}`,
     "--external:@agentclientprotocol/sdk",
+    "--external:@chat-adapter/state-pg",
     "--external:@linear/sdk",
     "--external:@linear/sdk/webhooks",
     "--external:@mastra/core/*",
@@ -74,6 +75,51 @@ test("linear-acp-client normalizes ACP message and tool updates into runtime eve
   assert.deepEqual(tool[0].payload.rawOutput, ["README.md"]);
 });
 
+test("linear-acp-client config can reuse current Linear channel OAuth environment", async () => {
+  buildLinearAcpClientBundle();
+  const { resolveLinearAcpClientConfig } = await importFresh();
+  const config = resolveLinearAcpClientConfig({
+    ENABLE_LINEAR_ACP_CLIENT: "true",
+    LINEAR_WEBHOOK_SECRET: "shared-linear-secret",
+    DATABASE_URL: "postgresql://mastra:mastra@mastra-postgres:5432/mastra",
+    MASTRA_CHANNEL_STATE_PREFIX: "mastra-agents-channels",
+    LINEAR_CLIENT_ID: "linear-client-id",
+    LINEAR_CLIENT_SECRET: "linear-client-secret",
+  });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.webhookSecret, "shared-linear-secret");
+  assert.equal(config.linearOauthStatePrefix, "mastra-agents-channels");
+  assert.equal(config.linearClientId, "linear-client-id");
+  assert.equal(config.linearClientSecret, "linear-client-secret");
+  assert.equal(config.linearApiKey, undefined);
+  assert.equal(config.linearAccessToken, undefined);
+});
+
+test("linear-acp-client config enables ACP when legacy Linear is explicitly disabled", async () => {
+  buildLinearAcpClientBundle();
+  const { resolveLinearAcpClientConfig } = await importFresh();
+  const config = resolveLinearAcpClientConfig({
+    ENABLE_LINEAR_CHANNEL: "false",
+    LINEAR_WEBHOOK_SECRET: "shared-linear-secret",
+  });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.webhookSecret, "shared-linear-secret");
+});
+
+test("linear-acp-client config honors explicit ACP disable", async () => {
+  buildLinearAcpClientBundle();
+  const { resolveLinearAcpClientConfig } = await importFresh();
+  const config = resolveLinearAcpClientConfig({
+    ENABLE_LINEAR_ACP_CLIENT: "false",
+    LINEAR_WEBHOOK_SECRET: "shared-linear-secret",
+  });
+
+  assert.equal(config.enabled, false);
+  assert.equal(config.disabledReason, "ENABLE_LINEAR_ACP_CLIENT is not true");
+});
+
 test("linear-acp-client renders tool and response events to Linear activities and issue observability comment", async () => {
   buildLinearAcpClientBundle();
   const { MemoryLinearAcpClientStateStore, LinearAcpClientBridge } = await importFresh();
@@ -92,11 +138,13 @@ test("linear-acp-client renders tool and response events to Linear activities an
 
   const result = await bridge.handleAgentSessionEvent({
     action: "created",
+    organizationId: "org-1",
     webhookId: "webhook-1",
     webhookTimestamp: Date.now(),
     promptContext: "List files and summarize.",
     agentSession: {
       id: "linear-session-1",
+      organizationId: "org-1",
       issueId: "RT88-90",
       commentId: "comment-root",
       sourceCommentId: "comment-source",
@@ -108,6 +156,7 @@ test("linear-acp-client renders tool and response events to Linear activities an
   assert.equal(acp.calls.length, 1);
   assert.equal(acp.calls[0].prompt, "List files and summarize.");
   assert.equal(linear.sessionUpdates.length, 1);
+  assert.equal(linear.sessionUpdates[0].input.organizationId, "org-1");
   assert.deepEqual(linear.sessionUpdates[0].input.addedExternalUrls, [
     { label: "Runtime", url: "https://runtime.example/session/1" },
   ]);
@@ -151,6 +200,28 @@ test("linear-acp-client derives prompts from prompted Agent Activity payloads", 
   });
 
   assert.equal(acp.calls[0].prompt, "Continue this session.");
+});
+
+test("linear-acp-client resolves Chat SDK OAuth installation tokens by organization", async () => {
+  buildLinearAcpClientBundle();
+  const { ChatSdkLinearOauthAuthProvider } = await importFresh();
+  const state = new FakeChatState({
+    "linear:installation:org-1": {
+      accessToken: "oauth-access-token",
+      expiresAt: Date.now() + 3600_000,
+      organizationId: "org-1",
+    },
+  });
+  const provider = new ChatSdkLinearOauthAuthProvider({
+    databaseUrl: "postgresql://unused",
+    linearOauthStatePrefix: "mastra-agents-channels",
+  }, state);
+
+  assert.equal(await provider.resolveAccessToken("org-1"), "oauth-access-token");
+  await assert.rejects(
+    () => provider.resolveAccessToken("missing-org"),
+    /Linear OAuth installation not found/,
+  );
 });
 
 class FakeAcpClient {
@@ -215,5 +286,25 @@ class FakeLinearClient {
   async updateComment(id, input) {
     this.commentUpdates.push({ id, input });
     return { success: true };
+  }
+}
+
+class FakeChatState {
+  connected = false;
+
+  constructor(values) {
+    this.values = values;
+  }
+
+  async connect() {
+    this.connected = true;
+  }
+
+  async get(key) {
+    return this.values[key] ?? null;
+  }
+
+  async set(key, value) {
+    this.values[key] = value;
   }
 }

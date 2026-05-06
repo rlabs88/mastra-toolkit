@@ -14,6 +14,7 @@ export async function renderLinearAcpClientEvent(params: {
 
   if (event.type === "turn.started" && config.externalUrls.length > 0 && !binding.attachedExternalUrls) {
     await linear.updateAgentSession(binding.linearAgentSessionId, {
+      organizationId: binding.linearOrganizationId,
       addedExternalUrls: config.externalUrls,
     });
     binding.attachedExternalUrls = true;
@@ -21,6 +22,7 @@ export async function renderLinearAcpClientEvent(params: {
 
   if (event.type.startsWith("tool.")) {
     await linear.createAgentActivity({
+      organizationId: binding.linearOrganizationId,
       agentSessionId: binding.linearAgentSessionId,
       content: actionContent(event),
     });
@@ -30,6 +32,7 @@ export async function renderLinearAcpClientEvent(params: {
     const text = stringField(event.payload.text);
     if (text) {
       await linear.createAgentActivity({
+        organizationId: binding.linearOrganizationId,
         agentSessionId: binding.linearAgentSessionId,
         content: { type: "thought", body: truncateMarkdown(text, 1800) },
         ephemeral: true,
@@ -41,6 +44,7 @@ export async function renderLinearAcpClientEvent(params: {
     const body = binding.responseTextByTurn[event.turnId] || stringField(event.payload.responseText) || "";
     if (body.trim()) {
       await linear.createAgentActivity({
+        organizationId: binding.linearOrganizationId,
         agentSessionId: binding.linearAgentSessionId,
         content: { type: "response", body },
       });
@@ -49,6 +53,7 @@ export async function renderLinearAcpClientEvent(params: {
 
   if (event.type === "turn.failed") {
     await linear.createAgentActivity({
+      organizationId: binding.linearOrganizationId,
       agentSessionId: binding.linearAgentSessionId,
       content: { type: "error", body: `linear-acp-client turn failed: ${stringField(event.payload.error) ?? "Unknown error"}` },
     });
@@ -112,11 +117,15 @@ async function upsertObservabilityComment(params: {
   const body = observabilityCommentBody(binding);
 
   if (binding.observabilityCommentId) {
-    await linear.updateComment(binding.observabilityCommentId, { body });
+    await linear.updateComment(binding.observabilityCommentId, {
+      organizationId: binding.linearOrganizationId,
+      body,
+    });
     return;
   }
 
   const result = await linear.createComment({
+    organizationId: binding.linearOrganizationId,
     issueId: binding.linearIssueId,
     body,
     ...(createAsUser ? { createAsUser } : {}),

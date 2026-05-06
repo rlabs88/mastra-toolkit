@@ -13,26 +13,32 @@ POST /api/linear-acp-client/linear/webhook
 Required runtime env:
 
 ```txt
-ENABLE_LINEAR_ACP_CLIENT=true
-LINEAR_ACP_CLIENT_WEBHOOK_SECRET=<linear webhook secret>
-LINEAR_ACP_CLIENT_API_KEY=<linear api key>
+LINEAR_ACP_CLIENT_WEBHOOK_SECRET=<linear webhook secret, or leave empty to reuse LINEAR_WEBHOOK_SECRET>
 ```
 
-`LINEAR_ACP_CLIENT_ACCESS_TOKEN` can be used instead of `LINEAR_ACP_CLIENT_API_KEY`.
+The route is active when a Linear webhook secret is available. Set `ENABLE_LINEAR_ACP_CLIENT=false` to force-disable it.
 
-For a real app install, create a separate Linear OAuth app for `linear-acp-client`, enable Agent session events, request app actor scopes, and install with `actor=app`. This bridge currently accepts the resulting app actor token through env for smoke testing; durable OAuth callback and token storage should be added before multi-workspace production use.
+Outbound Linear SDK writes reuse the current Chat SDK Linear OAuth installation by default. The bridge reads `linear:installation:{organizationId}` from `@chat-adapter/state-pg` using `DATABASE_URL` and `MASTRA_CHANNEL_STATE_PREFIX`, then passes the stored access token into `@linear/sdk`.
+
+Set `ENABLE_LINEAR_OAUTH_CALLBACK=true` to keep the existing `/api/linear/callback` route active through the Chat SDK Linear OAuth adapter while `ENABLE_LINEAR_CHANNEL=false` keeps the legacy webhook route unexposed.
+
+`LINEAR_ACP_CLIENT_ACCESS_TOKEN` or `LINEAR_ACP_CLIENT_API_KEY` can still be used as manual smoke-test overrides.
 
 Optional env:
 
 ```txt
 LINEAR_ACP_CLIENT_WEBHOOK_PATH=/api/linear-acp-client/linear/webhook
+LINEAR_ACP_CLIENT_DATABASE_URL=postgresql://mastra:mastra@mastra-postgres:5432/mastra
+LINEAR_ACP_CLIENT_OAUTH_STATE_PREFIX=mastra-agents-channels
+LINEAR_ACP_CLIENT_CLIENT_ID=<defaults to LINEAR_CLIENT_ID>
+LINEAR_ACP_CLIENT_CLIENT_SECRET=<defaults to LINEAR_CLIENT_SECRET>
 LINEAR_ACP_CLIENT_STATE_FILE=.mastra/linear-acp-client-state.json
 LINEAR_ACP_CLIENT_CREATE_AS_USER=linear-acp-client
 LINEAR_ACP_CLIENT_ACP_COMMAND=node
 LINEAR_ACP_CLIENT_ACP_ARGS='["compiled/mastra-agents/acp/stdio.js","--agent-id","supervisor-agent"]'
 LINEAR_ACP_CLIENT_ACP_CWD=/container/shared/workspace/projects/mastra-system-rt88-90-acp-linear
 LINEAR_ACP_CLIENT_ACP_AGENT_ID=supervisor-agent
-LINEAR_ACP_CLIENT_MASTRA_BASE_URL=http://localhost:4111
+LINEAR_ACP_CLIENT_MASTRA_BASE_URL=http://mastra-server:4111
 LINEAR_ACP_CLIENT_EXTERNAL_URLS='Runtime|https://example.test/session'
 ```
 
