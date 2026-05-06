@@ -12,9 +12,39 @@ class FakeConnection {
   }
 }
 
+class FakeMemoryStore {
+  threads = new Map();
+
+  constructor(threads = []) {
+    for (const thread of threads) this.threads.set(thread.id, thread);
+  }
+
+  async getThreadById({ threadId }) {
+    return this.threads.get(threadId) ?? null;
+  }
+
+  async saveThread({ thread }) {
+    this.threads.set(thread.id, thread);
+    return thread;
+  }
+}
+
 function optionValue(configOptions, id) {
   return configOptions.find((option) => option.id === id)?.currentValue;
 }
+
+test("ACP initialize advertises load and close session recovery primitives", async () => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+  });
+
+  const response = await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+  assert.equal(response.agentCapabilities.loadSession, true);
+  assert.deepEqual(response.agentCapabilities.sessionCapabilities, { close: {} });
+});
 
 test("ACP session config exposes complete canonical mode and model defaults", async () => {
   const conn = new FakeConnection();
@@ -29,6 +59,186 @@ test("ACP session config exposes complete canonical mode and model defaults", as
   assert.equal(optionValue(session.configOptions, "mode"), "base");
   assert.equal(optionValue(session.configOptions, "model"), session.models.currentModelId);
   assert.deepEqual(session.configOptions.map((option) => option.id), ["mode", "model", "thinking"]);
+});
+
+test("ACP new sessions bind request cwd to fallback resource and opaque session thread", async (t) => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/default-cwd",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const session = await agent.newSession({ cwd: "/request-workspace", mcpServers: [] });
+
+  let capturedRequest;
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_url, init) => {
+    capturedRequest = JSON.parse(init.body);
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, statusText: "OK" },
+    );
+  };
+
+  await agent.prompt({
+    sessionId: session.sessionId,
+    prompt: [{ type: "text", text: "Do the work." }],
+  });
+
+  assert.equal(capturedRequest.memory.thread, session.sessionId);
+  assert.match(capturedRequest.memory.resource, /^acp:workspace:[a-f0-9]{12}$/);
+  assert.equal(capturedRequest.requestContext.acp.cwd, "/request-workspace");
+});
+
+test("ACP loadSession restores durable Mastra memory thread binding", async (t) => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore([
+    {
+      id: "existing-session",
+      resourceId: "linear:workspace:root-comment",
+      metadata: {
+        acp: {
+          sessionId: "existing-session",
+          agentId: "supervisor-agent",
+          localCwd: "/workspace-a",
+          threadId: "existing-session",
+          resourceId: "linear:workspace:root-comment",
+          resourceIdSource: "provided",
+          modeId: "exec",
+          modelId: "provider/custom-model",
+          thinkingOptionId: "high",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  ]);
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace-a",
+    mastraBaseUrl: "http://mastra.test",
+    memoryStore,
+  });
+
+  await agent.loadSession({ sessionId: "existing-session", cwd: "/workspace-a", mcpServers: [] });
+
+  let capturedRequest;
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_url, init) => {
+    capturedRequest = JSON.parse(init.body);
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, statusText: "OK" },
+    );
+  };
+
+  await agent.prompt({
+    sessionId: "existing-session",
+    prompt: [{ type: "text", text: "Continue." }],
+  });
+
+  assert.equal(capturedRequest.memory.thread, "existing-session");
+  assert.equal(capturedRequest.memory.resource, "linear:workspace:root-comment");
+  assert.equal(capturedRequest.requestContext.acp.cwd, "/workspace-a");
+});
+
+test("ACP loadSession creates a durable fallback thread when recovery target is missing", async () => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace-a",
+    memoryStore,
+  });
+
+  await agent.loadSession({ sessionId: "missing-session", cwd: "/workspace-a", mcpServers: [] });
+
+  const thread = memoryStore.threads.get("missing-session");
+  assert.equal(thread.id, "missing-session");
+  assert.match(thread.resourceId, /^acp:workspace:[a-f0-9]{12}$/);
+  assert.equal(thread.metadata.acp.localCwd, "/workspace-a");
+  assert.equal(thread.metadata.acp.recoveredFromFallback, true);
+});
+
+test("ACP loadSession rejects durable thread cwd mismatches", async () => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore([
+    {
+      id: "existing-session",
+      resourceId: "acp:workspace:stored",
+      metadata: { acp: { sessionId: "existing-session", localCwd: "/workspace-a", threadId: "existing-session" } },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  ]);
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace-a",
+    memoryStore,
+  });
+
+  await assert.rejects(
+    agent.loadSession({ sessionId: "existing-session", cwd: "/workspace-b", mcpServers: [] }),
+    /cwd mismatch/,
+  );
+});
+
+test("ACP loadSession rejects durable thread resource mismatches", async () => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore([
+    {
+      id: "existing-session",
+      resourceId: "acp:workspace:stored",
+      metadata: { acp: { sessionId: "existing-session", localCwd: "/workspace", threadId: "existing-session" } },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  ]);
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    defaultResourceId: "acp:workspace:requested",
+    memoryStore,
+  });
+
+  await assert.rejects(
+    agent.loadSession({ sessionId: "existing-session", cwd: "/workspace", mcpServers: [] }),
+    /resourceId mismatch/,
+  );
+});
+
+test("ACP closeSession archives local session metadata without deleting durable memory", async () => {
+  const conn = new FakeConnection();
+  const memoryStore = new FakeMemoryStore();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    memoryStore,
+  });
+  const session = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  await agent.closeSession({ sessionId: session.sessionId });
+
+  const thread = memoryStore.threads.get(session.sessionId);
+  assert.equal(thread.id, session.sessionId);
+  assert.equal(thread.metadata.acp.status, "closed");
 });
 
 test("ACP mode config mutation returns full state and keeps legacy mode surface in sync", async () => {

@@ -1,4 +1,4 @@
-import type { AgentSideConnection, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
+import type { AgentSideConnection, InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
 import { buildConfigOptions, loadAcpRuntimeConfig, modeDefinitionForSession, modelOptionsForSession, normalizeModeId, normalizeModelId, type AcpRuntimeConfig } from './config-options.js';
 import { mapMastraChunkToUpdates } from './event-mapper.js';
 import { streamMastraAgent } from './mastra-stream.js';
@@ -8,27 +8,42 @@ import { getSlashCommands } from './slash-commands.js';
 import { resolveThinkingProviderOptions } from './thinking-options.js';
 
 export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: MastraAcpAgentOptions): ACPAgent {
-  const store = new MastraAcpSessionStore();
+  const store = new MastraAcpSessionStore(options.memoryStore);
   const runtimeConfig = () => loadAcpRuntimeConfig(options.agentId, options.mastraBaseUrl);
   return {
     async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
       return {
         protocolVersion: _params.protocolVersion,
         agentCapabilities: {
-          loadSession: false,
+          loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          sessionCapabilities: { close: {} },
         },
         agentInfo: { name: 'Mastra ACP Agent', version: '0.1.0' },
         authMethods: [],
       };
     },
-    async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
       const config = await runtimeConfig();
-      const session = store.create({
+      const session = await store.create({
         agentId: options.agentId,
-        cwd: options.cwd,
+        cwd: params.cwd,
         resourceId: options.defaultResourceId,
         threadId: options.defaultThreadId,
+        defaultModeId: config.defaultModeId,
+        defaultModelId: config.defaultModelId,
+      });
+      await conn.sessionUpdate({ sessionId: session.sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: getSlashCommands() } });
+      return newSessionStateResponse(session, config);
+    },
+    async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+      const config = await runtimeConfig();
+      const session = await store.load({
+        sessionId: params.sessionId,
+        agentId: options.agentId,
+        cwd: params.cwd,
+        resourceId: options.defaultResourceId,
+        threadId: options.defaultThreadId ?? params.sessionId,
         defaultModeId: config.defaultModeId,
         defaultModelId: config.defaultModelId,
       });
@@ -42,7 +57,7 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       const last = params.prompt.findLast((b) => b.type === 'text' && typeof b.text === 'string');
       const content = (last && 'text' in last) ? last.text : '';
       const ac = new AbortController();
-      session.abortController = ac; store.update(session);
+      session.abortController = ac; await store.update(session);
       for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content, config), ac.signal)) {
         for (const update of mapMastraChunkToUpdates(chunk)) {
           await conn.sessionUpdate({ sessionId: session.sessionId, update });
@@ -51,18 +66,18 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       return { stopReason: ac.signal.aborted ? 'cancelled' : 'end_turn' };
     },
     async cancel(params) { const s = store.get(params.sessionId); s?.abortController?.abort(); },
-    async closeSession(params) { store.delete(params.sessionId); },
+    async closeSession(params) { await store.close(params.sessionId); },
     async setSessionMode(params: SetSessionModeRequest) {
       const config = await runtimeConfig();
       const s = store.get(params.sessionId); if (!s) throw new Error(`Unknown session: ${params.sessionId}`);
-      s.modeId = normalizeModeId(params.modeId, config); store.update(s);
+      s.modeId = normalizeModeId(params.modeId, config); await store.update(s);
       await emitSessionConfigUpdate(conn, s, config, true);
       return {};
     },
     async unstable_setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {
       const config = await runtimeConfig();
       const s = store.get(params.sessionId); if (!s) throw new Error(`Unknown session: ${params.sessionId}`);
-      s.modelId = normalizeModelId(params.modelId, config); store.update(s);
+      s.modelId = normalizeModelId(params.modelId, config); await store.update(s);
       await emitSessionConfigUpdate(conn, s, config, false);
       return {};
     },
@@ -78,7 +93,7 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
         if (params.configId === 'model') s.modelId = normalizeModelId(params.value, config);
         if (params.configId === 'thinking') s.thinkingOptionId = params.value;
       }
-      store.update(s);
+      await store.update(s);
       const configOptions = buildConfigOptions(s, config);
       await emitSessionConfigUpdate(conn, s, config, modeChanged);
       return { configOptions };
@@ -87,11 +102,17 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
   };
 }
 
-function sessionStateResponse(session: MastraAcpSession, config: AcpRuntimeConfig): NewSessionResponse {
+function newSessionStateResponse(session: MastraAcpSession, config: AcpRuntimeConfig): NewSessionResponse {
+  return {
+    sessionId: session.sessionId,
+    ...sessionStateResponse(session, config),
+  };
+}
+
+function sessionStateResponse(session: MastraAcpSession, config: AcpRuntimeConfig): LoadSessionResponse {
   const modeId = normalizeModeId(session.modeId, config);
   const modelId = normalizeModelId(session.modelId, config);
   return {
-    sessionId: session.sessionId,
     modes: {
       availableModes: config.modes.map(mode=>({id:mode.id,name:mode.name})),
       currentModeId: modeId,
