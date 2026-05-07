@@ -40,17 +40,53 @@ test('ACP mapper emits initial tool_call before tool updates for agent calls', (
   });
   const result = mapChunk({
     type: 'tool-result',
-    payload: { toolCallId: 'call-agent-1', toolName: 'agent-scoutAgent', result: { text: 'mapMastraChunkToUpdates' } },
+    payload: { toolCallId: 'call-agent-1', result: { text: 'mapMastraChunkToUpdates' } },
   });
 
   assert.equal(start[0].sessionUpdate, 'tool_call');
   assert.equal(start[0].kind, 'think');
   assert.equal(call[0].sessionUpdate, 'tool_call_update');
+  assert.equal(call[0].status, 'in_progress');
   assert.deepEqual(call[0].rawInput, { prompt: 'Inspect the ACP mapper' });
   assert.equal(call[0].content[0].content.text, 'Inspect the ACP mapper');
   assert.equal(result[0].sessionUpdate, 'tool_call_update');
   assert.equal(result[0].status, 'completed');
+  assert.equal('title' in result[0], false);
   assert.equal(result[0].content[0].content.text, 'mapMastraChunkToUpdates');
+});
+
+test('ACP mapper ignores tool input streaming end without moving status backwards', () => {
+  const mapChunk = createMastraChunkMapper();
+  mapChunk({
+    type: 'tool-call-input-streaming-start',
+    payload: { toolCallId: 'call-1', toolName: 'git_snapshot_query' },
+  });
+
+  const end = mapChunk({
+    type: 'tool-call-input-streaming-end',
+    payload: { toolCallId: 'call-1' },
+  });
+  const call = mapChunk({
+    type: 'tool-call',
+    payload: { toolCallId: 'call-1', toolName: 'git_snapshot_query', args: { query: 'changed files' } },
+  });
+
+  assert.deepEqual(end, []);
+  assert.equal(call[0].sessionUpdate, 'tool_call_update');
+  assert.equal(call[0].status, 'in_progress');
+  assert.equal(call[0].title, 'git_snapshot_query');
+});
+
+test('stateless ACP mapper emits both initial and terminal tool updates', () => {
+  const result = mapMastraChunkToUpdates({
+    type: 'tool-result',
+    payload: { toolCallId: 'call-stateless', result: { text: 'done' } },
+  });
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].sessionUpdate, 'tool_call');
+  assert.equal(result[1].sessionUpdate, 'tool_call_update');
+  assert.equal(result[1].status, 'completed');
 });
 
 test('ACP delegation events create a visible tool call and complete it with output', () => {

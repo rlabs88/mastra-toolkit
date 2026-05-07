@@ -5,10 +5,17 @@ export type MastraChunkMapper = (chunk: unknown) => SessionUpdate[];
 type MastraChunkMapperState = {
   startedToolCallIds: Set<string>;
   inputTextByToolCallId: Map<string, string>;
+  titleByToolCallId: Map<string, string>;
+  kindByToolCallId: Map<string, ToolCall['kind']>;
 };
 
 export function createMastraChunkMapper(): MastraChunkMapper {
-  const state: MastraChunkMapperState = { startedToolCallIds: new Set(), inputTextByToolCallId: new Map() };
+  const state: MastraChunkMapperState = {
+    startedToolCallIds: new Set(),
+    inputTextByToolCallId: new Map(),
+    titleByToolCallId: new Map(),
+    kindByToolCallId: new Map(),
+  };
   return (chunk) => mapMastraChunkToUpdates(chunk, state);
 }
 
@@ -92,13 +99,16 @@ export function mapMastraChunkToUpdates(chunk: unknown, state?: MastraChunkMappe
   if (type?.startsWith('tool-')) {
     const p = isRecord(chunk.payload) ? chunk.payload : chunk;
     const toolCallId = str(p.toolCallId) ?? str(p.id) ?? 'unknown';
-    const title = str(p.toolName) ?? str(p.name) ?? 'tool';
+    const explicitTitle = str(p.toolName) ?? str(p.name);
+    const title = explicitTitle ?? state?.titleByToolCallId.get(toolCallId) ?? 'tool';
     const kind = inferToolKind(title);
     let content = type === 'tool-output'
       ? contentFromToolOutput(p.output)
       : optionalContent(p.result, p.error, p.delta, p.text, p.args);
     let rawInput = p.args ?? p.input;
     const rawOutput = p.error ?? p.result ?? p.output;
+
+    if (type === 'tool-call-input-streaming-end') return [];
 
     if (type === 'tool-call-delta') {
       const nextInputText = accumulatedInputText(state, toolCallId, str(p.argsTextDelta) ?? str(p.delta) ?? str(p.text));
@@ -120,14 +130,20 @@ export function mapMastraChunkToUpdates(chunk: unknown, state?: MastraChunkMappe
       })];
     }
 
-    const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : 'pending';
+    const status = type === 'tool-result'
+      ? 'completed'
+      : type === 'tool-error'
+        ? 'failed'
+        : type === 'tool-call' && state?.startedToolCallIds.has(toolCallId)
+          ? 'in_progress'
+          : 'pending';
 
     const update: ToolCallUpdate & { sessionUpdate: 'tool_call_update' } = {
       sessionUpdate: 'tool_call_update',
       toolCallId,
       status,
-      title,
-      kind,
+      ...(explicitTitle ? { title } : {}),
+      ...(explicitTitle ? { kind } : state?.kindByToolCallId.has(toolCallId) ? { kind: state.kindByToolCallId.get(toolCallId)! } : {}),
       rawInput,
       rawOutput,
       content,
@@ -166,7 +182,7 @@ export function mapMastraChunkToUpdates(chunk: unknown, state?: MastraChunkMappe
 }
 
 function startToolCall(state: MastraChunkMapperState | undefined, update: ToolCall & { sessionUpdate: 'tool_call' }): SessionUpdate {
-  state?.startedToolCallIds.add(update.toolCallId);
+  rememberToolCall(state, update);
   return update;
 }
 
@@ -175,10 +191,17 @@ function withStartedToolCall(
   initial: ToolCall & { sessionUpdate: 'tool_call' },
   update: ToolCallUpdate & { sessionUpdate: 'tool_call_update' },
 ): SessionUpdate[] {
-  if (!state) return [initial];
+  if (!state) return [initial, update];
   if (state.startedToolCallIds.has(initial.toolCallId)) return [update];
-  state.startedToolCallIds.add(initial.toolCallId);
+  rememberToolCall(state, initial);
   return [initial, update];
+}
+
+function rememberToolCall(state: MastraChunkMapperState | undefined, update: ToolCall & { sessionUpdate: 'tool_call' }): void {
+  if (!state) return;
+  state.startedToolCallIds.add(update.toolCallId);
+  if (update.title) state.titleByToolCallId.set(update.toolCallId, update.title);
+  if (update.kind) state.kindByToolCallId.set(update.toolCallId, update.kind);
 }
 
 function contentFromToolOutput(output: unknown): ToolCallContent[] | undefined {
