@@ -159,6 +159,28 @@ test("ACP fork clones parent memory thread and child prompt uses cloned thread",
   assert.equal(parentPromptRequest.memory.resource, "resource-1");
 });
 
+test("ACP fork validates against new session cwd instead of adapter default", async (t) => {
+  const requests = installForkFetchMock(t);
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/app",
+    mastraBaseUrl: "http://mastra.test",
+    defaultResourceId: "resource-1",
+    defaultThreadId: "parent-thread",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  const child = await agent.unstable_forkSession({
+    sessionId: parent.sessionId,
+    cwd: "/workspace",
+    mcpServers: [],
+  });
+
+  assert.notEqual(child.sessionId, parent.sessionId);
+  assert.equal(requests.some((request) => request.url.includes("/api/memory/threads/parent-thread/clone")), true);
+});
+
 test("ACP fork rejects unknown parent session", async () => {
   const conn = new FakeConnection();
   const agent = createMastraAcpAgentHandler(conn, {

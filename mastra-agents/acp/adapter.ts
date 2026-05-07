@@ -25,11 +25,11 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
         authMethods: [],
       };
     },
-    async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
       const config = await runtimeConfig();
       const session = store.create({
         agentId: options.agentId,
-        cwd: options.cwd,
+        cwd: params.cwd ?? options.cwd,
         resourceId: options.defaultResourceId,
         threadId: options.defaultThreadId,
         defaultModeId: config.defaultModeId,
