@@ -1,25 +1,49 @@
-import type { SessionUpdate, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { SessionUpdate, ToolCall, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk';
 
-export function inferToolKind(name?: string): ToolCallUpdate['kind'] {
+export type MastraChunkMapper = (chunk: unknown) => SessionUpdate[];
+
+type MastraChunkMapperState = {
+  startedToolCallIds: Set<string>;
+  inputTextByToolCallId: Map<string, string>;
+  titleByToolCallId: Map<string, string>;
+  kindByToolCallId: Map<string, ToolCall['kind']>;
+};
+
+export function createMastraChunkMapper(): MastraChunkMapper {
+  const state: MastraChunkMapperState = {
+    startedToolCallIds: new Set(),
+    inputTextByToolCallId: new Map(),
+    titleByToolCallId: new Map(),
+    kindByToolCallId: new Map(),
+  };
+  return (chunk) => mapMastraChunkToUpdates(chunk, state);
+}
+
+export function inferToolKind(name?: string): ToolCall['kind'] {
   if (!name) return 'other';
+  if (name.startsWith('agent-') || name.includes('delegate')) return 'think';
   if (name === 'workspace.read-file') return 'read';
   if (name === 'workspace.write-file' || name === 'workspace.replace-in-file') return 'edit';
   if (name === 'workspace.list-files') return 'search';
+  if (name.includes('grep') || name.includes('search') || name.includes('list')) return 'search';
+  if (name.includes('read')) return 'read';
+  if (name.includes('write') || name.includes('replace') || name.includes('edit')) return 'edit';
   if (name.includes('shell') || name.includes('sandbox')) return 'execute';
   return 'other';
 }
 
 
-function optionalContentText(...values: unknown[]): ToolCallContent[] | undefined {
+function optionalContent(...values: unknown[]): ToolCallContent[] | undefined {
   for (const value of values) {
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return [{ type: 'content', content: { type: 'text', text: value } } as ToolCallContent];
+    const text = toolContentText(value);
+    if (text) {
+      return [{ type: 'content', content: { type: 'text', text } } as ToolCallContent];
     }
   }
   return undefined;
 }
 
-export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
+export function mapMastraChunkToUpdates(chunk: unknown, state?: MastraChunkMapperState): SessionUpdate[] {
   if (!isRecord(chunk)) return [];
   const type = str(chunk.type);
   if (type === 'text-delta') return [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: textFrom(chunk) } }];
@@ -39,40 +63,198 @@ export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
     ].filter(Boolean);
     const fallbackId = fallbackIdParts.length > 0 ? `delegation:${fallbackIdParts.join(':')}` : `delegation:${Date.now()}`;
     const phase = str(payload.phase) ?? 'delegation';
-    const status = phase === 'delegation_complete' ? (payload.success === false ? 'failed' : 'completed') : 'in_progress';
-
-    return [{
-      sessionUpdate: 'tool_call_update',
-      toolCallId: str(payload.delegationId) ?? fallbackId,
-      status,
-      title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? 'delegation',
-      kind: 'other',
+    const toolCallId = str(payload.delegationId) ?? fallbackId;
+    const title = str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? 'delegation';
+    const content = optionalContent(payload.response, payload.error, payload.prompt);
+    const base = {
+      toolCallId,
+      title,
+      kind: 'think',
       rawInput: payload.prompt,
       rawOutput: payload.response ?? payload.error,
-      content: optionalContentText(str(payload.response), str(payload.error)),
+      content,
       _meta: { mastra: chunk },
-    }];
+    } satisfies Partial<ToolCall>;
+
+    if (phase !== 'delegation_complete') {
+      return [startToolCall(state, {
+        ...base,
+        status: 'in_progress',
+        sessionUpdate: 'tool_call',
+      })];
+    }
+
+    const status = payload.success === false ? 'failed' : 'completed';
+    return withStartedToolCall(state, {
+      sessionUpdate: 'tool_call',
+      status: 'in_progress',
+      ...base,
+    }, {
+      sessionUpdate: 'tool_call_update',
+      status,
+      ...base,
+    });
   }
 
   if (type?.startsWith('tool-')) {
     const p = isRecord(chunk.payload) ? chunk.payload : chunk;
-    const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : (type === 'tool-call-input-streaming-start' ? 'in_progress' : 'pending');
+    const toolCallId = str(p.toolCallId) ?? str(p.id) ?? 'unknown';
+    const explicitTitle = str(p.toolName) ?? str(p.name);
+    const title = explicitTitle ?? state?.titleByToolCallId.get(toolCallId) ?? 'tool';
+    const kind = inferToolKind(title);
+    let content = type === 'tool-output'
+      ? contentFromToolOutput(p.output)
+      : optionalContent(p.result, p.error, p.delta, p.text, p.args);
+    let rawInput = p.args ?? p.input;
+    const rawOutput = p.error ?? p.result ?? p.output;
+
+    if (type === 'tool-call-input-streaming-end') return [];
+
+    if (type === 'tool-call-delta') {
+      const nextInputText = accumulatedInputText(state, toolCallId, str(p.argsTextDelta) ?? str(p.delta) ?? str(p.text));
+      rawInput = rawInput ?? nextInputText;
+      content = content ?? contentFromInputText(nextInputText);
+    }
+
+    if (type === 'tool-call-input-streaming-start') {
+      return [startToolCall(state, {
+        sessionUpdate: 'tool_call',
+        toolCallId,
+        status: 'in_progress',
+        title,
+        kind,
+        rawInput,
+        rawOutput,
+        content,
+        _meta: { mastra: chunk },
+      })];
+    }
+
+    const status = type === 'tool-result'
+      ? 'completed'
+      : type === 'tool-error'
+        ? 'failed'
+        : type === 'tool-call' && state?.startedToolCallIds.has(toolCallId)
+          ? 'in_progress'
+          : 'pending';
 
     const update: ToolCallUpdate & { sessionUpdate: 'tool_call_update' } = {
       sessionUpdate: 'tool_call_update',
-      toolCallId: str(p.toolCallId) ?? str(p.id) ?? 'unknown',
+      toolCallId,
       status,
-      title: str(p.toolName) ?? str(p.name) ?? 'tool',
-      kind: inferToolKind(str(p.toolName) ?? str(p.name)),
-      rawInput: p.args,
-      rawOutput: p.error ?? p.result,
-      content: optionalContentText(str(p.result), str(p.error), str(p.delta), str(p.text)),
+      ...(explicitTitle ? { title } : {}),
+      ...(explicitTitle ? { kind } : state?.kindByToolCallId.has(toolCallId) ? { kind: state.kindByToolCallId.get(toolCallId)! } : {}),
+      rawInput,
+      rawOutput,
+      content,
       _meta: { mastra: chunk },
     };
+
+    if (type === 'tool-call') {
+      return withStartedToolCall(state, {
+        sessionUpdate: 'tool_call',
+        toolCallId,
+        title,
+        kind,
+        status: 'pending',
+        rawInput,
+        rawOutput,
+        content,
+        _meta: { mastra: chunk },
+      }, update);
+    }
+
+    if (type === 'tool-result' || type === 'tool-error') {
+      return withStartedToolCall(state, {
+        sessionUpdate: 'tool_call',
+        toolCallId,
+        title,
+        kind,
+        status: 'pending',
+        rawInput,
+        _meta: { mastra: chunk },
+      }, update);
+    }
 
     return [update];
   }
   return [];
+}
+
+function startToolCall(state: MastraChunkMapperState | undefined, update: ToolCall & { sessionUpdate: 'tool_call' }): SessionUpdate {
+  rememberToolCall(state, update);
+  return update;
+}
+
+function withStartedToolCall(
+  state: MastraChunkMapperState | undefined,
+  initial: ToolCall & { sessionUpdate: 'tool_call' },
+  update: ToolCallUpdate & { sessionUpdate: 'tool_call_update' },
+): SessionUpdate[] {
+  if (!state) return [initial, update];
+  if (state.startedToolCallIds.has(initial.toolCallId)) return [update];
+  rememberToolCall(state, initial);
+  return [initial, update];
+}
+
+function rememberToolCall(state: MastraChunkMapperState | undefined, update: ToolCall & { sessionUpdate: 'tool_call' }): void {
+  if (!state) return;
+  state.startedToolCallIds.add(update.toolCallId);
+  if (update.title) state.titleByToolCallId.set(update.toolCallId, update.title);
+  if (update.kind) state.kindByToolCallId.set(update.toolCallId, update.kind);
+}
+
+function contentFromToolOutput(output: unknown): ToolCallContent[] | undefined {
+  if (!isRecord(output)) return optionalContent(output);
+  const outputType = str(output.type);
+  const payload = isRecord(output.payload) ? output.payload : {};
+  if (outputType === 'text-delta') return optionalContent(payload.text);
+  if (outputType === 'tool-result') return optionalContent(payload.result);
+  if (outputType === 'tool-error' || outputType === 'error') return optionalContent(payload.error, payload.message);
+  return undefined;
+}
+
+function accumulatedInputText(
+  state: MastraChunkMapperState | undefined,
+  toolCallId: string,
+  delta: string | undefined,
+): string | undefined {
+  if (!delta) return state?.inputTextByToolCallId.get(toolCallId);
+  if (!state) return delta;
+  const text = `${state.inputTextByToolCallId.get(toolCallId) ?? ''}${delta}`;
+  state.inputTextByToolCallId.set(toolCallId, text);
+  return text;
+}
+
+function contentFromInputText(inputText: string | undefined): ToolCallContent[] | undefined {
+  if (!inputText) return undefined;
+  try {
+    const parsed = JSON.parse(inputText);
+    if (isRecord(parsed)) {
+      return optionalContent(parsed.prompt, parsed.query, parsed.input, parsed.command, parsed.path) ?? optionalContent(inputText);
+    }
+  } catch {
+    // Partial streamed JSON is still useful as progress text.
+  }
+  return optionalContent(inputText);
+}
+
+function toolContentText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim().length > 0 ? value : undefined;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (!isRecord(value)) return undefined;
+
+  for (const key of ['text', 'message', 'objective', 'result', 'output', 'response', 'error', 'prompt', 'query', 'command', 'path']) {
+    const nested = toolContentText(value[key]);
+    if (nested) return nested;
+  }
+
+  try {
+    const text = JSON.stringify(value, null, 2);
+    return text.length > 12000 ? `${text.slice(0, 12000)}\n...` : text;
+  } catch {
+    return String(value);
+  }
 }
 
 const isRecord = (v: unknown): v is Record<string, any> => typeof v === 'object' && !!v;

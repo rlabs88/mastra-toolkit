@@ -47,12 +47,16 @@ services:
       MASTRA_WORKSPACE_SANDBOX: docker
       MASTRA_DOCKER_SANDBOX_ID: mastra-agents-coding
       MASTRA_DOCKER_SANDBOX_NETWORK: mastra-system_default
-      MASTRA_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
+      MASTRA_DOCKER_SANDBOX_HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
+      MASTRA_WORKSPACE_ROOT: /app
+      MASTRA_WORKSPACE_COMMAND_CWD: /app
+      MASTRA_WORKSPACE_ACCESS_ROOTS: /app,/root,/shared/workspace
       DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
     ports:
       - "${MASTRA_SERVER_HOST_PORT:-4111}:4111"
     volumes:
       - ${HOST_WORKSPACE_ROOT:-.}:/app
+      - /container/shared/workspace:/shared/workspace
       - mastra-server-node-modules:/app/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -61,6 +65,7 @@ services:
   mastra-sandbox:
     image: ${MASTRA_DOCKER_SANDBOX_IMAGE:-ghcr.io/eugenechan00/daytona-agents/snapshot-mastra-agents:dev}
     entrypoint: ["sleep", "infinity"]
+    working_dir: /workspace
     environment:
       SERENA_PROJECT: /workspace
       SERENA_CONTEXT: codex
@@ -75,7 +80,7 @@ services:
       DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
     volumes:
       - ${HOST_WORKSPACE_ROOT:-.}:/workspace
-      - /container/shared:/shared
+      - /container/shared/workspace:/shared/workspace
     networks:
       - default
     labels:

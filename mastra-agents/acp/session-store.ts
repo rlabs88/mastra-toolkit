@@ -31,6 +31,30 @@ export class MastraAcpSessionStore {
     return session;
   }
 
+  fork(parent: MastraAcpSession, params: {
+    sessionId?: string;
+    threadId: string;
+  }): MastraAcpSession {
+    const sessionId = params.sessionId ?? randomUUID();
+    const now = new Date().toISOString();
+    const session: MastraAcpSession = {
+      sessionId,
+      agentId: parent.agentId,
+      cwd: parent.cwd,
+      resourceId: parent.resourceId,
+      threadId: params.threadId,
+      modeId: parent.modeId,
+      modelId: parent.modelId,
+      thinkingOptionId: parent.thinkingOptionId,
+      forkedFromSessionId: parent.sessionId,
+      forkedFromThreadId: parent.threadId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sessions.set(sessionId, session);
+    return session;
+  }
+
   get(sessionId: string): MastraAcpSession | undefined { return this.sessions.get(sessionId); }
   update(session: MastraAcpSession): void { session.updatedAt = new Date().toISOString(); this.sessions.set(session.sessionId, session); }
   delete(sessionId: string): void { this.sessions.delete(sessionId); }

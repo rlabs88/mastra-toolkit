@@ -17,6 +17,8 @@ export interface MastraAcpSession {
   modeId?: string;
   modelId?: string;
   thinkingOptionId?: string;
+  forkedFromSessionId?: string;
+  forkedFromThreadId?: string;
   abortController?: AbortController;
   createdAt: string;
   updatedAt: string;

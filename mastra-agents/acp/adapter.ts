@@ -1,6 +1,8 @@
-import type { AgentSideConnection, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
+import type { AgentSideConnection, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
+import { randomUUID } from 'node:crypto';
 import { buildConfigOptions, loadAcpRuntimeConfig, modeDefinitionForSession, modelOptionsForSession, normalizeModeId, normalizeModelId, type AcpRuntimeConfig } from './config-options.js';
-import { mapMastraChunkToUpdates } from './event-mapper.js';
+import { createMastraChunkMapper } from './event-mapper.js';
+import { cloneMastraThread } from './memory-client.js';
 import { streamMastraAgent } from './mastra-stream.js';
 import { MastraAcpSessionStore } from './session-store.js';
 import type { ACPAgent, MastraAcpAgentOptions, MastraAcpSession } from './types.js';
@@ -17,16 +19,17 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
         agentCapabilities: {
           loadSession: false,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          sessionCapabilities: { fork: {} },
         },
         agentInfo: { name: 'Mastra ACP Agent', version: '0.1.0' },
         authMethods: [],
       };
     },
-    async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
       const config = await runtimeConfig();
       const session = store.create({
         agentId: options.agentId,
-        cwd: options.cwd,
+        cwd: params.cwd ?? options.cwd,
         resourceId: options.defaultResourceId,
         threadId: options.defaultThreadId,
         defaultModeId: config.defaultModeId,
@@ -34,6 +37,47 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       });
       await conn.sessionUpdate({ sessionId: session.sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: getSlashCommands() } });
       return sessionStateResponse(session, config);
+    },
+    async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+      const config = await runtimeConfig();
+      const parent = store.get(params.sessionId);
+      if (!parent) throw new Error(`Unknown session: ${params.sessionId}`);
+      if (params.cwd !== parent.cwd) {
+        throw new Error(`Cannot fork session ${params.sessionId}: cwd mismatch`);
+      }
+
+      const childSessionId = randomUUID();
+      const childThreadId = `acp:${childSessionId}:${parent.agentId}`;
+      const createdAt = new Date().toISOString();
+      const clonedThread = await cloneMastraThread({
+        baseUrl: options.mastraBaseUrl,
+        agentId: parent.agentId,
+        sourceThreadId: parent.threadId,
+        newThreadId: childThreadId,
+        resourceId: parent.resourceId,
+        metadata: {
+          acp: {
+            fork: {
+              parentSessionId: parent.sessionId,
+              childSessionId,
+              parentThreadId: parent.threadId,
+              createdAt,
+              agentId: parent.agentId,
+            },
+          },
+        },
+      });
+
+      if (clonedThread.id !== childThreadId) {
+        throw new Error(`Mastra memory clone returned unexpected thread id: ${clonedThread.id}`);
+      }
+      if (clonedThread.resourceId !== parent.resourceId) {
+        throw new Error(`Mastra memory clone returned unexpected resource id: ${clonedThread.resourceId}`);
+      }
+
+      const child = store.fork(parent, { sessionId: childSessionId, threadId: clonedThread.id });
+      await conn.sessionUpdate({ sessionId: child.sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: getSlashCommands() } });
+      return sessionStateResponse(child, config);
     },
     async prompt(params: PromptRequest): Promise<PromptResponse> {
       const config = await runtimeConfig();
@@ -43,6 +87,7 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       const content = (last && 'text' in last) ? last.text : '';
       const ac = new AbortController();
       session.abortController = ac; store.update(session);
+      const mapMastraChunkToUpdates = createMastraChunkMapper();
       for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content, config), ac.signal)) {
         for (const update of mapMastraChunkToUpdates(chunk)) {
           await conn.sessionUpdate({ sessionId: session.sessionId, update });

@@ -46,13 +46,16 @@ function readEnv(name: string): string | undefined {
 export function resolveDockerBindMounts(): Record<string, string> {
   const mounts: Record<string, string> = {};
 
-  const workspaceRoot = readEnv("MASTRA_WORKSPACE_ROOT") ?? path.resolve(process.cwd(), "../..");
+  const workspaceRoot = readEnv("MASTRA_DOCKER_SANDBOX_HOST_WORKSPACE_ROOT")
+    ?? readEnv("MASTRA_WORKSPACE_ROOT")
+    ?? path.resolve(process.cwd(), "../..");
   mounts[workspaceRoot] = "/workspace";
 
-  // Host /container/shared is mounted as /shared in the sandbox.
-  // The image already includes agents via brew tap + git clone — no .agents bind mount needed.
-  if (existsSync("/container/shared")) {
-    mounts["/container/shared"] = "/shared";
+  // Host /container/shared/workspace is mounted as /shared/workspace in the
+  // sandbox. The image already includes agents via brew tap + git clone — no
+  // .agents bind mount needed.
+  if (existsSync("/container/shared/workspace")) {
+    mounts["/container/shared/workspace"] = "/shared/workspace";
   }
 
   const extraMountsRaw = readEnv("MASTRA_DOCKER_SANDBOX_EXTRA_MOUNTS");

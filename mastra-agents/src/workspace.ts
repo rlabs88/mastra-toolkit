@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { LocalFilesystem, LocalSandbox, Workspace, WORKSPACE_TOOLS } from "@mastra/core/workspace";
+import { DockerSandbox } from "@mastra/docker";
 
 import { DaytonaAgentsDaytonaSandbox } from "./daytona/mastra-sandbox.js";
 import {
@@ -8,8 +9,14 @@ import {
   resolveSandboxRuntimeEnv,
 } from "./daytona/sandbox-config.js";
 import {
+  defaultDockerSandboxId,
+  defaultDockerSandboxImage,
+  defaultDockerSandboxNetwork,
+  resolveDockerBindMounts,
+  resolveDockerSandboxRuntimeEnv,
+} from "./docker-sandbox-config.js";
+import {
   allowedWorkspaceRootsDescription,
-  isWorkspaceRootExposed,
   resolveConfiguredPath,
   workspaceAccessRoots,
   workspaceCommandCwd,
@@ -22,11 +29,12 @@ const defaultSnapshot =
 const allowedLanguages = ["typescript", "javascript", "python"] as const;
 const allowedLocalIsolation = ["none", "seatbelt", "bwrap"] as const;
 const localSandboxAliases = new Set(["local", "current", "host"]);
+const dockerSandboxAliases = new Set(["docker"]);
 const daytonaSandboxAliases = new Set(["daytona", "remote"]);
 
 type DaytonaWorkspaceLanguage = (typeof allowedLanguages)[number];
 type WorkspaceLocalIsolation = (typeof allowedLocalIsolation)[number];
-type WorkspaceSandboxProvider = "local" | "daytona";
+type WorkspaceSandboxProvider = "local" | "docker" | "daytona";
 
 function resolveBooleanEnv(value: string | undefined, fallback: boolean) {
   if (value === undefined || value === "") {
@@ -58,6 +66,10 @@ function resolveWorkspaceSandboxProvider(value: string | undefined): WorkspaceSa
 
   if (normalizedValue !== undefined && localSandboxAliases.has(normalizedValue)) {
     return "local";
+  }
+
+  if (normalizedValue !== undefined && dockerSandboxAliases.has(normalizedValue)) {
+    return "docker";
   }
 
   if (normalizedValue !== undefined && daytonaSandboxAliases.has(normalizedValue)) {
@@ -106,6 +118,18 @@ function createLocalSandbox() {
   });
 }
 
+function createDockerSandbox() {
+  return new DockerSandbox({
+    id: process.env.MASTRA_DOCKER_SANDBOX_ID ?? defaultDockerSandboxId,
+    image: process.env.MASTRA_DOCKER_SANDBOX_IMAGE ?? defaultDockerSandboxImage,
+    volumes: resolveDockerBindMounts(),
+    network: process.env.MASTRA_DOCKER_SANDBOX_NETWORK ?? defaultDockerSandboxNetwork,
+    workingDir: process.env.MASTRA_DOCKER_SANDBOX_WORKING_DIR ?? "/workspace",
+    env: resolveDockerSandboxRuntimeEnv(),
+    timeout: resolveNumberEnv(process.env.MASTRA_WORKSPACE_COMMAND_TIMEOUT_MS) ?? 300_000,
+  });
+}
+
 function createDaytonaSandbox() {
   return new DaytonaAgentsDaytonaSandbox({
     id: process.env.DAYTONA_WORKSPACE_SANDBOX_ID ?? "daytona-agents-global-coding",
@@ -139,6 +163,7 @@ function createDaytonaSandbox() {
 function createLocalFilesystem(root: string) {
   return new LocalFilesystem({
     basePath: root,
+    allowedPaths: workspaceAccessRoots.filter((accessRoot) => accessRoot !== root),
     // @mastra/core's symlink containment check treats "/" as a special case
     // poorly, so when the access root is the current sandbox root, rely on the
     // surrounding Daytona sandbox boundary rather than LocalFilesystem's
@@ -148,16 +173,11 @@ function createLocalFilesystem(root: string) {
 }
 
 function createWorkspaceFilesystemConfig() {
-  if (isWorkspaceRootExposed()) {
-    return {
-      filesystem: createLocalFilesystem(workspaceAccessRoots[0]!),
-    };
-  }
-
+  // Use a single filesystem rooted at workspaceRoot so built-in Mastra
+  // workspace tools resolve relative paths the same way our custom tools do.
+  // Extra access roots remain available through LocalFilesystem.allowedPaths.
   return {
-    mounts: Object.fromEntries(
-      workspaceAccessRoots.map((root) => [root, createLocalFilesystem(root)]),
-    ),
+    filesystem: createLocalFilesystem(workspaceRoot),
   };
 }
 
@@ -171,7 +191,9 @@ export const workspaceSandboxProvider = resolveWorkspaceSandboxProvider(
 
 export const codingSandbox = workspaceSandboxProvider === "local"
   ? createLocalSandbox()
-  : createDaytonaSandbox();
+  : workspaceSandboxProvider === "docker"
+    ? createDockerSandbox()
+    : createDaytonaSandbox();
 
 export const workspace = new Workspace({
   id: "daytona-agents",
@@ -197,7 +219,7 @@ export const workspace = new Workspace({
       return undefined;
     }
 
-    if (sandbox?.provider === "local") {
+    if (sandbox?.provider === "local" || sandbox?.provider === "docker") {
       return { success: true, mountPath };
     }
 

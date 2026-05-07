@@ -25,7 +25,7 @@ export const workspaceRoot = resolveConfiguredPath(
 );
 
 export const workspaceCommandCwd = resolveConfiguredPath(
-  process.env.MASTRA_WORKSPACE_COMMAND_CWD ?? process.cwd(),
+  process.env.MASTRA_WORKSPACE_COMMAND_CWD?.trim() || workspaceRoot,
 );
 
 function splitPathList(value: string | undefined): string[] {

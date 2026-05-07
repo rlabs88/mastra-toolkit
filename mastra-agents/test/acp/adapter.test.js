@@ -16,6 +16,76 @@ function optionValue(configOptions, id) {
   return configOptions.find((option) => option.id === id)?.currentValue;
 }
 
+function sseOk() {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"type":"text-delta","text":"ok"}\n\ndata: [DONE]\n\n'));
+        controller.close();
+      },
+    }),
+    { status: 200, statusText: "OK" },
+  );
+}
+
+function jsonOk(body) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    statusText: "OK",
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function installForkFetchMock(t, { cloneThreadId, cloneResourceId = "resource-1", failClone = false } = {}) {
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    requests.push({ url: href, init });
+
+    if (href.includes("/api/agents/")) {
+      return jsonOk({ provider: "provider", modelId: "model" });
+    }
+
+    if (href.includes("/api/memory/threads/") && href.includes("/clone")) {
+      if (failClone) return new Response("clone unavailable", { status: 503, statusText: "Unavailable" });
+      const body = JSON.parse(init.body);
+      return jsonOk({
+        thread: {
+          id: cloneThreadId ?? body.newThreadId,
+          resourceId: cloneResourceId,
+          metadata: body.metadata,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        clonedMessages: [],
+      });
+    }
+
+    if (href.includes("/api/agents/") && href.includes("/stream")) {
+      return sseOk();
+    }
+
+    return sseOk();
+  };
+  return requests;
+}
+
+test("ACP initialize advertises fork session capability", async () => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+  });
+
+  const result = await agent.initialize({ protocolVersion: 1 });
+
+  assert.deepEqual(result.agentCapabilities.sessionCapabilities, { fork: {} });
+});
+
 test("ACP session config exposes complete canonical mode and model defaults", async () => {
   const conn = new FakeConnection();
   const agent = createMastraAcpAgentHandler(conn, {
@@ -29,6 +99,165 @@ test("ACP session config exposes complete canonical mode and model defaults", as
   assert.equal(optionValue(session.configOptions, "mode"), "base");
   assert.equal(optionValue(session.configOptions, "model"), session.models.currentModelId);
   assert.deepEqual(session.configOptions.map((option) => option.id), ["mode", "model", "thinking"]);
+});
+
+test("ACP fork clones parent memory thread and child prompt uses cloned thread", async (t) => {
+  const requests = installForkFetchMock(t);
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+    defaultResourceId: "resource-1",
+    defaultThreadId: "parent-thread",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+  await agent.setSessionConfigOption({ sessionId: parent.sessionId, configId: "mode", value: "exec" });
+  await agent.setSessionConfigOption({ sessionId: parent.sessionId, configId: "thinking", value: "high" });
+
+  const child = await agent.unstable_forkSession({
+    sessionId: parent.sessionId,
+    cwd: "/workspace",
+    mcpServers: [],
+  });
+
+  assert.notEqual(child.sessionId, parent.sessionId);
+  assert.equal(optionValue(child.configOptions, "mode"), "exec");
+  assert.equal(optionValue(child.configOptions, "thinking"), "high");
+
+  const cloneRequest = requests.find((request) => request.url.includes("/api/memory/threads/parent-thread/clone"));
+  assert.ok(cloneRequest);
+  assert.equal(cloneRequest.url, "http://mastra.test/api/memory/threads/parent-thread/clone?agentId=supervisor-agent");
+
+  const cloneBody = JSON.parse(cloneRequest.init.body);
+  assert.equal(cloneBody.resourceId, "resource-1");
+  assert.match(cloneBody.newThreadId, /^acp:.+:supervisor-agent$/);
+  assert.equal(cloneBody.metadata.acp.fork.parentSessionId, parent.sessionId);
+  assert.equal(cloneBody.metadata.acp.fork.childSessionId, child.sessionId);
+  assert.equal(cloneBody.metadata.acp.fork.parentThreadId, "parent-thread");
+  assert.equal(cloneBody.metadata.acp.fork.agentId, "supervisor-agent");
+
+  let childPromptRequest;
+  let parentPromptRequest;
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    if (href.includes("/api/agents/") && href.includes("/stream")) {
+      const body = JSON.parse(init.body);
+      if (body.requestContext.acp.sessionId === child.sessionId) childPromptRequest = body;
+      if (body.requestContext.acp.sessionId === parent.sessionId) parentPromptRequest = body;
+      return sseOk();
+    }
+    return jsonOk({ provider: "provider", modelId: "model" });
+  };
+
+  await agent.prompt({ sessionId: child.sessionId, prompt: [{ type: "text", text: "child" }] });
+  await agent.prompt({ sessionId: parent.sessionId, prompt: [{ type: "text", text: "parent" }] });
+
+  assert.equal(childPromptRequest.memory.thread, cloneBody.newThreadId);
+  assert.equal(childPromptRequest.memory.resource, "resource-1");
+  assert.equal(parentPromptRequest.memory.thread, "parent-thread");
+  assert.equal(parentPromptRequest.memory.resource, "resource-1");
+});
+
+test("ACP fork validates against new session cwd instead of adapter default", async (t) => {
+  const requests = installForkFetchMock(t);
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/app",
+    mastraBaseUrl: "http://mastra.test",
+    defaultResourceId: "resource-1",
+    defaultThreadId: "parent-thread",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  const child = await agent.unstable_forkSession({
+    sessionId: parent.sessionId,
+    cwd: "/workspace",
+    mcpServers: [],
+  });
+
+  assert.notEqual(child.sessionId, parent.sessionId);
+  assert.equal(requests.some((request) => request.url.includes("/api/memory/threads/parent-thread/clone")), true);
+});
+
+test("ACP fork rejects unknown parent session", async () => {
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+  });
+
+  await assert.rejects(
+    agent.unstable_forkSession({ sessionId: "missing", cwd: "/workspace", mcpServers: [] }),
+    /Unknown session: missing/,
+  );
+});
+
+test("ACP fork rejects cwd mismatch before cloning", async (t) => {
+  const requests = installForkFetchMock(t);
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  await assert.rejects(
+    agent.unstable_forkSession({ sessionId: parent.sessionId, cwd: "/other", mcpServers: [] }),
+    /cwd mismatch/,
+  );
+  assert.equal(requests.some((request) => request.url.includes("/clone")), false);
+});
+
+test("ACP fork rejects clone response thread mismatch", async (t) => {
+  installForkFetchMock(t, { cloneThreadId: "wrong-thread" });
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  await assert.rejects(
+    agent.unstable_forkSession({ sessionId: parent.sessionId, cwd: "/workspace", mcpServers: [] }),
+    /unexpected thread id: wrong-thread/,
+  );
+});
+
+test("ACP fork rejects clone response resource mismatch", async (t) => {
+  installForkFetchMock(t, { cloneResourceId: "wrong-resource" });
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+    defaultResourceId: "resource-1",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  await assert.rejects(
+    agent.unstable_forkSession({ sessionId: parent.sessionId, cwd: "/workspace", mcpServers: [] }),
+    /unexpected resource id: wrong-resource/,
+  );
+});
+
+test("ACP fork surfaces clone endpoint failures", async (t) => {
+  installForkFetchMock(t, { failClone: true });
+  const conn = new FakeConnection();
+  const agent = createMastraAcpAgentHandler(conn, {
+    agentId: "supervisor-agent",
+    cwd: "/workspace",
+    mastraBaseUrl: "http://mastra.test",
+  });
+  const parent = await agent.newSession({ cwd: "/workspace", mcpServers: [] });
+
+  await assert.rejects(
+    agent.unstable_forkSession({ sessionId: parent.sessionId, cwd: "/workspace", mcpServers: [] }),
+    /Mastra memory clone failed.*503 Unavailable/,
+  );
 });
 
 test("ACP mode config mutation returns full state and keeps legacy mode surface in sync", async () => {
@@ -114,7 +343,7 @@ test("ACP runtime config prefers explicit env model over API metadata fallback",
 
   assert.equal(config.defaultModelId, "proxy/openai/gpt-5.5");
   assert.equal(config.models[0], "proxy/openai/gpt-5.5");
-  assert.ok(config.models.includes("openai/gpt-5.5"));
+  assert.equal(config.models.includes("openai/gpt-5.5"), false);
 });
 
 test("ACP prompt surfaces Mastra stream error chunks", async (t) => {
