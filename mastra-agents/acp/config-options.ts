@@ -37,6 +37,8 @@ const modeAliases = new Map<string, SupervisorModeId>([
 type SupervisorModeId = 'base' | 'scope' | 'spec' | 'exec';
 
 const configCache = new Map<string, Promise<AcpRuntimeConfig>>();
+const rawOpenAiGpt55ModelIds = new Set(['gpt-5.5', 'openai/gpt-5.5']);
+const proxyOpenAiGpt55ModelId = 'proxy/openai/gpt-5.5';
 
 export function runtimeAgentIdFromAgentId(agentId: string | undefined): AcpRuntimeAgentId {
   const normalized = agentId?.trim().toLowerCase().replace(/_/g, '-') ?? '';
@@ -64,7 +66,7 @@ export function normalizeModeId(value: unknown, config: AcpRuntimeConfig): strin
 }
 
 export function normalizeModelId(value: unknown, config: AcpRuntimeConfig): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : config.defaultModelId;
+  return typeof value === 'string' && value.trim() ? canonicalModelId(value) : config.defaultModelId;
 }
 
 export function modeDefinitionForSession(session: MastraAcpSession, config: AcpRuntimeConfig): AcpModeDefinition {
@@ -131,10 +133,15 @@ async function modelIdFromMastraAgentApi(agentId: string | undefined, mastraBase
     const provider = typeof agentConfig.provider === 'string' ? agentConfig.provider.trim() : '';
     const modelId = typeof agentConfig.modelId === 'string' ? agentConfig.modelId.trim() : '';
     if (!modelId) return undefined;
-    return provider && !modelId.startsWith(`${provider}/`) ? `${provider}/${modelId}` : modelId;
+    return canonicalModelId(provider && !modelId.startsWith(`${provider}/`) ? `${provider}/${modelId}` : modelId);
   } catch {
     return undefined;
   }
+}
+
+function canonicalModelId(value: string): string {
+  const modelId = value.trim();
+  return rawOpenAiGpt55ModelIds.has(modelId) ? proxyOpenAiGpt55ModelId : modelId;
 }
 
 function fallbackRuntimeConfig(agentId: AcpRuntimeAgentId, apiModelId?: string): AcpRuntimeConfig {
@@ -214,7 +221,7 @@ function configuredModelEnvValues(agentId: AcpRuntimeAgentId): string[] {
 
 function unique(values: Array<string | undefined>): string[] {
   return values
-    .map((value) => value?.trim())
+    .map((value) => value === undefined ? undefined : canonicalModelId(value))
     .filter((value): value is string => Boolean(value))
     .filter((value, index, all) => all.indexOf(value) === index);
 }

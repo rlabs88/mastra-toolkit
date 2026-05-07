@@ -321,7 +321,7 @@ test("ACP runtime config prefers explicit env model over API metadata fallback",
 
   assert.equal(config.defaultModelId, "proxy/openai/gpt-5.5");
   assert.equal(config.models[0], "proxy/openai/gpt-5.5");
-  assert.ok(config.models.includes("openai/gpt-5.5"));
+  assert.equal(config.models.includes("openai/gpt-5.5"), false);
 });
 
 test("ACP prompt surfaces Mastra stream error chunks", async (t) => {
