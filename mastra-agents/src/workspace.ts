@@ -9,7 +9,6 @@ import {
 } from "./daytona/sandbox-config.js";
 import {
   allowedWorkspaceRootsDescription,
-  isWorkspaceRootExposed,
   resolveConfiguredPath,
   workspaceAccessRoots,
   workspaceCommandCwd,
@@ -21,7 +20,7 @@ const defaultSnapshot =
   "daytona-agents/snapshot-coding-base:local";
 const allowedLanguages = ["typescript", "javascript", "python"] as const;
 const allowedLocalIsolation = ["none", "seatbelt", "bwrap"] as const;
-const localSandboxAliases = new Set(["local", "current", "host"]);
+const localSandboxAliases = new Set(["local", "current", "host", "docker"]);
 const daytonaSandboxAliases = new Set(["daytona", "remote"]);
 
 type DaytonaWorkspaceLanguage = (typeof allowedLanguages)[number];
@@ -139,6 +138,7 @@ function createDaytonaSandbox() {
 function createLocalFilesystem(root: string) {
   return new LocalFilesystem({
     basePath: root,
+    allowedPaths: workspaceAccessRoots.filter((accessRoot) => accessRoot !== root),
     // @mastra/core's symlink containment check treats "/" as a special case
     // poorly, so when the access root is the current sandbox root, rely on the
     // surrounding Daytona sandbox boundary rather than LocalFilesystem's
@@ -148,16 +148,11 @@ function createLocalFilesystem(root: string) {
 }
 
 function createWorkspaceFilesystemConfig() {
-  if (isWorkspaceRootExposed()) {
-    return {
-      filesystem: createLocalFilesystem(workspaceAccessRoots[0]!),
-    };
-  }
-
+  // Use a single filesystem rooted at workspaceRoot so built-in Mastra
+  // workspace tools resolve relative paths the same way our custom tools do.
+  // Extra access roots remain available through LocalFilesystem.allowedPaths.
   return {
-    mounts: Object.fromEntries(
-      workspaceAccessRoots.map((root) => [root, createLocalFilesystem(root)]),
-    ),
+    filesystem: createLocalFilesystem(workspaceRoot),
   };
 }
 
