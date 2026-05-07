@@ -1,11 +1,11 @@
 # Mastra Agents ACP Tarball Install
 
-Use this when `mastra-agents-acp` needs to be installed as a user-global binary on another machine before the package is stable enough for npm publishing.
+Use this when `mastra-acp` needs to be installed as a user-global binary on another machine before the package is stable enough for npm publishing.
 
 The standalone source package now lives in the sibling private repository:
 
 ```bash
-/container/shared/workspace/projects/mastra-agents-acp-adapter
+/container/shared/workspace/projects/mastra-acp-adapter
 ```
 
 Do not package ACP from `mastra-system/compiled`. The installed binary must come
@@ -17,7 +17,7 @@ directory.
 From the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-agents-acp-adapter
+cd /container/shared/workspace/projects/mastra-acp-adapter
 npm run build
 npm version patch --no-git-tag-version
 npm pack
@@ -42,15 +42,15 @@ npm install -g ./mastrasystem-mastra-agents-acp-0.1.2.tgz
 Verify the binary:
 
 ```bash
-command -v mastra-agents-acp
-mastra-agents-acp --agent-id orchestrator-agent --cwd "$PWD" --mastra-base-url http://127.0.0.1:4111 --env-file "$PWD/.env"
+command -v mastra-acp
+mastra-acp --agent-id orchestrator-agent --cwd "$PWD" --mastra-base-url http://127.0.0.1:4111 --env-file "$PWD/.env"
 ```
 
 The command will normally wait for ACP JSON-RPC over stdio. Use `command -v` as the primary binary check; use an ACP smoke client when available for a full handshake.
 
 ## Runtime Env And Proxy Model
 
-`mastra-agents-acp` only loads env files explicitly passed with `--env-file`.
+`mastra-acp` only loads env files explicitly passed with `--env-file`.
 Keep `--cwd` pointed at the Mastra workspace root and pass `--env-file` when
 editor-spawned ACP processes need the same model and proxy settings as the
 local Mastra server.
@@ -71,7 +71,7 @@ Do not use `rl/openai/...` model IDs for this ACP app. The Mastra gateway regist
 On the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-agents-acp-adapter
+cd /container/shared/workspace/projects/mastra-acp-adapter
 npm run build
 npm version patch --no-git-tag-version
 npm pack
@@ -83,7 +83,7 @@ On the target machine:
 npm install -g ./mastrasystem-mastra-agents-acp-0.1.2.tgz
 ```
 
-Reinstalling a newer tarball updates the global `mastra-agents-acp` command.
+Reinstalling a newer tarball updates the global `mastra-acp` command.
 
 ## Client Config Shape
 
@@ -92,8 +92,8 @@ After global install, clients should invoke the binary by name rather than using
 Example args:
 
 ```bash
-mastra-agents-acp --agent-id supervisor-agent --cwd /path/to/workspace --mastra-base-url http://127.0.0.1:4111 --env-file /path/to/workspace/.env
-mastra-agents-acp --agent-id orchestrator-agent --cwd /path/to/workspace --mastra-base-url http://127.0.0.1:4111 --env-file /path/to/workspace/.env
+mastra-acp --agent-id supervisor-agent --cwd /path/to/workspace --mastra-base-url http://127.0.0.1:4111 --env-file /path/to/workspace/.env
+mastra-acp --agent-id orchestrator-agent --cwd /path/to/workspace --mastra-base-url http://127.0.0.1:4111 --env-file /path/to/workspace/.env
 ```
 
 Keep `--cwd` explicit for editor/ACP clients because it defines the workspace root for the session. The installed binary path should not be hard-coded.
@@ -111,7 +111,7 @@ binary package and the Linear ACP adapter:
 ```bash
 docker build \
   -f docker/mastra-server.Dockerfile \
-  --build-arg MASTRA_ACP_TARBALL_URL=https://github.com/EugeneChan00/mastra-agents-acp-adapter/releases/download/v0.1.2/mastrasystem-mastra-agents-acp-0.1.2.tgz \
+  --build-arg MASTRA_ACP_TARBALL_URL=https://github.com/EugeneChan00/mastra-acp-adapter/releases/download/v0.1.2/mastrasystem-mastra-agents-acp-0.1.2.tgz \
   --build-arg LINEAR_ACP_ADAPTER_TARBALL_URL=<linear-acp-adapter-release-asset-url> \
   .
 ```
@@ -125,7 +125,7 @@ printf '%s' "$GITHUB_TOKEN" > "$GITHUB_TOKEN_FILE"
 docker build \
   -f docker/mastra-server.Dockerfile \
   --secret id=github_token,src="$GITHUB_TOKEN_FILE" \
-  --build-arg MASTRA_ACP_TARBALL_URL=<mastra-agents-acp-release-asset-url> \
+  --build-arg MASTRA_ACP_TARBALL_URL=<mastra-acp-release-asset-url> \
   --build-arg LINEAR_ACP_ADAPTER_TARBALL_URL=<linear-acp-adapter-release-asset-url> \
   .
 rm -f "$GITHUB_TOKEN_FILE"
@@ -138,7 +138,7 @@ starts `linear-acp-adapter` on `8080`. Container-safe defaults are:
 LINEAR_ACP_ADAPTER_STATE_BACKEND=sqlite
 LINEAR_ACP_ADAPTER_SQLITE_FILE=/data/linear-acp/state.sqlite
 LINEAR_ACP_ADAPTER_CONFIG_FILE=/etc/linear-acp/config.yaml
-LINEAR_ACP_ADAPTER_ACP_COMMAND=mastra-agents-acp
+LINEAR_ACP_ADAPTER_ACP_COMMAND=mastra-acp
 LINEAR_ACP_ADAPTER_ACP_ARGS=["--agent-id","supervisor-agent","--cwd","/app","--mastra-base-url","http://127.0.0.1:4111"]
 LINEAR_ACP_ADAPTER_MASTRA_BASE_URL=http://127.0.0.1:4111
 ```
