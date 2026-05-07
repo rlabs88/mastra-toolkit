@@ -65,6 +65,7 @@ services:
   mastra-sandbox:
     image: ${MASTRA_DOCKER_SANDBOX_IMAGE:-ghcr.io/eugenechan00/daytona-agents/snapshot-mastra-agents:dev}
     entrypoint: ["sleep", "infinity"]
+    working_dir: /workspace
     environment:
       SERENA_PROJECT: /workspace
       SERENA_CONTEXT: codex
