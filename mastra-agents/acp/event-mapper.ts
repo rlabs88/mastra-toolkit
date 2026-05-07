@@ -1,4 +1,4 @@
-import type { SessionUpdate, ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { SessionUpdate, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk';
 
 export function inferToolKind(name?: string): ToolCallUpdate['kind'] {
   if (!name) return 'other';
@@ -9,14 +9,24 @@ export function inferToolKind(name?: string): ToolCallUpdate['kind'] {
   return 'other';
 }
 
+
+function optionalContentText(...values: unknown[]): ToolCallContent[] | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return [{ type: 'content', content: { type: 'text', text: value } } as ToolCallContent];
+    }
+  }
+  return undefined;
+}
+
 export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
   if (!isRecord(chunk)) return [];
   const type = str(chunk.type);
   if (type === 'text-delta') return [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: textFrom(chunk) } }];
   if (type === 'reasoning-delta' || type === 'reasoning') return [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: textFrom(chunk) }, _meta: { mastra: { reasoning: chunk } } }];
-  if (type === 'finish') return chunk.usage ? [{ sessionUpdate:'usage_update', used: num(chunk.usage,'totalTokens') ?? 0, size: num(chunk.usage,'totalTokens') ?? 0 }] : [];
+  if (type === 'finish') return chunk.usage ? [{ sessionUpdate: 'usage_update', used: num(chunk.usage, 'totalTokens') ?? 0, size: num(chunk.usage, 'totalTokens') ?? 0 }] : [];
 
-  if (type === "delegation-event") {
+  if (type === 'delegation-event') {
     const payload = isRecord(chunk.payload) ? chunk.payload : {};
     const fallbackIdParts = [
       idPart(payload.delegationId),
@@ -27,26 +37,19 @@ export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
       idPart(payload.phase),
       idPart(payload.delegatedAgentId) ?? idPart(payload.delegatedName),
     ].filter(Boolean);
-    const fallbackId = fallbackIdParts.length > 0 ? `delegation:${fallbackIdParts.join(":")}` : `delegation:${Date.now()}`;
-    const phase = str(payload.phase) ?? "delegation";
-    const status = phase === "delegation_complete" ? (payload.success === false ? "failed" : "completed") : "in_progress";
-    const summary = {
-      target: payload.delegatedAgentId ?? payload.delegatedName,
-      prompt: payload.prompt,
-      response: payload.response,
-      error: payload.error,
-      success: payload.success,
-      durationMs: payload.durationMs,
-    };
+    const fallbackId = fallbackIdParts.length > 0 ? `delegation:${fallbackIdParts.join(':')}` : `delegation:${Date.now()}`;
+    const phase = str(payload.phase) ?? 'delegation';
+    const status = phase === 'delegation_complete' ? (payload.success === false ? 'failed' : 'completed') : 'in_progress';
+
     return [{
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: str(payload.delegationId) ?? fallbackId,
       status,
-      title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? "delegation",
-      kind: "other",
+      title: str(payload.delegatedName) ?? str(payload.delegatedAgentId) ?? 'delegation',
+      kind: 'other',
       rawInput: payload.prompt,
       rawOutput: payload.response ?? payload.error,
-      content: [{ type: "content", content: { type: "text", text: JSON.stringify(summary) } }],
+      content: optionalContentText(str(payload.response), str(payload.error)),
       _meta: { mastra: chunk },
     }];
   }
@@ -54,6 +57,7 @@ export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
   if (type?.startsWith('tool-')) {
     const p = isRecord(chunk.payload) ? chunk.payload : chunk;
     const status = type === 'tool-result' ? 'completed' : type === 'tool-error' ? 'failed' : (type === 'tool-call-input-streaming-start' ? 'in_progress' : 'pending');
+
     const update: ToolCallUpdate & { sessionUpdate: 'tool_call_update' } = {
       sessionUpdate: 'tool_call_update',
       toolCallId: str(p.toolCallId) ?? str(p.id) ?? 'unknown',
@@ -62,9 +66,10 @@ export function mapMastraChunkToUpdates(chunk: unknown): SessionUpdate[] {
       kind: inferToolKind(str(p.toolName) ?? str(p.name)),
       rawInput: p.args,
       rawOutput: p.error ?? p.result,
-      content: [{ type: 'content', content: { type: 'text', text: JSON.stringify({ args:p.args, result:p.result, error:p.error }) } }],
+      content: optionalContentText(str(p.result), str(p.error), str(p.delta), str(p.text)),
       _meta: { mastra: chunk },
     };
+
     return [update];
   }
   return [];
