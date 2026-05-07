@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:22-bookworm-slim
 
 WORKDIR /app
@@ -20,6 +21,22 @@ COPY package-lock.json /app/package-lock.json
 
 WORKDIR /app
 RUN npm ci
+
+ARG MASTRA_ACP_ADAPTER_TARBALL_URL=
+RUN --mount=type=secret,id=github_token,required=false \
+  if [ -n "$MASTRA_ACP_ADAPTER_TARBALL_URL" ]; then \
+    if [ -s /run/secrets/github_token ]; then \
+      curl -fsSL \
+        -H "Authorization: Bearer $(cat /run/secrets/github_token)" \
+        -H "Accept: application/octet-stream" \
+        "$MASTRA_ACP_ADAPTER_TARBALL_URL" \
+        -o /tmp/mastra-acp-adapter.tgz; \
+    else \
+      curl -fsSL "$MASTRA_ACP_ADAPTER_TARBALL_URL" -o /tmp/mastra-acp-adapter.tgz; \
+    fi; \
+    npm install -g /tmp/mastra-acp-adapter.tgz; \
+    rm -f /tmp/mastra-acp-adapter.tgz; \
+  fi
 
 COPY mastra-agents /app/mastra-agents
 COPY mastra-code /app/mastra-code

@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: docker/mastra-server.Dockerfile
+      args:
+        MASTRA_ACP_ADAPTER_TARBALL_URL: ${MASTRA_ACP_ADAPTER_TARBALL_URL:-}
     command: ["npm", "run", "dev"]
     working_dir: /app/mastra-agents
     restart: unless-stopped
