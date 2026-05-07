@@ -110,7 +110,7 @@ env or is running an older tarball.
 ```bash
 docker build \
   -f docker/mastra-server.Dockerfile \
-  --build-arg MASTRA_ACP_ADAPTER_TARBALL_URL=https://github.com/EugeneChan00/mastra-acp-adapter/releases/download/v0.1.0/mastrasystem-mastra-agents-acp-0.1.0.tgz \
+  --build-arg MASTRA_ACP_ADAPTER_TARBALL_URL=https://github.com/EugeneChan00/mastra-acp-adapter/releases/download/v0.1.1/mastrasystem-mastra-agents-acp-0.1.1.tgz \
   .
 ```
 
