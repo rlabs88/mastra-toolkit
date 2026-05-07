@@ -5,7 +5,7 @@ Use this when `mastra-agents-acp` needs to be installed as a user-global binary 
 The standalone source package now lives in the sibling private repository:
 
 ```bash
-/container/shared/workspace/projects/mastra-acp-adapter
+/container/shared/workspace/projects/mastra-agents-acp-adapter
 ```
 
 Do not package ACP from `mastra-system/compiled`. The installed binary must come
@@ -17,7 +17,7 @@ directory.
 From the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-acp-adapter
+cd /container/shared/workspace/projects/mastra-agents-acp-adapter
 npm run build
 npm version patch --no-git-tag-version
 npm pack
@@ -26,7 +26,7 @@ npm pack
 This creates a package like:
 
 ```bash
-mastrasystem-mastra-agents-acp-0.1.1.tgz
+mastrasystem-mastra-agents-acp-0.1.2.tgz
 ```
 
 If the version should not be bumped, skip `npm version patch --no-git-tag-version`, but prefer bumping before sharing upgrades so the receiving machine can clearly identify the installed build.
@@ -36,7 +36,7 @@ If the version should not be bumped, skip `npm version patch --no-git-tag-versio
 Copy the `.tgz` file to the target machine, then install it globally for the current user:
 
 ```bash
-npm install -g ./mastrasystem-mastra-agents-acp-0.1.1.tgz
+npm install -g ./mastrasystem-mastra-agents-acp-0.1.2.tgz
 ```
 
 Verify the binary:
@@ -71,7 +71,7 @@ Do not use `rl/openai/...` model IDs for this ACP app. The Mastra gateway regist
 On the source machine:
 
 ```bash
-cd /container/shared/workspace/projects/mastra-acp-adapter
+cd /container/shared/workspace/projects/mastra-agents-acp-adapter
 npm run build
 npm version patch --no-git-tag-version
 npm pack
@@ -105,12 +105,14 @@ env or is running an older tarball.
 
 ## Docker Image Install
 
-`docker/mastra-server.Dockerfile` accepts an optional release tarball URL:
+`docker/mastra-server.Dockerfile` accepts release tarball URLs for the ACP
+binary package and the Linear ACP adapter:
 
 ```bash
 docker build \
   -f docker/mastra-server.Dockerfile \
-  --build-arg MASTRA_ACP_ADAPTER_TARBALL_URL=https://github.com/EugeneChan00/mastra-acp-adapter/releases/download/v0.1.1/mastrasystem-mastra-agents-acp-0.1.1.tgz \
+  --build-arg MASTRA_ACP_TARBALL_URL=https://github.com/EugeneChan00/mastra-agents-acp-adapter/releases/download/v0.1.2/mastrasystem-mastra-agents-acp-0.1.2.tgz \
+  --build-arg LINEAR_ACP_ADAPTER_TARBALL_URL=<linear-acp-adapter-release-asset-url> \
   .
 ```
 
@@ -123,7 +125,25 @@ printf '%s' "$GITHUB_TOKEN" > "$GITHUB_TOKEN_FILE"
 docker build \
   -f docker/mastra-server.Dockerfile \
   --secret id=github_token,src="$GITHUB_TOKEN_FILE" \
-  --build-arg MASTRA_ACP_ADAPTER_TARBALL_URL=<release-asset-url> \
+  --build-arg MASTRA_ACP_TARBALL_URL=<mastra-agents-acp-release-asset-url> \
+  --build-arg LINEAR_ACP_ADAPTER_TARBALL_URL=<linear-acp-adapter-release-asset-url> \
   .
 rm -f "$GITHUB_TOKEN_FILE"
 ```
+
+The bundled image starts Mastra on `4111`, waits for local readiness, then
+starts `linear-acp-adapter` on `8080`. Container-safe defaults are:
+
+```bash
+LINEAR_ACP_ADAPTER_STATE_BACKEND=sqlite
+LINEAR_ACP_ADAPTER_SQLITE_FILE=/data/linear-acp/state.sqlite
+LINEAR_ACP_ADAPTER_CONFIG_FILE=/etc/linear-acp/config.yaml
+LINEAR_ACP_ADAPTER_ACP_COMMAND=mastra-agents-acp
+LINEAR_ACP_ADAPTER_ACP_ARGS=["--agent-id","supervisor-agent","--cwd","/app","--mastra-base-url","http://127.0.0.1:4111"]
+LINEAR_ACP_ADAPTER_MASTRA_BASE_URL=http://127.0.0.1:4111
+```
+
+When `LINEAR_ACP_ADAPTER_ENABLED=true`, the native Mastra Linear channel is
+disabled by default. Set `ALLOW_NATIVE_LINEAR_CHANNEL_WITH_LINEAR_ACP=true`
+only during an intentional migration window where both Linear ingresses are
+expected.

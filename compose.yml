@@ -25,9 +25,9 @@ services:
       context: .
       dockerfile: docker/mastra-server.Dockerfile
       args:
-        MASTRA_ACP_ADAPTER_TARBALL_URL: ${MASTRA_ACP_ADAPTER_TARBALL_URL:-}
-    command: ["npm", "run", "dev"]
-    working_dir: /app/mastra-agents
+        MASTRA_ACP_TARBALL_URL: ${MASTRA_ACP_TARBALL_URL:-}
+        LINEAR_ACP_ADAPTER_TARBALL_URL: ${LINEAR_ACP_ADAPTER_TARBALL_URL:-}
+    command: ["mastra-bundled-entrypoint"]
     restart: unless-stopped
     depends_on:
       mastra-postgres:
@@ -54,12 +54,34 @@ services:
       MASTRA_WORKSPACE_COMMAND_CWD: /app
       MASTRA_WORKSPACE_ACCESS_ROOTS: /app,/root,/shared/workspace
       DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
+      LINEAR_ACP_ADAPTER_ENABLED: ${LINEAR_ACP_ADAPTER_ENABLED:-true}
+      LINEAR_ACP_ADAPTER_HOST: 0.0.0.0
+      LINEAR_ACP_ADAPTER_PORT: 8080
+      LINEAR_ACP_ADAPTER_WEBHOOK_PATH: ${LINEAR_ACP_ADAPTER_WEBHOOK_PATH:-/api/linear-acp/linear/webhook}
+      LINEAR_ACP_ADAPTER_CLIENT_ID: ${LINEAR_ACP_ADAPTER_CLIENT_ID:-}
+      LINEAR_ACP_ADAPTER_CLIENT_SECRET: ${LINEAR_ACP_ADAPTER_CLIENT_SECRET:-}
+      LINEAR_ACP_ADAPTER_REDIRECT_URI: ${LINEAR_ACP_ADAPTER_REDIRECT_URI:-}
+      LINEAR_ACP_ADAPTER_WEBHOOK_SECRET: ${LINEAR_ACP_ADAPTER_WEBHOOK_SECRET:-}
+      LINEAR_ACP_ADAPTER_API_KEY: ${LINEAR_ACP_ADAPTER_API_KEY:-}
+      LINEAR_ACP_ADAPTER_ACCESS_TOKEN: ${LINEAR_ACP_ADAPTER_ACCESS_TOKEN:-}
+      LINEAR_ACP_ADAPTER_STATE_BACKEND: sqlite
+      LINEAR_ACP_ADAPTER_SQLITE_FILE: /data/linear-acp/state.sqlite
+      LINEAR_ACP_ADAPTER_CONFIG_FILE: /etc/linear-acp/config.yaml
+      LINEAR_ACP_ADAPTER_ACP_TRANSPORT: stdio
+      LINEAR_ACP_ADAPTER_ACP_COMMAND: mastra-acp
+      LINEAR_ACP_ADAPTER_ACP_ARGS: '["--agent-id","supervisor-agent","--cwd","/app","--mastra-base-url","http://127.0.0.1:4111"]'
+      LINEAR_ACP_ADAPTER_ACP_CWD: /app
+      LINEAR_ACP_ADAPTER_MASTRA_BASE_URL: http://127.0.0.1:4111
+      DISABLE_NATIVE_LINEAR_CHANNEL_WHEN_LINEAR_ACP: ${DISABLE_NATIVE_LINEAR_CHANNEL_WHEN_LINEAR_ACP:-true}
+      ALLOW_NATIVE_LINEAR_CHANNEL_WITH_LINEAR_ACP: ${ALLOW_NATIVE_LINEAR_CHANNEL_WITH_LINEAR_ACP:-false}
     ports:
       - "${MASTRA_SERVER_HOST_PORT:-4111}:4111"
+      - "${LINEAR_ACP_ADAPTER_HOST_PORT:-8080}:8080"
     volumes:
       - ${HOST_WORKSPACE_ROOT:-.}:/app
       - /container/shared/workspace:/shared/workspace
       - mastra-server-node-modules:/app/node_modules
+      - linear-acp-data:/data/linear-acp
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - default
@@ -143,3 +165,4 @@ services:
 volumes:
   mastra-server-node-modules:
   mastra-postgres-data:
+  linear-acp-data:
