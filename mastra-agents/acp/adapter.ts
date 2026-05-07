@@ -1,7 +1,7 @@
 import type { AgentSideConnection, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModelRequest, SetSessionModelResponse } from '@agentclientprotocol/sdk';
 import { randomUUID } from 'node:crypto';
 import { buildConfigOptions, loadAcpRuntimeConfig, modeDefinitionForSession, modelOptionsForSession, normalizeModeId, normalizeModelId, type AcpRuntimeConfig } from './config-options.js';
-import { mapMastraChunkToUpdates } from './event-mapper.js';
+import { createMastraChunkMapper } from './event-mapper.js';
 import { cloneMastraThread } from './memory-client.js';
 import { streamMastraAgent } from './mastra-stream.js';
 import { MastraAcpSessionStore } from './session-store.js';
@@ -87,6 +87,7 @@ export function createMastraAcpAgentHandler(conn: AgentSideConnection, options: 
       const content = (last && 'text' in last) ? last.text : '';
       const ac = new AbortController();
       session.abortController = ac; store.update(session);
+      const mapMastraChunkToUpdates = createMastraChunkMapper();
       for await (const chunk of streamMastraAgent(options.mastraBaseUrl, session.agentId, buildPromptPayload(session, content, config), ac.signal)) {
         for (const update of mapMastraChunkToUpdates(chunk)) {
           await conn.sessionUpdate({ sessionId: session.sessionId, update });
