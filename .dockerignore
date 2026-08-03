@@ -10,4 +10,4 @@ node_modules
 coverage
 dist
 .mastra
-mastra-agents/.mastra
+.mastra-toolkit
