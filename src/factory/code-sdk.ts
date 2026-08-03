@@ -2,12 +2,19 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setCustomProvidersSource } from "@mastra/code-sdk/agents/custom-provider-source";
+import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
 
 interface SettingsDocument {
   onboarding?: Record<string, unknown>;
   models?: Record<string, unknown> & { modeDefaults?: Record<string, string> };
   preferences?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+export interface A1ProviderOptions {
+  readonly baseUrl: string;
+  readonly apiKey?: string;
+  readonly model: string;
 }
 
 export async function prepareCodeSdkSettings(options: { readonly dataDirectory?: string; readonly model: string }): Promise<string> {
@@ -30,13 +37,25 @@ export async function prepareCodeSdkSettings(options: { readonly dataDirectory?:
   return directory;
 }
 
-export function registerA1CodeSdkProvider(options: { readonly baseUrl: string; readonly apiKey?: string; readonly model: string }): void {
-  setCustomProvidersSource(() => [{
+function createA1Provider(options: A1ProviderOptions): MastraCodeCustomProvider {
+  return {
     name: "A1 Proxy",
     url: options.baseUrl,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}),
     models: [options.model],
-  }]);
+  };
+}
+
+export function registerA1CodeSdkProvider(options: A1ProviderOptions): void {
+  setCustomProvidersSource(() => [createA1Provider(options)]);
+}
+
+export function createA1MastraCodeGateway(options: A1ProviderOptions) {
+  return createMastraCodeGateway({
+    mastraGatewayBaseUrl: options.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, ""),
+    routeThroughMastraGateway: false,
+    customProviders: [createA1Provider(options)],
+  });
 }
 
 async function readSettings(settingsPath: string): Promise<SettingsDocument> {

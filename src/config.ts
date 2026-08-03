@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { findSandboxSpecPath, loadSandboxSpec, type SandboxSpec } from "./sandbox/spec.js";
 
 const DEFAULT_PROXY_BASE_URL = "https://aa.renaissancelab.org/v1";
 const DEFAULT_PROXY_MODEL = "openai/gpt-5.6-luna";
@@ -19,7 +20,8 @@ const environmentSchema = z.object({
   PROXY_API_KEY: z.string().min(1).optional(),
   CLI_PROXY_API_KEY: z.string().min(1).optional(),
   PROXY_MODEL: z.string().min(1).default(DEFAULT_PROXY_MODEL),
-  SANDBOX_PROVIDER: z.enum(["local", "docker", "platform"]).default("local"),
+  SANDBOX_PROVIDER: z.enum(["local", "docker", "platform"]).optional(),
+  SANDBOX_SPEC_PATH: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).optional(),
   DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
@@ -52,6 +54,10 @@ export interface ToolkitConfig {
   readonly sandbox: {
     readonly provider: SandboxProvider;
     readonly workspaceRoot: string;
+    readonly workdir: string;
+    readonly maxSandboxes: number;
+    readonly commandTimeoutMs: number;
+    readonly specification: SandboxSpec;
   };
   readonly databaseUrl?: string;
   readonly redisUrl?: string;
@@ -76,6 +82,7 @@ export interface ToolkitConfig {
 
 export function loadToolkitConfig(environment: NodeJS.ProcessEnv = process.env): ToolkitConfig {
   const parsed = environmentSchema.parse(environment);
+  const specification = loadSandboxSpec(findSandboxSpecPath(parsed.SANDBOX_SPEC_PATH));
   assertCompleteGroup(parsed, GITHUB_REQUIRED_KEYS, "GitHub App");
   assertCompleteGroup(parsed, ["MASTRA_ENVIRONMENT_ID", "MASTRA_PROJECT_ID", "MASTRA_PLATFORM_SECRET_KEY"], "Platform sandbox");
   assertCompleteGroup(parsed, ["WORKOS_API_KEY", "WORKOS_CLIENT_ID", "WORKOS_COOKIE_PASSWORD"], "WorkOS");
@@ -90,7 +97,14 @@ export function loadToolkitConfig(environment: NodeJS.ProcessEnv = process.env):
       apiKey: proxyApiKey,
       model: parsed.PROXY_MODEL,
     }),
-    sandbox: { provider: parsed.SANDBOX_PROVIDER, workspaceRoot },
+    sandbox: {
+      provider: parsed.SANDBOX_PROVIDER ?? specification.spec.defaultProvider,
+      workspaceRoot,
+      workdir: specification.spec.workdir,
+      maxSandboxes: specification.spec.maxSandboxes,
+      commandTimeoutMs: specification.spec.commandTimeoutMs,
+      specification,
+    },
     databaseUrl: parsed.DATABASE_URL,
     redisUrl: parsed.REDIS_URL,
     platform: completePlatform(parsed),

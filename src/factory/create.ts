@@ -30,9 +30,14 @@ export async function createToolkitFactory(config: ToolkitConfig, agents: Toolki
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
     integrations: [new ToolkitFactoryIntegration(agents), ...(github ? [github] : [])],
     sandbox: {
-      machine: createSandboxMachine({ provider: config.sandbox.provider, workspaceRoot: config.sandbox.workspaceRoot, platform: config.platform }),
-      workdir: config.sandbox.provider === "local" ? config.sandbox.workspaceRoot : "/workspace",
-      maxSandboxes: 8,
+      machine: createSandboxMachine({
+        provider: config.sandbox.provider,
+        workspaceRoot: config.sandbox.workspaceRoot,
+        platform: config.platform,
+        specification: config.sandbox.specification,
+      }),
+      workdir: config.sandbox.provider === "local" ? config.sandbox.workspaceRoot : config.sandbox.workdir,
+      maxSandboxes: config.sandbox.maxSandboxes,
     },
     publicUrl: "http://localhost:4111",
     allowedOrigins: ["http://localhost:4111"],

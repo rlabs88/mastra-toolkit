@@ -9,6 +9,16 @@ describe("loadToolkitConfig", () => {
     expect(config.proxy.baseUrl).toBe("https://aa.renaissancelab.org/v1");
     expect(config.proxy.model).toBe("openai/gpt-5.6-luna");
     expect(config.sandbox.provider).toBe("local");
+    expect(config.sandbox.specification.metadata.id).toBe("mastra-toolkit");
+    expect(config.sandbox.workdir).toBe("/workspace");
+    expect(config.sandbox.maxSandboxes).toBe(8);
+  });
+
+  test("allows the environment to select a provider without redefining its policy", () => {
+    const config = loadToolkitConfig({ SANDBOX_PROVIDER: "docker" });
+
+    expect(config.sandbox.provider).toBe("docker");
+    expect(config.sandbox.specification.spec.entrypointProfile.image).toMatch(/@sha256:[a-f0-9]{64}$/);
   });
 
   test("rejects partial GitHub App configuration", () => {

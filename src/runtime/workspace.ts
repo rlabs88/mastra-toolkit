@@ -7,6 +7,7 @@ export function createToolkitWorkspace(config: ToolkitConfig): Workspace {
     provider: config.sandbox.provider,
     workspaceRoot: config.sandbox.workspaceRoot,
     platform: config.platform,
+    specification: config.sandbox.specification,
   });
   return new Workspace({
     id: "mastra-toolkit-workspace",

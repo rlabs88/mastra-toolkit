@@ -17,7 +17,7 @@ npm ci
 npm run dev:infisical
 ```
 
-The default endpoint is `https://aa.renaissancelab.org/v1`, the default model is `proxy/openai/gpt-5.6-luna`, storage is local LibSQL, and the sandbox provider is `local`.
+The default endpoint is `https://aa.renaissancelab.org/v1`, the default model is `proxy/openai/gpt-5.6-luna`, storage is local LibSQL, and the checked-in sandbox specification selects `local`.
 
 Set the agent request context key `workspaceRoot` to bind Command Run to a project other than `WORKSPACE_ROOT`.
 
@@ -33,19 +33,27 @@ For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names
 
 Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, and `delegate_zen` to its native controller. Delegated agents cannot invoke those tools recursively.
 
+For the A1 custom provider, the MastraCode model ID stored in project/session settings is `a1-proxy/gpt-5.6-luna`. Do not include the `mastracode/` gateway prefix there; the SDK adds that prefix when it routes the request. API keys remain in Infisical or Factory's credential store and are never written to `settings.json` or the sandbox specification.
+
 ## Sandboxes
 
-Select with `SANDBOX_PROVIDER`:
+[`sandbox.config.json`](sandbox.config.json) is the version-controlled runtime specification. It declares the default provider, command and fleet limits, native isolation policy, the immutable ARM64 AES image, the `sandbox-entrypoint/v1` ABI, Docker hardening, and Platform lease/network policy. Its shape is documented by [`config/sandbox.schema.json`](config/sandbox.schema.json).
+
+`SANDBOX_PROVIDER` may select one of the declared provider policies at process start:
 
 - `local`: native LocalSandbox isolation and a contained filesystem.
-- `docker`: hardened `mastra-toolkit-sandbox:local` container.
+- `docker`: the digest-pinned canonical `ghcr.io/rlabs88/toolkit/aes-sandbox` image.
 - `platform`: Mastra Platform Workspace using `MASTRA_ENVIRONMENT_ID`, `MASTRA_PROJECT_ID`, and `MASTRA_PLATFORM_SECRET_KEY`.
 
-Build the Docker sandbox with:
+The repository Dockerfile is a thin consumer of the canonical image; it does not duplicate the centrally owned Fedora baseline. To validate the pinned entrypoint on an ARM64 Docker host:
 
 ```bash
-docker build -f docker/sandbox.Dockerfile -t mastra-toolkit-sandbox:local .
+IMAGE="$(node -p 'require("./sandbox.config.json").spec.entrypointProfile.image')"
+docker pull "$IMAGE"
+docker run --rm --platform linux/arm64 "$IMAGE" probe
 ```
+
+Host-specific workspace paths and all credentials stay in environment/Infisical configuration and are intentionally rejected from the checked-in specification. `SANDBOX_SPEC_PATH` can point at a different validated specification for an explicit deployment; invalid or mutable-image configurations fail closed.
 
 The optional persistence profile mirrors production infrastructure:
 
@@ -80,4 +88,4 @@ npm test
 npm run build
 ```
 
-The native capability decisions are recorded in [docs/mastra-capability-matrix.md](docs/mastra-capability-matrix.md).
+The native capability decisions are recorded in [docs/mastra-capability-matrix.md](docs/mastra-capability-matrix.md). The declarative sandbox contract and its Linear provenance are recorded in [docs/sandbox-runtime.md](docs/sandbox-runtime.md).
