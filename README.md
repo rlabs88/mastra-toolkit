@@ -1,101 +1,83 @@
-# Mastra System
+# Mastra Toolkit
 
-A monorepo for the Mastra agentic development environment, organized as a multi-package workspace.
+RLabs' local Mastra agent runtime and Mastra Factory adapter. It provides Cortex, Flux, and Zen through one shared runtime, with guarded repository tools, native background work, visible browser automation, and cloneable Local, Docker, or Platform sandboxes.
 
-```
-mastra-system/
-├── mastra-code/       @mastrasystem/code — Mastra Code wrapper (CLI + TUI)
-├── mastra-agents/     @mastrasystem/agents — Supervisor + specialist agent patterns
-│   └── paseo/         @mastrasystem/paseo — Relay network adapter
-├── package.json       Workspace root (npm/bun workspaces)
-└── tsconfig.base.json Shared TypeScript config
-```
+## Requirements
 
-## Packages
+- Node.js 22.19 or newer
+- Infisical CLI authenticated to project `0b0f6354-029f-45a7-9c1c-b65968b5f46c`
+- `rg` and `git` for local Command Run
+- Docker when using the Docker sandbox or persistence profile
+- Chrome for visible computer-use
 
-### `@mastrasystem/code` — Mastra Code Wrapper
-
-Thin local wrapper around `mastracode` using the public Mastra Code API:
-
-- `createMastraCode(...)` for harness setup
-- `MastraTUI` for the terminal UI
-- `Agent` definitions for custom modes
-- `subagents` definitions for focused child agents
-- `initialState` for documented startup defaults
+## Local standalone
 
 ```bash
-cd mastra-code
-bun install
-bun run mastra-code -- --cwd /path/to/project
+npm ci
+npm run dev:infisical
 ```
 
-### `@mastrasystem/agents` — Agent Patterns
+The default endpoint is `https://aa.renaissancelab.org/v1`, the default model is `proxy/openai/gpt-5.6-luna`, storage is local LibSQL, and the sandbox provider is `local`.
 
-Supervisor + 6 specialist agents in the Daytona agents pattern (Eugenechan00/daytona-agents):
+Set the agent request context key `workspaceRoot` to bind Command Run to a project other than `WORKSPACE_ROOT`.
 
-| Agent | Role |
-|---|---|
-| `supervisor` | Orchestrator — delegates to specialists |
-| `scout` | Current-state discovery |
-| `researcher` | External documentation and ecosystem research |
-| `architect` | Boundary, contract, and integration design |
-| `advisor` | Critique of plans, risks, and tradeoffs |
-| `developer` | Focused implementation |
-| `validator` | Diff, test, and evidence validation |
-| `control` | Evaluative quality control |
+## Mastra Factory
 
-**Tools:** Daytona sandbox (create/list/execute), workspace filesystem  
-**Scorers:** Prompt alignment, answer relevancy, toxicity  
-**Storage:** PostgresStore + DuckDBStore + FilesystemStore (composite)  
-**Sandbox:** Auto current-sandbox LocalSandbox when already inside Daytona; DaytonaAgentsDaytonaSandbox for forced/remote Daytona workspaces
-
-See [Mastra agent calling methods](docs/mastra-agent-calling-methods.md) for the Pi `agent_query` surface, default `resourceId`/`threadId` behavior, and how to start a new conversation thread intentionally.
-
-See [Mastra multi-channel architecture plan](docs/mastra-multichannel-architecture-plan.md) for the shared parent-scope implementation plan spanning Slack, GitHub, and Linear channels.
-
-See [daytona-agents](https://github.com/Eugenechan00/daytona-agents) for the reference implementation.
-
-### `@mastrasystem/paseo` — Paseo Adapter
-
-Custom relay network adapter for the Mastra system.
-
-## Setup
-
-### 1. Install dependencies
+Factory can boot locally without GitHub or WorkOS credentials for manual single-user workflows. Development receives a synthetic local organization; production fails closed unless WorkOS is configured:
 
 ```bash
-bun install  # or npm install
+npm run dev:factory:infisical
 ```
 
-### 2. Configure environment
+For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names documented in `.env.example`. The GitHub App must be owned by `rlabs88`, use the slug `rlabs-mastra-toolkit`, and be limited to metadata, contents, issues, pull requests, checks, and statuses. Credential creation and app installation are human-confirmed operations.
+
+Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, and `delegate_zen` to its native controller. Delegated agents cannot invoke those tools recursively.
+
+## Sandboxes
+
+Select with `SANDBOX_PROVIDER`:
+
+- `local`: native LocalSandbox isolation and a contained filesystem.
+- `docker`: hardened `mastra-toolkit-sandbox:local` container.
+- `platform`: Mastra Platform Workspace using `MASTRA_ENVIRONMENT_ID`, `MASTRA_PROJECT_ID`, and `MASTRA_PLATFORM_SECRET_KEY`.
+
+Build the Docker sandbox with:
 
 ```bash
-cp .env.example .env
-# Edit .env with your API keys and preferences
+docker build -f docker/sandbox.Dockerfile -t mastra-toolkit-sandbox:local .
 ```
 
-### 3. Workspace sandbox (optional, for @mastrasystem/agents)
-
-The Mastra workspace defaults to the current sandbox/local environment with filesystem access limited to the user home directory, `/container`, and `/shared`, so agents can inspect normal coding-agent paths without reading root-owned system areas such as `/root` or `/etc/systemd`. Set `MASTRA_WORKSPACE_ACCESS_ROOTS` to override file-tool roots. Set `MASTRA_WORKSPACE_SANDBOX=daytona` plus `DAYTONA_API_KEY`/`DAYTONA_API_URL` to force a nested Daytona workspace sandbox.
-
-## Environment variables
-
-| Variable | Description |
-|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic / Claude |
-| `OPENAI_API_KEY` | OpenAI |
-| `MINIMAX_API_KEY` | MiniMax |
-| `DAYTONA_API_KEY` | Daytona sandbox API |
-| `MASTRA_DAYTONA_ENDPOINT` | Daytona server endpoint |
-| `MASTRA_WORKSPACE_SANDBOX` | `auto`/empty, `local`, or `daytona` workspace command sandbox |
-| `MASTRA_WORKSPACE_ACCESS_ROOTS` | Comma-separated absolute file-tool roots (defaults to the user home directory, `/container`, and `/shared`) |
-| `MASTRA_WORKSPACE_COMMAND_CWD` | Command cwd for the local/current sandbox workspace |
-| `MASTRA_WORKSPACE_LOCAL_ISOLATION` | Local command isolation backend: `bwrap`, `seatbelt`, or `none` (defaults to the detected native backend when available) |
-| `MASTRA_CODE_MODEL` | Orchestrator model (default: rl/gpt-5.5) |
-| `MASTRA_SUBAGENT_MODEL` | Subagent model (default: minimax-coding-plan/MiniMax-M2.7) |
-
-## Type checking
+The optional persistence profile mirrors production infrastructure:
 
 ```bash
-bun run typecheck   # runs typecheck across all workspace packages
+docker compose --profile persistence up -d
+export DATABASE_URL=postgresql://mastra:mastra@127.0.0.1:5433/mastra
+export REDIS_URL=redis://127.0.0.1:6380
 ```
+
+Provider errors are fatal; Docker and Platform never silently fall back to Local.
+
+## Human gates
+
+Command Run dynamically requests approval when a batch contains shell execution, patch application, or a download. Reads, search, extraction, and task status remain read-only. Visible Stagehand Chrome automatically allows observation, extraction, screenshots, and tab listing; navigation, acting, closing, or mutating tabs require approval.
+
+## Infisical
+
+Use the `dev` environment and `/mastra-toolkit` path. The checked-in wrapper composes that path with `/agents`, so the existing `CLI_PROXY_API_KEY` is injected without copying it into another secret or a tracked dotenv file. Toolkit-specific credentials and settings remain under `/mastra-toolkit`.
+
+Validate names without printing values:
+
+```bash
+npm run secrets:check
+npm run secrets:check:factory
+```
+
+## Validation
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+The native capability decisions are recorded in [docs/mastra-capability-matrix.md](docs/mastra-capability-matrix.md).

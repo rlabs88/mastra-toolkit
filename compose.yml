@@ -1,168 +1,33 @@
-# compose.yml — Mastra-System local dev stack.
-#
-# This file intentionally does not start the Daytona control plane. The default
-# sandbox image is built in the daytona-agents repo, but it is only an agent
-# execution image artifact.
-#
-# Services:
-#   mastra-server    — Mastra dev server + Studio (`npm run dev`)
-#   mastra-sandbox   — Agent execution container (DockerSandbox reconnects by label)
-#   mastra-postgres  — Storage for Mastra Memory + control state
-#   webhook-server   — Webhook relay for GitHub/Linear/Slack
-#   cloudflare-webhook-tunnel — Optional public webhook tunnel; enable with
-#                               --profile public-webhook and CLOUDFLARED_TUNNEL_TOKEN
-#
-# The sandbox container has the `mastra.sandbox.id` label set.
-# DockerSandbox in workspace.ts reconnects to it by matching that label.
-#
-# Usage: docker compose up
-
-name: mastra-system
+name: mastra-toolkit
 
 services:
-  mastra-server:
-    build:
-      context: .
-      dockerfile: docker/mastra-server.Dockerfile
-      args:
-        MASTRA_ACP_TARBALL_URL: ${MASTRA_ACP_TARBALL_URL:-}
-        LINEAR_ACP_ADAPTER_TARBALL_URL: ${LINEAR_ACP_ADAPTER_TARBALL_URL:-}
-    command: ["mastra-bundled-entrypoint"]
-    restart: unless-stopped
-    depends_on:
-      mastra-postgres:
-        condition: service_healthy
-      mastra-sandbox:
-        condition: service_started
-    env_file:
-      - path: .env
-        required: false
-      - path: mastra-agents/.env
-        required: false
+  postgres:
+    profiles: ["persistence"]
+    image: postgres:16-alpine
     environment:
-      NODE_ENV: development
-      MASTRA_SKIP_DOTENV: "true"
-      MASTRA_SERVER_HOST: 0.0.0.0
-      MASTRA_SERVER_PORT: ${MASTRA_SERVER_PORT:-4111}
-      MASTRA_SERVER_STUDIO_HOST: ${MASTRA_SERVER_STUDIO_HOST:-localhost}
-      MASTRA_SERVER_STUDIO_PORT: ${MASTRA_SERVER_STUDIO_PORT:-4111}
-      MASTRA_WORKSPACE_SANDBOX: docker
-      MASTRA_DOCKER_SANDBOX_ID: mastra-agents-coding
-      MASTRA_DOCKER_SANDBOX_NETWORK: mastra-system_default
-      MASTRA_DOCKER_SANDBOX_HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/container/shared/workspace/projects/mastra-system}
-      MASTRA_WORKSPACE_ROOT: /app
-      MASTRA_WORKSPACE_COMMAND_CWD: /app
-      MASTRA_WORKSPACE_ACCESS_ROOTS: /app,/root,/shared/workspace
-      DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
-      LINEAR_ACP_ADAPTER_ENABLED: ${LINEAR_ACP_ADAPTER_ENABLED:-true}
-      LINEAR_ACP_ADAPTER_HOST: 0.0.0.0
-      LINEAR_ACP_ADAPTER_PORT: 8080
-      LINEAR_ACP_ADAPTER_WEBHOOK_PATH: ${LINEAR_ACP_ADAPTER_WEBHOOK_PATH:-/api/linear-acp/linear/webhook}
-      LINEAR_ACP_ADAPTER_CLIENT_ID: ${LINEAR_ACP_ADAPTER_CLIENT_ID:-}
-      LINEAR_ACP_ADAPTER_CLIENT_SECRET: ${LINEAR_ACP_ADAPTER_CLIENT_SECRET:-}
-      LINEAR_ACP_ADAPTER_REDIRECT_URI: ${LINEAR_ACP_ADAPTER_REDIRECT_URI:-}
-      LINEAR_ACP_ADAPTER_WEBHOOK_SECRET: ${LINEAR_ACP_ADAPTER_WEBHOOK_SECRET:-}
-      LINEAR_ACP_ADAPTER_API_KEY: ${LINEAR_ACP_ADAPTER_API_KEY:-}
-      LINEAR_ACP_ADAPTER_ACCESS_TOKEN: ${LINEAR_ACP_ADAPTER_ACCESS_TOKEN:-}
-      LINEAR_ACP_ADAPTER_STATE_BACKEND: sqlite
-      LINEAR_ACP_ADAPTER_SQLITE_FILE: /data/linear-acp/state.sqlite
-      LINEAR_ACP_ADAPTER_CONFIG_FILE: /etc/linear-acp/config.yaml
-      LINEAR_ACP_ADAPTER_ACP_TRANSPORT: stdio
-      LINEAR_ACP_ADAPTER_ACP_COMMAND: mastra-acp
-      LINEAR_ACP_ADAPTER_ACP_ARGS: '["--agent-id","supervisor-agent","--cwd","/app","--mastra-base-url","http://127.0.0.1:4111"]'
-      LINEAR_ACP_ADAPTER_ACP_CWD: /app
-      LINEAR_ACP_ADAPTER_MASTRA_BASE_URL: http://127.0.0.1:4111
-      DISABLE_NATIVE_LINEAR_CHANNEL_WHEN_LINEAR_ACP: ${DISABLE_NATIVE_LINEAR_CHANNEL_WHEN_LINEAR_ACP:-true}
-      ALLOW_NATIVE_LINEAR_CHANNEL_WITH_LINEAR_ACP: ${ALLOW_NATIVE_LINEAR_CHANNEL_WITH_LINEAR_ACP:-false}
-    ports:
-      - "${MASTRA_SERVER_HOST_PORT:-4111}:4111"
-      - "${LINEAR_ACP_ADAPTER_HOST_PORT:-8080}:8080"
-    volumes:
-      - ${HOST_WORKSPACE_ROOT:-.}:/app
-      - /container/shared/workspace:/shared/workspace
-      - mastra-server-node-modules:/app/node_modules
-      - linear-acp-data:/data/linear-acp
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - default
-
-  mastra-sandbox:
-    image: ${MASTRA_DOCKER_SANDBOX_IMAGE:-ghcr.io/eugenechan00/daytona-agents/snapshot-mastra-agents:dev}
-    entrypoint: ["sleep", "infinity"]
-    working_dir: /workspace
-    environment:
-      SERENA_PROJECT: /workspace
-      SERENA_CONTEXT: codex
-      SERENA_MCP_PORT: "8084"
-      CODE_REVIEW_GRAPH_REPO: /workspace
-      CODE_REVIEW_GRAPH_MCP_PORT: "8085"
-      AGENT_SERVICES_AUTOSTART: "false"
-      LOCAL_MCP_AUTOSTART: "false"
-      JUPYTER_AUTOSTART: "false"
-      PASEO_AUTOSTART: "false"
-      # Postgres reachable via Docker DNS on the shared network
-      DATABASE_URL: postgresql://mastra:mastra@mastra-postgres:5432/mastra
-    volumes:
-      - ${HOST_WORKSPACE_ROOT:-.}:/workspace
-      - /container/shared/workspace:/shared/workspace
-    networks:
-      - default
-    labels:
-      mastra.sandbox: "true"
-      mastra.sandbox.id: "mastra-agents-coding"
-    restart: unless-stopped
-
-  mastra-postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mastra}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mastra}
-      POSTGRES_DB: ${POSTGRES_DB:-mastra}
-    ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
-    volumes:
-      - mastra-postgres-data:/var/lib/postgresql/data
+      POSTGRES_USER: mastra
+      POSTGRES_PASSWORD: mastra
+      POSTGRES_DB: mastra
+    ports: ["5433:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U mastra -d mastra"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  webhook-server:
-    build:
-      context: .
-      dockerfile: webhook-server/Dockerfile
-    restart: unless-stopped
-    environment:
-      WEBHOOK_SERVER_HOST: ${WEBHOOK_SERVER_HOST:-0.0.0.0}
-      WEBHOOK_SERVER_PORT: ${WEBHOOK_SERVER_PORT:-8080}
-      MASTRA_UPSTREAM_URL: ${WEBHOOK_MASTRA_UPSTREAM_URL:-http://mastra-server:4111}
-      WEBHOOK_FORWARD_TIMEOUT_MS: ${WEBHOOK_FORWARD_TIMEOUT_MS:-30000}
-    depends_on:
-      - mastra-server
+  redis:
+    profiles: ["persistence"]
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6380:6379"]
+    volumes: ["redis-data:/data"]
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.WEBHOOK_SERVER_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-
-  cloudflare-webhook-tunnel:
-    profiles: ["public-webhook"]
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
-    restart: unless-stopped
-    depends_on:
-      - webhook-server
-    command:
-      - tunnel
-      - --no-autoupdate
-      - run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:-}
-      TUNNEL_METRICS: ${CLOUDFLARED_METRICS:-0.0.0.0:2000}
-      TUNNEL_LOGLEVEL: ${CLOUDFLARED_LOGLEVEL:-info}
+      retries: 10
 
 volumes:
-  mastra-server-node-modules:
-  mastra-postgres-data:
-  linear-acp-data:
+  postgres-data:
+  redis-data:

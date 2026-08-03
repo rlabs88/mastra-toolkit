@@ -1,13 +1,9 @@
-# Agent Prompt Rewrite Notes
+# Mastra Toolkit repository guidance
 
-- The Scout rewrite should use Claude subagent references and Claude Code system prompt references as evidence for role depth, tool discipline, and output contracts.
-- Use the DeepWiki tool to query codebase repository knowledge when validating upstream Mastra behavior, workspace tooling, or external repository patterns.
-- Do not use Mastra Code or `references/mastra/mastracode` as a reference source for this rewrite. Mastra Code is out of scope for the Scout prompt rewrite and should be treated as irrelevant unless the user explicitly reintroduces it.
-- Mastra Agents ACP user-global binary distribution notes live at `.agents/docs/mastra-agents-acp-tarball-install.md`. Use that doc when packaging the `mastra-acp` command as an npm tarball for install or upgrade on another machine before public/private npm publishing is appropriate.
-- Palmer/Linear channel setup notes live at `.agents/docs/linear-palmer-channel.md`. Keep the Linear app lean: configure Chat SDK's Linear adapter through the Mastra `Agent.channels` field on `supervisor-agent`; do not create a separate Chat SDK app or custom OAuth subsystem.
-- Before implementing infrastructure that may already exist in an upstream library, query DeepWiki for the relevant repository and feature area first. Prefer official packages/classes/adapters/state implementations from the library over custom code; document the chosen package or API when adopting it.
-
-## Agent Docs Index
-
-- `.agents/docs/workspace-runtime.md` records the workspace runtime configuration for agent tarball packaging: home, `/container`, and `/shared` file access; built-in `execute_command`; and project plus home skill imports.
-- ACP source lives in `mastra-agents/acp`; compiled runtime output belongs in ignored `compiled/mastra-agents/acp`, not `mastra-agents/src/acp`.
+- Prefer supported Mastra agents, tools, workspaces, browser, background-task, approval, and Factory extension APIs before adding toolkit-owned infrastructure.
+- Preserve the public agent IDs `cortex`, `flux`, and `zen` and the six-section prompt order.
+- Keep Cortex and Flux as leaf agents. Zen and Factory may delegate; recursion must remain bounded.
+- Command Run must retain its parser, scheduling, containment, timeout, cancellation, output, attachment, and SSRF contracts.
+- Use Infisical project `0b0f6354-029f-45a7-9c1c-b65968b5f46c`, environment `dev`, path `/mastra-toolkit`. Never commit or log secret values.
+- Add or update a failing contract test before changing production behavior.
+- Local, Docker, and Platform providers must satisfy the same cloneable sandbox-machine contract and must not silently fall back.
