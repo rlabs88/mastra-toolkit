@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createA1MastraCodeGateway, prepareCodeSdkSettings } from "../src/factory/code-sdk.js";
+import { createA1MastraCodeGateway, getA1CodeModelId, prepareCodeSdkSettings } from "../src/factory/code-sdk.js";
 
 describe("Factory Code SDK configuration", () => {
   test("seeds A1 model defaults without persisting the proxy key", async () => {
@@ -11,9 +11,9 @@ describe("Factory Code SDK configuration", () => {
     const settings = await readFile(join(directory, "settings.json"), "utf8");
 
     expect(JSON.parse(settings).models.modeDefaults).toMatchObject({
-      fast: "a1-proxy/gpt-5.6-luna",
-      plan: "a1-proxy/gpt-5.6-luna",
-      build: "a1-proxy/gpt-5.6-luna",
+      fast: "mastracode/gpt-5.6-luna",
+      plan: "mastracode/gpt-5.6-luna",
+      build: "mastracode/gpt-5.6-luna",
     });
     expect(settings).not.toContain("apiKey");
   });
@@ -29,11 +29,17 @@ describe("Factory Code SDK configuration", () => {
     expect(
       gateway.resolveAuth({
         gatewayId: "mastracode",
-        providerId: "a1-proxy",
+        providerId: "mastracode",
         modelId: "gpt-5.6-luna",
-        routerId: "mastracode/a1-proxy/gpt-5.6-luna",
+        routerId: "mastracode/gpt-5.6-luna",
       }),
     ).toMatchObject({ apiKey: "test-key" });
-    await expect(gateway.fetchProviders()).resolves.toHaveProperty("a1-proxy");
+    await expect(gateway.fetchProviders()).resolves.toHaveProperty("mastracode");
+  });
+
+  test("normalizes legacy A1 model IDs to the resolvable provider ID", () => {
+    expect(getA1CodeModelId("gpt-5.6-luna")).toBe("mastracode/gpt-5.6-luna");
+    expect(getA1CodeModelId("a1-proxy/gpt-5.6-luna")).toBe("mastracode/gpt-5.6-luna");
+    expect(getA1CodeModelId("mastracode/a1-proxy/gpt-5.6-luna")).toBe("mastracode/gpt-5.6-luna");
   });
 });

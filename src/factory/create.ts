@@ -1,4 +1,5 @@
-import { MastraFactory } from "@mastra/factory";
+import type { FactoryStorage } from "@mastra/core/storage";
+import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
 import type { ToolkitAgents } from "../agents/index.js";
@@ -6,11 +7,20 @@ import type { ToolkitConfig } from "../config.js";
 import { createSandboxMachine } from "../sandbox/index.js";
 import { ToolkitFactoryIntegration } from "./toolkit-integration.js";
 import { createToolkitStorage } from "../runtime/storage.js";
-import { prepareCodeSdkSettings } from "./code-sdk.js";
+import {
+  prepareCodeSdkSettings,
+  type A1ProviderOptions,
+} from "./code-sdk.js";
 import { createFactoryAuth } from "./auth.js";
+import { prepareLocalA1Provider } from "./local-provider.js";
 
 export async function createToolkitFactory(config: ToolkitConfig, agents: ToolkitAgents): Promise<MastraFactory> {
-  await prepareCodeSdkSettings({ model: config.proxy.model.replace(/^openai\//, "") });
+  const a1Provider = {
+    baseUrl: config.proxy.baseUrl,
+    model: config.proxy.model.replace(/^openai\//, ""),
+    ...(config.proxy.apiKey ? { apiKey: config.proxy.apiKey } : {}),
+  } satisfies A1ProviderOptions;
+  await prepareCodeSdkSettings({ model: a1Provider.model });
   const { factoryStorage, vector } = createToolkitStorage(config.databaseUrl);
   const github = config.github ? new GithubIntegration({
     appId: config.github.GITHUB_APP_ID,
@@ -23,7 +33,7 @@ export async function createToolkitFactory(config: ToolkitConfig, agents: Toolki
   const auth = createFactoryAuth(config.workos);
   const stateSecret = config.github?.GITHUB_APP_WEBHOOK_SECRET ?? config.workos?.cookiePassword;
 
-  return new MastraFactory({
+  const factoryConfig: MastraFactoryConfig = {
     auth,
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
@@ -42,5 +52,23 @@ export async function createToolkitFactory(config: ToolkitConfig, agents: Toolki
     publicUrl: "http://localhost:4111",
     allowedOrigins: ["http://localhost:4111"],
     ...(stateSecret ? { stateSecret } : {}),
-  });
+  };
+
+  return new ToolkitMastraFactory(factoryConfig, factoryStorage, config.workos ? undefined : a1Provider);
+}
+
+class ToolkitMastraFactory extends MastraFactory {
+  constructor(
+    config: MastraFactoryConfig,
+    private readonly factoryStorage: FactoryStorage,
+    private readonly localA1Provider?: A1ProviderOptions,
+  ) {
+    super(config);
+  }
+
+  override async prepare(): Promise<MastraArgs> {
+    const prepared = await super.prepare();
+    if (this.localA1Provider) await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
+    return prepared;
+  }
 }

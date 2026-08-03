@@ -33,7 +33,7 @@ For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names
 
 Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, and `delegate_zen` to its native controller. Delegated agents cannot invoke those tools recursively.
 
-For the A1 custom provider, the MastraCode model ID stored in project/session settings is `a1-proxy/gpt-5.6-luna`. Do not include the `mastracode/` gateway prefix there; the SDK adds that prefix when it routes the request. API keys remain in Infisical or Factory's credential store and are never written to `settings.json` or the sandbox specification.
+For the A1 custom provider, the MastraCode model ID stored in project/session settings is `mastracode/gpt-5.6-luna`. The provider intentionally uses the same stable ID as the MastraCode gateway so Factory's model catalog does not produce a duplicated gateway/provider prefix. Local Factory startup idempotently seeds this provider in Factory's credential store and migrates legacy `a1-proxy/...` references. API keys are never written to `settings.json` or the sandbox specification.
 
 ## Sandboxes
 

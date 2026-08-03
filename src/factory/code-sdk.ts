@@ -1,8 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { setCustomProvidersSource } from "@mastra/code-sdk/agents/custom-provider-source";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
+
+export const A1_CODE_PROVIDER_ID = "mastracode";
+export const A1_CODE_PROVIDER_NAME = "MastraCode";
 
 interface SettingsDocument {
   onboarding?: Record<string, unknown>;
@@ -17,13 +19,18 @@ export interface A1ProviderOptions {
   readonly model: string;
 }
 
+export function getA1CodeModelId(model: string): string {
+  const bareModel = model.replace(/^openai\//, "").replace(/^mastracode\/(?:a1-proxy\/)?/, "").replace(/^a1-proxy\//, "");
+  return `${A1_CODE_PROVIDER_ID}/${bareModel}`;
+}
+
 export async function prepareCodeSdkSettings(options: { readonly dataDirectory?: string; readonly model: string }): Promise<string> {
   const directory = options.dataDirectory ?? process.env.MASTRA_APP_DATA_DIR ?? join(homedir(), ".mastra-toolkit", "code-sdk");
   process.env.MASTRA_APP_DATA_DIR = directory;
   await mkdir(directory, { recursive: true });
   const settingsPath = join(directory, "settings.json");
   const existing = await readSettings(settingsPath);
-  const modelId = `a1-proxy/${options.model}`;
+  const modelId = getA1CodeModelId(options.model);
   const settings: SettingsDocument = {
     ...existing,
     onboarding: { ...(existing.onboarding ?? {}), completedAt: new Date(0).toISOString(), quietModePreferenceSelected: true },
@@ -39,15 +46,13 @@ export async function prepareCodeSdkSettings(options: { readonly dataDirectory?:
 
 function createA1Provider(options: A1ProviderOptions): MastraCodeCustomProvider {
   return {
-    name: "A1 Proxy",
+    // Matching the custom-provider id to MastraCodeGateway.id prevents core's
+    // catalog from emitting the unresolvable `mastracode/a1-proxy/...` form.
+    name: A1_CODE_PROVIDER_NAME,
     url: options.baseUrl,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}),
     models: [options.model],
   };
-}
-
-export function registerA1CodeSdkProvider(options: A1ProviderOptions): void {
-  setCustomProvidersSource(() => [createA1Provider(options)]);
 }
 
 export function createA1MastraCodeGateway(options: A1ProviderOptions) {

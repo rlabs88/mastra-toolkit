@@ -2,7 +2,6 @@ import { Mastra } from "@mastra/core/mastra";
 import { createToolkitAgents } from "../agents/index.js";
 import { loadToolkitConfig } from "../config.js";
 import { createToolkitFactory } from "../factory/create.js";
-import { createA1MastraCodeGateway, registerA1CodeSdkProvider } from "../factory/code-sdk.js";
 import { ProxyGateway } from "../models/proxy-gateway.js";
 import { createToolkitStorage } from "../runtime/storage.js";
 import { createToolkitWorkspace } from "../runtime/workspace.js";
@@ -17,21 +16,12 @@ export const agents = createToolkitAgents({
 export const factory = config.mode === "factory" ? await createToolkitFactory(config, agents) : undefined;
 const standalone = factory ? undefined : createToolkitStorage(config.databaseUrl);
 const prepared = factory ? await factory.prepare() : {};
-const a1Provider = {
-  baseUrl: config.proxy.baseUrl,
-  model: config.proxy.model.replace(/^openai\//, ""),
-  ...(config.proxy.apiKey ? { apiKey: config.proxy.apiKey } : {}),
-};
-if (factory) {
-  registerA1CodeSdkProvider(a1Provider);
-}
 
 export const mastra = new Mastra({
   ...prepared,
   agents: { ...(prepared.agents ?? {}), ...agents },
   gateways: {
     ...(prepared.gateways ?? {}),
-    ...(factory ? { mastracode: createA1MastraCodeGateway(a1Provider) } : {}),
     proxy: new ProxyGateway(config.proxy),
   },
   workspace: createToolkitWorkspace(config),
