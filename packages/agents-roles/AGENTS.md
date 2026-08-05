@@ -20,6 +20,22 @@ applies_to: ["**/*"]
 - Consume role-independent tools from `@rlabs/agent-tools` and model profiles from `@rlabs/runtime-config`.
 - Preserve public role IDs and the exact six-section prompt order.
 
+## Structure and extension
+
+```text
+src/
+├── cortex|flux|zen/{prompt.ts,role.ts,index.ts} # canonical roles
+├── prompts/                                    # shared prompt sections
+├── prompt.ts                                   # six-section composition
+├── role.ts                                     # shared role contract
+├── factory.ts                                  # host-neutral agent construction
+└── index.ts                                    # package facade
+```
+
+- Add a role only when it is a durable, canonical role shared across hosts. Add its folder, registry and factory wiring, exports, tests, and downstream projections in the same change.
+- Put genuinely shared prompt sections and role contracts in the shared modules; keep role-specific identity, policy, and defaults inside the role folder.
+- Keep `factory.ts` host-neutral: it constructs agents but is not Mastra Factory integration. Host-named request-context switches, controller lifecycle, and host-specific delegation policy belong downstream behind neutral capability contracts.
+
 ## Change boundaries
 
 - Change role behavior only with a failing package-local contract test first.

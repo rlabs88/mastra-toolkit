@@ -20,6 +20,21 @@ applies_to: ["**/*"]
 - Keep command execution contained to the resolved workspace root and fail closed on permission, traversal, symlink, timeout, or public-network validation errors.
 - Keep browser actions visible and preserve explicit approval for mutating navigation, tab, and page actions.
 
+## Structure and extension
+
+```text
+src/
+├── adhd.ts, audit.ts, browser.ts # small standalone capabilities
+├── command-run/                  # one deep execution contract
+│   ├── parser, scheduler, process, paths, web, media, trace, adapters
+│   └── index.ts                  # Command Run facade
+└── index.ts                      # package facade
+```
+
+- Treat `command-run/` as one behavioral unit; changes spanning its parser, execution, containment, media, web, and audit surfaces must remain coherent.
+- Start a new role- and host-neutral tool as one module. Create a subdirectory only after it has multiple private responsibilities behind one narrow facade.
+- Existing helper exports are compatibility surfaces. New internals do not become public solely for testing; add or narrow exports only through an explicit compatibility migration.
+
 ## Change boundaries
 
 - Change behavior only with a failing package-local contract test first.

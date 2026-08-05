@@ -19,6 +19,21 @@ applies_to: ["**/*"]
 - Keep provider selection explicit and fail when required provider identity is absent.
 - Keep checked-in sandbox configuration free of credentials, host user state, and mutable image tags.
 
+## Structure and extension
+
+```text
+config/                  # package-owned schema and defaults
+src/
+├── spec.ts, config.ts, types.ts
+├── machine.ts           # cloneable machine contract and routing
+├── local.ts, docker.ts, platform.ts # provider adapters
+└── index.ts             # package facade
+```
+
+- Preserve the shallow provider layout while each adapter is cohesive. Give a provider a subdirectory only when it gains multiple private modules or an independently evolving policy and test seam.
+- Adding a provider requires schema and default updates, narrow credential inputs, an adapter, explicit router selection, exports, and contract tests in the same change.
+- Never add an implicit provider fallback or move host orchestration into this package.
+
 ## Change boundaries
 
 - Change sandbox schemas, package-local configuration, parser tests, and adapter contract tests together.

@@ -20,9 +20,21 @@ applies_to: ["**/*"]
 - Keep runtime implementation in packages and application composition in `apps/mcode`.
 - Use immutable images, runtime secret delivery, least privilege, and an explicit entrypoint ABI.
 
+## Structure and activation
+
+```text
+deployment/mcode-sandbox/
+├── AGENTS.md
+└── CONTEXT.md
+```
+
+- Keep this checkpoint documentation-only until an approved activation issue names the Factory consumer and operator, entrypoint ABI, canonical-image decision, credential classes, publisher and build pipeline, rollout and health checks, rollback behavior, and required structural-test amendment.
+- When activated, add only the files required by that concrete delivery slice. Reference package and application contracts instead of copying their implementation or configuration.
+- Require immutable provenance, runtime-only secrets, least privilege, no Docker socket or host credentials, and rollback to a known-good release including persistent-state and in-flight-work handling.
+
 ## Change boundaries
 
-- Do not add deployment implementation until its dedicated issue defines the image owner, build pipeline, credential classes, and rollback contract.
+- Do not add deployment implementation until the activation contract above is complete.
 - Never bake credentials, host state, Docker socket access, or user configuration into an image.
 
 ## Validation

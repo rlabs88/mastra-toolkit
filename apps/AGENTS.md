@@ -21,6 +21,20 @@ applies_to: ["**/*"]
 - Compose packages only through their public exports; do not deep-import package internals.
 - Keep the `mcode` executable an RLabs composition of published Mastra Code APIs. Do not patch or copy upstream Mastra Code source here.
 
+## Structure and extension
+
+```text
+apps/
+├── mcode/src/cli.ts    # local CLI/TUI process lifecycle
+├── studio/src/index.ts # Studio composition root
+└── factory/src/index.ts # Factory composition root
+```
+
+- Keep one entrypoint per application while its lifecycle remains cohesive. Add a local module only for an independently testable lifecycle, transport, or presentation concern.
+- Each application manifest must declare every package it imports directly or loads explicitly through host tooling.
+- Add an application only for a materially distinct executable or server. A deployment profile, model selection, mode, or local-versus-remote setting is not a separate application.
+- Keep delivery assets under `deployment/`. Continue sharing this checkpoint until an application's local policy genuinely diverges; do not add speculative nested checkpoints.
+
 ## Change boundaries
 
 - Change an application's consumed package contract and its integration test together.

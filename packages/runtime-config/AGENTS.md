@@ -19,6 +19,21 @@ applies_to: ["**/*"]
 - Keep checked-in configuration secret-free; resolve only the environment variable named by the profile.
 - Expose host-neutral resolved configuration and keep Studio, Factory, and Code adaptation outside this package.
 
+## Structure and extension
+
+```text
+config/models.yaml     # canonical, secret-free model catalog
+src/profile.ts         # schema, loading, and host-neutral projections
+src/environment.ts     # environment resolution
+src/proxy-gateway.ts   # Mastra gateway construction
+src/index.ts           # public facade
+test/                  # contract tests mirroring the modules above
+```
+
+- Preserve this shallow layout while these responsibilities remain cohesive.
+- Add a module only for an independently testable, host-neutral configuration capability. Host lifecycle, application settings, and sandbox policy belong downstream.
+- Export supported consumers through `src/index.ts`; do not expose internal helpers merely to make tests convenient.
+
 ## Change boundaries
 
 - Change the profile schema, package-local YAML, resolver tests, and public exports together.
