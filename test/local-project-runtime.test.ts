@@ -34,6 +34,17 @@ describe("local project runtime", () => {
       expect(runtime.controller.listModes().map(mode => mode.id)).toEqual(CODE_MODE_IDS);
       expect(runtime.mastra.getAgent("cortex").id).toBe(runtime.agents.cortex.id);
       expect(runtime.mastra.getGateway("proxy").id).toBe("proxy");
+      const controllerConfig = (runtime.controller as unknown as {
+        config: { subagents?: Array<{ id: string; defaultModelId?: string }> };
+      }).config;
+      expect(controllerConfig.subagents?.map(subagent => ({
+        id: subagent.id,
+        defaultModelId: subagent.defaultModelId,
+      }))).toEqual([
+        { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
+        { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
+        { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
+      ]);
 
       const first = await runtime.controller.createSession({ id: "first", ownerId: "test", scope: "first" });
       const second = await runtime.controller.createSession({ id: "second", ownerId: "test", scope: "second" });
@@ -48,29 +59,42 @@ describe("local project runtime", () => {
         buildRequestContext(session: typeof first, context: RequestContext): Promise<RequestContext>;
         buildToolsets(session: typeof first, context: RequestContext): Promise<{
           controllerBuiltIn: Record<string, unknown>;
-          modeTools: (input: { requestContext: RequestContext }) => Promise<Record<string, unknown>> | Record<string, unknown>;
         }>;
         resolveCurrentModeInstructions(session: typeof first): string | undefined;
       };
       const context = await controller.buildRequestContext(first, requestContext);
       const toolsets = await controller.buildToolsets(first, context);
-      const modeTools = await toolsets.modeTools({ requestContext: context });
       expect(Object.keys(toolsets.controllerBuiltIn)).toContain("ask_user");
-      expect(Object.keys(modeTools)).toContain("project_specialist");
-      expect(Object.keys(modeTools)).toContain("workflow_runtime_smoke");
-      expect(Object.keys(modeTools)).toContain("request_access");
+      const subagentTool = toolsets.controllerBuiltIn.subagent as {
+        description: string;
+        inputSchema: { parse(input: unknown): { agentType: string } };
+      };
+      expect(subagentTool.description).toContain("**cortex**");
+      expect(subagentTool.description).toContain("**flux**");
+      expect(subagentTool.description).toContain("**zen**");
+      for (const agentType of ["cortex", "flux", "zen"]) {
+        expect(subagentTool.inputSchema.parse({ agentType, task: "Inspect the runtime" }).agentType).toBe(agentType);
+      }
+      expect(() => subagentTool.inputSchema.parse({ agentType: "unknown", task: "Inspect" })).toThrow();
+      const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
+      expect(Object.keys(agentTools)).toContain("project_specialist");
+      expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
+      expect(Object.keys(agentTools)).toContain("request_access");
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {
         await first.mode.switch({ modeId: `${agentId}/scope` });
         const scopeAgent = runtime.controller.getCurrentAgent(first);
-        const scopeTools = await resolveModeTools(controller, first);
+        const scopeTools = await resolveAgentTools(controller, first, scopeAgent);
         expect(scopeAgent).toBe(runtime.agents[agentId]);
+        expect(Object.keys(scopeTools)).toContain("workflow_runtime_smoke");
+        expect((await controller.buildToolsets(first, context)).controllerBuiltIn).toHaveProperty("subagent");
         expect(await scopeAgent.getInstructions({ requestContext: context })).toContain("# Base Identity");
         expect(controller.resolveCurrentModeInstructions(first)).toContain("# Scope mode");
 
         await first.mode.switch({ modeId: `${agentId}/build` });
-        const buildTools = await resolveModeTools(controller, first);
+        const buildTools = await resolveAgentTools(controller, first, runtime.controller.getCurrentAgent(first));
         expect(runtime.controller.getCurrentAgent(first)).toBe(runtime.agents[agentId]);
+        expect((await controller.buildToolsets(first, context)).controllerBuiltIn).toHaveProperty("subagent");
         expect(controller.resolveCurrentModeInstructions(first)).toContain("# Build mode");
         expect(Object.keys(buildTools).sort()).toEqual(Object.keys(scopeTools).sort());
       }
@@ -98,16 +122,13 @@ export const agentTool = { description: "Run smoke" };
 `;
 }
 
-async function resolveModeTools(
+async function resolveAgentTools(
   controller: {
     buildRequestContext(session: any, context: RequestContext): Promise<RequestContext>;
-    buildToolsets(session: any, context: RequestContext): Promise<{
-      modeTools: (input: { requestContext: RequestContext }) => Promise<Record<string, unknown>> | Record<string, unknown>;
-    }>;
   },
   session: any,
+  agent: { listTools(input: { requestContext: RequestContext }): Promise<Record<string, unknown>> },
 ): Promise<Record<string, unknown>> {
   const context = await controller.buildRequestContext(session, new RequestContext());
-  const toolsets = await controller.buildToolsets(session, context);
-  return toolsets.modeTools({ requestContext: context });
+  return agent.listTools({ requestContext: context });
 }

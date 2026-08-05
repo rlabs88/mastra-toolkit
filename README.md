@@ -19,9 +19,11 @@ npm ci
 npm run code:infisical
 ```
 
-This starts the Mastra Code TUI directly in the containing Git checkout or worktree. It mounts one AgentController on one caller-owned Mastra, uses the same contained workspace for files and commands, and does not require an HTTP server. The default selection is `cortex/build`; Cortex, Flux, and Zen each expose `scope` and `build`, for exactly six selections.
+This starts the Mastra Code TUI directly in the containing Git checkout or worktree. It mounts one AgentController on one caller-owned Mastra, uses the same contained workspace for files and commands, and does not require an HTTP server. The default selection is `cortex/build`; Cortex, Flux, and Zen each expose `scope` and `build`, for exactly six selections. Press `Shift+Tab` to cycle selections, use `/mode` to list them, or use `/mode flux/build` to select one directly.
 
-The A1 provider is `a1-proxy`. Active coding defaults to `code-frontier-high`, observational memory defaults to `code-workhorse-high`, and every alias in [`config/models.yaml`](config/models.yaml) is available without persisting a proxy key or raw upstream model ID. Persisted approval, YOLO, thinking, and valid model choices remain authoritative.
+Every selection can also use Mastra Code's native `subagent` tool. Its named targets are exactly `cortex`, `flux`, and `zen`, so any active canonical agent can delegate a focused task to any canonical role without changing the parent mode. These delegated runs use the canonical role prompt and model mapping, receive the project workspace, and cannot recursively launch another subagent.
+
+The A1 provider is `a1-proxy`. Active coding defaults to `code-frontier-high`, observational memory defaults to `code-workhorse-high`, and every alias in [`config/models.yaml`](config/models.yaml) is available without persisting a proxy key or raw upstream model ID. By default, the Observer runs after 60,000 message tokens and the Reflector runs after 60,000 accumulated observation tokens. Mastra Code presents those thresholds as a combined 120,000-token memory capacity; this is not a declaration of the provider model's physical context window. Persisted approval, YOLO, thinking, valid model choices, and explicit numeric memory thresholds remain authoritative.
 
 Project resources are loaded from the checkout and hot-reloaded without restarting Mastra or the controller:
 

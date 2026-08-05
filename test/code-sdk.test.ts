@@ -23,6 +23,13 @@ describe("Factory Code SDK configuration", () => {
     expect(new Set(Object.values(parsed.models.modeDefaults))).toEqual(new Set(["a1-proxy/code-frontier-high"]));
     expect(parsed.models.observerModelOverride).toBe("a1-proxy/code-workhorse-high");
     expect(parsed.models.reflectorModelOverride).toBe("a1-proxy/code-workhorse-high");
+    expect(parsed.models.subagentModels).toEqual({
+      cortex: "proxy/a1-proxy/code-frontier-high",
+      flux: "proxy/a1-proxy/code-frontier-high",
+      zen: "proxy/a1-proxy/code-frontier-high",
+    });
+    expect(parsed.models.omObservationThreshold).toBe(60_000);
+    expect(parsed.models.omReflectionThreshold).toBe(60_000);
     expect(parsed.customProviders).toEqual([{
       name: "A1 Proxy",
       url: "https://proxy.example.test/v1",
@@ -61,7 +68,10 @@ describe("Factory Code SDK configuration", () => {
     await writeFile(join(directory, "settings.json"), JSON.stringify({
       models: {
         modeDefaults: { "cortex/build": "a1-proxy/code-frontier-max" },
+        subagentModels: { cortex: "openai/gpt-5.4-mini" },
         observerModelOverride: "a1-proxy/fast-high",
+        omObservationThreshold: 72_000,
+        omReflectionThreshold: 48_000,
       },
       preferences: { yolo: true, thinkingLevel: "xhigh" },
     }));
@@ -71,6 +81,13 @@ describe("Factory Code SDK configuration", () => {
 
     expect(settings.models.modeDefaults["cortex/build"]).toBe("a1-proxy/code-frontier-max");
     expect(settings.models.observerModelOverride).toBe("a1-proxy/fast-high");
+    expect(settings.models.subagentModels).toEqual({
+      cortex: "proxy/a1-proxy/code-frontier-high",
+      flux: "proxy/a1-proxy/code-frontier-high",
+      zen: "proxy/a1-proxy/code-frontier-high",
+    });
+    expect(settings.models.omObservationThreshold).toBe(72_000);
+    expect(settings.models.omReflectionThreshold).toBe(48_000);
     expect(settings.preferences).toMatchObject({ yolo: true, thinkingLevel: "xhigh" });
   });
 

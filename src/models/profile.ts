@@ -28,11 +28,22 @@ const profileSchema = z.object({
     defaultAgent: z.literal("cortex"),
     defaultMode: z.literal("build"),
   }),
+  memory: z.object({
+    contextBudgetTokens: z.number().int().positive(),
+    observationThresholdTokens: z.number().int().positive(),
+  }),
 }).superRefine((profile, context) => {
   const aliases = new Set(profile.aliases);
   for (const [role, alias] of Object.entries(profile.roles)) {
     if (aliases.has(alias)) continue;
     context.addIssue({ code: "custom", path: ["roles", role], message: `Unknown model alias: ${alias}` });
+  }
+  if (profile.memory.observationThresholdTokens >= profile.memory.contextBudgetTokens) {
+    context.addIssue({
+      code: "custom",
+      path: ["memory", "observationThresholdTokens"],
+      message: "Observation threshold must be lower than the context budget",
+    });
   }
 });
 
@@ -47,4 +58,19 @@ export function loadModelProfile(path = resolve("config/models.yaml")): ModelPro
 export function resolveAliasModelId(profile: ModelProfile, alias: string): string {
   if (!profile.aliases.includes(alias)) throw new Error(`Unknown model alias: ${alias}`);
   return `${profile.provider.id}/${alias}`;
+}
+
+export function resolveProxyGatewayModelId(profile: ModelProfile, alias: string): string {
+  return `proxy/${resolveAliasModelId(profile, alias)}`;
+}
+
+export function resolveObservationalMemoryThresholds(profile: ModelProfile): Readonly<{
+  observationThreshold: number;
+  reflectionThreshold: number;
+}> {
+  const observationThreshold = profile.memory.observationThresholdTokens;
+  return {
+    observationThreshold,
+    reflectionThreshold: profile.memory.contextBudgetTokens - observationThreshold,
+  };
 }

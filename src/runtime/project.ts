@@ -7,11 +7,11 @@ import { setCustomProvidersSource } from "@mastra/code-sdk/agents/custom-provide
 import { createDynamicTools, type ToolLike } from "@mastra/code-sdk/agents/tools";
 import { detectProject, type ProjectInfo } from "@mastra/code-sdk/utils/project";
 import { Mastra } from "@mastra/core/mastra";
-import type { ToolsInput } from "@mastra/core/agent";
 import type { AgentControllerConfig } from "@mastra/core/agent-controller";
-import type { ToolkitAgents } from "../agents/index.js";
+import type { ToolkitAdditionalTools, ToolkitAgents } from "../agents/index.js";
 import { createToolkitAgents } from "../agents/index.js";
 import { createCodeModes } from "../agents/modes/index.js";
+import { createCodeSubagents } from "../agents/subagents.js";
 import type { ToolkitConfig } from "../config.js";
 import { loadToolkitConfig } from "../config.js";
 import { createA1CodeProvider, prepareCodeSdkSettings } from "../factory/code-sdk.js";
@@ -68,16 +68,18 @@ export async function prepareLocalProjectRuntime(
   const proxyApiKey = config.proxy.apiKey;
   const profile = loadModelProfile();
   const workspace = createToolkitWorkspace(config, { projectRoot: project.rootPath, hotReloadSkills: true });
-  const agents = createToolkitAgents({
-    workspaceRoot: project.rootPath,
-    browser: options.browser ?? true,
-    ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
-    ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
-  });
   let resources: ProjectResourceRuntime | undefined;
   const dynamicTools = createDynamicTools(undefined, () =>
     (resources?.getTools() ?? {}) as Record<string, ToolLike>,
-  ) as unknown as ToolsInput;
+  ) as ToolkitAdditionalTools;
+  const agents = createToolkitAgents({
+    workspaceRoot: project.rootPath,
+    browser: options.browser ?? true,
+    additionalTools: dynamicTools,
+    profile,
+    ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
+    ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
+  });
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
     profile,
@@ -93,7 +95,8 @@ export async function prepareLocalProjectRuntime(
     controllerMount = await prepareAgentControllerMount({
       cwd: project.rootPath,
       settingsPath: join(dataDirectory, "settings.json"),
-      modes: createCodeModes(agents, dynamicTools),
+      modes: createCodeModes(agents),
+      subagents: createCodeSubagents(profile),
       workspace,
       disableMcp: true,
       disableHooks: options.disableHooks ?? false,

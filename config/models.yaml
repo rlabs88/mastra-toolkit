@@ -29,3 +29,6 @@ roles:
 code:
   defaultAgent: cortex
   defaultMode: build
+memory:
+  contextBudgetTokens: 120000
+  observationThresholdTokens: 60000

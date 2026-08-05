@@ -4,6 +4,7 @@ import {
   DEFAULT_OBSERVER_ALIAS,
   loadModelProfile,
   resolveAliasModelId,
+  resolveProxyGatewayModelId,
 } from "../src/models/profile.js";
 
 describe("model profile", () => {
@@ -34,12 +35,17 @@ describe("model profile", () => {
       observer: DEFAULT_OBSERVER_ALIAS,
       reflector: DEFAULT_OBSERVER_ALIAS,
     });
+    expect(profile.memory).toEqual({
+      contextBudgetTokens: 120_000,
+      observationThresholdTokens: 60_000,
+    });
   });
 
   test("resolves only catalog aliases and rejects raw upstream IDs", () => {
     const profile = loadModelProfile();
 
     expect(resolveAliasModelId(profile, "code-frontier-high")).toBe("a1-proxy/code-frontier-high");
+    expect(resolveProxyGatewayModelId(profile, "code-frontier-high")).toBe("proxy/a1-proxy/code-frontier-high");
     expect(() => resolveAliasModelId(profile, "gpt-5.6-sol")).toThrow(/unknown model alias/i);
     expect(() => resolveAliasModelId(profile, "openai\/gpt-5.6-sol")).toThrow(/unknown model alias/i);
   });

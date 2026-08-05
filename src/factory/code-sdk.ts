@@ -3,11 +3,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
 import { ONBOARDING_VERSION } from "@mastra/code-sdk/onboarding/index";
-import { CODE_MODE_IDS } from "../agents/modes/index.js";
+import { CANONICAL_AGENT_IDS, CODE_MODE_IDS } from "../agents/modes/index.js";
 import {
   DEFAULT_ACTIVE_ALIAS,
   DEFAULT_OBSERVER_ALIAS,
   resolveAliasModelId,
+  resolveObservationalMemoryThresholds,
+  resolveProxyGatewayModelId,
   type ModelProfile,
 } from "../models/profile.js";
 
@@ -18,8 +20,11 @@ interface SettingsDocument {
   onboarding?: Record<string, unknown>;
   models?: Record<string, unknown> & {
     modeDefaults?: Record<string, string>;
+    subagentModels?: Record<string, string>;
     observerModelOverride?: string | null;
     reflectorModelOverride?: string | null;
+    omObservationThreshold?: number | null;
+    omReflectionThreshold?: number | null;
   };
   preferences?: Record<string, unknown>;
   customProviders?: Array<{
@@ -53,6 +58,7 @@ export async function prepareCodeSdkSettings(options: {
   const existing = await readSettings(settingsPath);
   const activeModelId = resolveAliasModelId(options.profile, DEFAULT_ACTIVE_ALIAS);
   const observerModelId = resolveAliasModelId(options.profile, DEFAULT_OBSERVER_ALIAS);
+  const memoryThresholds = resolveObservationalMemoryThresholds(options.profile);
   const existingModels = existing.models ?? {};
   const existingPreferences = existing.preferences ?? {};
   const settings: SettingsDocument = {
@@ -69,8 +75,14 @@ export async function prepareCodeSdkSettings(options: {
         id,
         resolvePersistedModelId(existingModels.modeDefaults?.[id], options.profile) ?? activeModelId,
       ])),
+      subagentModels: Object.fromEntries(CANONICAL_AGENT_IDS.map(id => [
+        id,
+        resolveProxyGatewayModelId(options.profile, options.profile.roles[id]),
+      ])),
       observerModelOverride: resolvePersistedModelId(existingModels.observerModelOverride, options.profile) ?? observerModelId,
       reflectorModelOverride: resolvePersistedModelId(existingModels.reflectorModelOverride, options.profile) ?? observerModelId,
+      omObservationThreshold: existingModels.omObservationThreshold ?? memoryThresholds.observationThreshold,
+      omReflectionThreshold: existingModels.omReflectionThreshold ?? memoryThresholds.reflectionThreshold,
     },
     preferences: {
       ...existingPreferences,

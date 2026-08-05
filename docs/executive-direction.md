@@ -51,7 +51,7 @@ canonical agents + tools + model roles
    Mastra Code  Studio   Factory
 ```
 
-Mastra Code projects Cortex, Flux, and Zen into a namespaced AgentController mode registry. Each agent has `scope` and `build` prompt overlays, producing exactly six selections while preserving the canonical `Agent` instances and one complete tool surface per agent. Project specialists use bounded delegation and do not enlarge this top-level registry. Generic Mastra supervisor agents use an ordinary `Agent` with an `agents` map; their lifecycle remains distinct even though both hosts consume the same canonical roles.
+Mastra Code projects Cortex, Flux, and Zen into a namespaced AgentController mode registry. Each agent has `scope` and `build` prompt overlays, producing exactly six selections while preserving the canonical `Agent` instances and one complete tool surface per agent. Every selection must expose Mastra Code's native `subagent` tool with exactly three named targets: `cortex`, `flux`, and `zen`. Any canonical parent may delegate to any target without switching its own mode; delegated runs reuse the canonical role prompt and model mapping and remain leaves, so recursive subagent launches are unavailable. Project specialists use bounded delegation and do not enlarge this top-level registry. Generic Mastra supervisor agents use an ordinary `Agent` with an `agents` map; their lifecycle remains distinct even though both hosts consume the same canonical roles.
 
 ## Workflow execution
 

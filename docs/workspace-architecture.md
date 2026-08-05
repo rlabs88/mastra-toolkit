@@ -105,7 +105,7 @@ Host projections derive their IDs from that object:
 
 - Studio registers the existing `ProxyGateway` and resolves `proxy/a1-proxy/<alias>`.
 - Factory registers the same `a1-proxy` provider through the Code SDK custom-provider source and seeds only missing, non-secret model defaults.
-- Code passes six derived namespaced modes into `prepareAgentControllerMount()`. Its settings file may contain non-secret user preferences but never the CLIProxy key or raw upstream model IDs.
+- Code passes six derived namespaced modes and three canonical leaf-subagent definitions into `prepareAgentControllerMount()`. Every mode receives the native `subagent` tool and can target `cortex`, `flux`, or `zen`. Its settings file may contain non-secret user preferences but never the CLIProxy key or raw upstream model IDs.
 
 This adapts the useful part of the `jc` launcher pattern—named YAML profiles, environment references, validation, and an explicit user override—without importing Claude-specific tier aliases or writing resolved credentials to configuration.
 
