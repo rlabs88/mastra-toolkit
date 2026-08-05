@@ -70,9 +70,9 @@ describe("workspace ownership", () => {
     }
   });
 
-  test("does not retain a legacy root source boundary", async () => {
-    for (const staleRoot of ["src", "config", "docker", ".pi"]) {
-      await expect(access(join(root, staleRoot))).rejects.toMatchObject({ code: "ENOENT" });
+  test("does not retain legacy root boundaries", async () => {
+    for (const staleEntry of ["src", "config", "docker", ".pi", ".dockerignore", "compose.yml"]) {
+      await expect(access(join(root, staleEntry))).rejects.toMatchObject({ code: "ENOENT" });
     }
     const tsconfig = JSON.parse(await readFile(join(root, "tsconfig.json"), "utf8")) as {
       include?: string[];

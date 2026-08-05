@@ -9,7 +9,7 @@ The [Executive Direction](docs/executive-direction.md) defines the project-runti
 - Node.js 22.19 or newer
 - Infisical CLI authenticated to project `0b0f6354-029f-45a7-9c1c-b65968b5f46c`
 - `rg` and `git` for local Command Run
-- Docker when using the Docker sandbox or persistence profile
+- Docker when using the Docker sandbox
 - Chrome for visible computer-use
 
 ## Local project runtime
@@ -73,14 +73,6 @@ docker run --rm --platform linux/arm64 "$IMAGE" probe
 ```
 
 Host-specific workspace paths and all credentials stay in environment/Infisical configuration and are intentionally rejected from the checked-in specification. `SANDBOX_SPEC_PATH` can point at a different validated specification for an explicit deployment; invalid or mutable-image configurations fail closed.
-
-The optional persistence profile mirrors production infrastructure:
-
-```bash
-docker compose --profile persistence up -d
-export DATABASE_URL=postgresql://mastra:mastra@127.0.0.1:5433/mastra
-export REDIS_URL=redis://127.0.0.1:6380
-```
 
 Provider errors are fatal; Docker and Platform never silently fall back to Local.
 
