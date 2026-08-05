@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
@@ -12,6 +12,9 @@ describe("local project runtime", () => {
   test("mounts the six canonical modes on one caller-owned Mastra", async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), "mastra-local-project-"));
     const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-local-data-"));
+    const workflowRoot = join(projectRoot, ".mastracode", "workflow");
+    await mkdir(workflowRoot, { recursive: true });
+    await writeFile(join(workflowRoot, "smoke.ts"), workflowSource());
     const runtime = await mountLocalProjectRuntime({
       cwd: projectRoot,
       dataDirectory,
@@ -54,6 +57,7 @@ describe("local project runtime", () => {
       const modeTools = await toolsets.modeTools({ requestContext: context });
       expect(Object.keys(toolsets.controllerBuiltIn)).toContain("ask_user");
       expect(Object.keys(modeTools)).toContain("project_specialist");
+      expect(Object.keys(modeTools)).toContain("workflow_runtime_smoke");
       expect(Object.keys(modeTools)).toContain("request_access");
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {
@@ -82,6 +86,16 @@ function fakeMcpRuntime(): ProjectMcpRuntime {
     getTools: () => ({}),
     async close() {},
   };
+}
+
+function workflowSource(): string {
+  return `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+const schema = z.object({ message: z.string() });
+const step = createStep({ id: "echo", inputSchema: schema, outputSchema: schema, execute: async ({ inputData }) => inputData });
+export default createWorkflow({ id: "runtime_smoke", inputSchema: schema, outputSchema: schema }).then(step).commit();
+export const agentTool = { description: "Run smoke" };
+`;
 }
 
 async function resolveModeTools(
