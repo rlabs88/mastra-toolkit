@@ -64,7 +64,7 @@ For the A1 custom provider, Mastra Code stores IDs such as `a1-proxy/code-fronti
 - `docker`: the digest-pinned canonical `ghcr.io/rlabs88/toolkit/aes-sandbox` image.
 - `platform`: Mastra Platform Workspace using `MASTRA_ENVIRONMENT_ID`, `MASTRA_PROJECT_ID`, and `MASTRA_PLATFORM_SECRET_KEY`.
 
-The repository Dockerfile is a thin consumer of the canonical image; it does not duplicate the centrally owned Fedora baseline. To validate the pinned entrypoint on an ARM64 Docker host:
+The Docker provider consumes the canonical image directly from the immutable reference in `sandbox.config.json`; this repository does not rebuild or republish the centrally owned Fedora baseline. To validate the pinned entrypoint on an ARM64 Docker host:
 
 ```bash
 IMAGE="$(node -p 'require("./sandbox.config.json").spec.entrypointProfile.image')"

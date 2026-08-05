@@ -272,5 +272,3 @@ Phase 6 (E2E Test)
 
 - **just-claude/snapshots:** `~/just-claude/hooks/snapshot/`
 - **Issue doc:** `.agents/plans/issue-17-git-snapshot-implementation.md`
-- **Pi prompts updated:** `pi/src/prompts/tools.ts`
-- **Mastra prompts updated:** `mastra-agents/src/prompts/tools.ts`

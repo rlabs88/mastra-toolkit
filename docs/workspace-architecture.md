@@ -136,7 +136,7 @@ Fork checkouts should be git submodules pinned to reviewed commits. They are not
 2. Extract `packages/agent-runtime` and switch the current Studio/Factory entrypoint to it.
 3. Move the private Mastra Code wrapper into `apps/code`, replace copied prompts/modes with canonical projections, and update it from its older Mastra Code API to the current public API.
 4. Extract `runtime-config`, `sandbox-runtime`, and `factory-integration` only along existing seams; keep a root compatibility export until callers migrate.
-5. Move Dockerfiles and sandbox build manifests into `sandbox/`, then create its checkpoint pair and validate ephemeral and persistent compositions.
+5. Move toolkit-owned sandbox runtime manifests into `sandbox/`, then create its checkpoint pair and validate ephemeral and persistent compositions. Add image build inputs only when this repository owns a concrete derived image.
 6. Add `forks/mastra` only when the first concrete upstream delta is selected and the RLabs GitHub fork exists. Add the optional desktop fork only for actual desktop UI work.
 7. Remove legacy root `src/` ownership and the separate wrapper only after all host and contract tests use workspace packages.
 

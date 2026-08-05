@@ -15,13 +15,14 @@ src/mastra/public/.sandbox-profiles/
 .agents/exec/snapshots/
 .pi-lens/
 
-# Generated scratch artifacts
+# Generated scratch and analysis artifacts
 story*.md
 **/story*.md
 test*snapshot*.mjs
 .agents/exec/*snapshot*/
 .agents/exec/*snapshot*.md
 .agents/plans/*snapshot*.md
+graphify-out/
 
 # Environment files (contain secrets)
 .env.local

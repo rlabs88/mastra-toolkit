@@ -4,7 +4,7 @@ Mastra Toolkit consumes a checked-in `cortex.provisioning/v1` runtime specificat
 
 At startup, `loadToolkitConfig` validates the document and freezes its provider policy for the process. `SANDBOX_PROVIDER` may select a declared Local, Docker, or Platform policy. `WORKSPACE_ROOT` remains host configuration, and Platform credentials remain in Infisical. A malformed document, a mutable Docker image, or incomplete Platform identity fails closed.
 
-The Docker policy consumes the canonical AES baseline at an immutable multi-architecture index digest. The profile currently admits only `linux/arm64` and the stable `sandbox-entrypoint/v1` ABI. `DockerSandbox` supplies `serve` as the image command; `probe` is the compatibility check. The repository Dockerfile is only a thin pinned consumer of this image.
+The Docker policy consumes the canonical AES baseline directly at an immutable multi-architecture index digest. The profile currently admits only `linux/arm64` and the stable `sandbox-entrypoint/v1` ABI. `DockerSandbox` supplies `serve` as the image command, applies toolkit runtime labels and hardening, and uses `probe` as the compatibility check. This repository does not own a wrapper image or duplicate the centrally published baseline.
 
 Local execution uses Mastra's detected native isolation backend and explicitly permits network access so Factory can materialize GitHub repositories. Docker retains a read-only root filesystem, dropped capabilities, `no-new-privileges`, PID and memory bounds, and bounded tmpfs mounts. Platform uses private network isolation and a two-hour idle lease. These provider policies share the same cloneable sandbox-machine contract.
 
