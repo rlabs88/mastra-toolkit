@@ -47,6 +47,7 @@ describe("local project runtime", () => {
           controllerBuiltIn: Record<string, unknown>;
           modeTools: (input: { requestContext: RequestContext }) => Promise<Record<string, unknown>> | Record<string, unknown>;
         }>;
+        resolveCurrentModeInstructions(session: typeof first): string | undefined;
       };
       const context = await controller.buildRequestContext(first, requestContext);
       const toolsets = await controller.buildToolsets(first, context);
@@ -54,6 +55,21 @@ describe("local project runtime", () => {
       expect(Object.keys(toolsets.controllerBuiltIn)).toContain("ask_user");
       expect(Object.keys(modeTools)).toContain("project_specialist");
       expect(Object.keys(modeTools)).toContain("request_access");
+
+      for (const agentId of ["cortex", "flux", "zen"] as const) {
+        await first.mode.switch({ modeId: `${agentId}/scope` });
+        const scopeAgent = runtime.controller.getCurrentAgent(first);
+        const scopeTools = await resolveModeTools(controller, first);
+        expect(scopeAgent).toBe(runtime.agents[agentId]);
+        expect(await scopeAgent.getInstructions({ requestContext: context })).toContain("# Base Identity");
+        expect(controller.resolveCurrentModeInstructions(first)).toContain("# Scope mode");
+
+        await first.mode.switch({ modeId: `${agentId}/build` });
+        const buildTools = await resolveModeTools(controller, first);
+        expect(runtime.controller.getCurrentAgent(first)).toBe(runtime.agents[agentId]);
+        expect(controller.resolveCurrentModeInstructions(first)).toContain("# Build mode");
+        expect(Object.keys(buildTools).sort()).toEqual(Object.keys(scopeTools).sort());
+      }
     } finally {
       await runtime.close();
     }
@@ -66,4 +82,18 @@ function fakeMcpRuntime(): ProjectMcpRuntime {
     getTools: () => ({}),
     async close() {},
   };
+}
+
+async function resolveModeTools(
+  controller: {
+    buildRequestContext(session: any, context: RequestContext): Promise<RequestContext>;
+    buildToolsets(session: any, context: RequestContext): Promise<{
+      modeTools: (input: { requestContext: RequestContext }) => Promise<Record<string, unknown>> | Record<string, unknown>;
+    }>;
+  },
+  session: any,
+): Promise<Record<string, unknown>> {
+  const context = await controller.buildRequestContext(session, new RequestContext());
+  const toolsets = await controller.buildToolsets(session, context);
+  return toolsets.modeTools({ requestContext: context });
 }
