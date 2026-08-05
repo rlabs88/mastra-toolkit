@@ -59,7 +59,7 @@ async function seedProvider(storage: FactoryStorage, provider: A1ProviderOptions
       name: A1_CODE_PROVIDER_NAME,
       url: provider.baseUrl,
       ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
-      models: [provider.model],
+      models: [...provider.models],
     },
   });
 }
@@ -124,8 +124,12 @@ function normalizeMemorySettings(memory: ModelMemorySettings): ModelMemorySettin
 }
 
 export function normalizeStoredModelId(modelId: string | null | undefined): string | undefined {
-  if (!modelId || !/^(?:mastracode\/)?a1-proxy\//.test(modelId)) return modelId ?? undefined;
-  return getA1CodeModelId(modelId);
+  if (!modelId) return undefined;
+  if (/^(?:mastracode\/)?a1-proxy\/gpt-5\.6-luna$/.test(modelId) || modelId === "mastracode/gpt-5.6-luna") {
+    return getA1CodeModelId("code-workhorse-high");
+  }
+  if (modelId.startsWith("mastracode/a1-proxy/")) return modelId.slice("mastracode/".length);
+  return modelId;
 }
 
 export function normalizeModelReferences(input: Record<string, unknown>): {

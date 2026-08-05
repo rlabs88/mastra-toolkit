@@ -46,7 +46,7 @@ function createAgent<TId extends Archetype["id"]>(
     name: archetype.name,
     description: archetype.description,
     instructions: composePrompt(archetype),
-    model: `proxy/${archetype.model.id}`,
+    model: `proxy/a1-proxy/${archetype.model.id}`,
     tools: ({ requestContext }) => {
       if (!(requestContext.get(TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY) as boolean | undefined)) return tools;
       const { command_run: _hostCommandRun, ...sandboxSafeTools } = tools;

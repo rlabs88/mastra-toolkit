@@ -7,6 +7,7 @@ import type { ToolkitConfig } from "../config.js";
 import { createSandboxMachine } from "../sandbox/index.js";
 import { ToolkitFactoryIntegration } from "./toolkit-integration.js";
 import { createToolkitStorage } from "../runtime/storage.js";
+import { loadModelProfile } from "../models/profile.js";
 import {
   prepareCodeSdkSettings,
   type A1ProviderOptions,
@@ -15,12 +16,13 @@ import { createFactoryAuth } from "./auth.js";
 import { prepareLocalA1Provider } from "./local-provider.js";
 
 export async function createToolkitFactory(config: ToolkitConfig, agents: ToolkitAgents): Promise<MastraFactory> {
+  const modelProfile = loadModelProfile();
   const a1Provider = {
     baseUrl: config.proxy.baseUrl,
-    model: config.proxy.model.replace(/^openai\//, ""),
+    models: modelProfile.aliases,
     ...(config.proxy.apiKey ? { apiKey: config.proxy.apiKey } : {}),
   } satisfies A1ProviderOptions;
-  await prepareCodeSdkSettings({ model: a1Provider.model });
+  await prepareCodeSdkSettings({ profile: modelProfile });
   const { factoryStorage, vector } = createToolkitStorage(config.databaseUrl);
   const github = config.github ? new GithubIntegration({
     appId: config.github.GITHUB_APP_ID,

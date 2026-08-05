@@ -4,6 +4,7 @@ import { cortexPrompt } from "./prompts/cortex.js";
 import { fluxPrompt } from "./prompts/flux.js";
 import { sharedSecurity } from "./prompts/security.js";
 import { zenPrompt } from "./prompts/zen.js";
+import { DEFAULT_ACTIVE_ALIAS } from "../models/profile.js";
 
 export const ROLE_IDS = ["cortex", "flux", "zen"] as const;
 export type RoleId = (typeof ROLE_IDS)[number];
@@ -54,7 +55,7 @@ function archetype<TId extends RoleId>(
   steps: number,
   prompts: PromptProfile,
 ): Archetype & { readonly id: TId } {
-  return { id, name, description, model: { id: "openai/gpt-5.6-luna", temperature, steps }, prompts };
+  return { id, name, description, model: { id: DEFAULT_ACTIVE_ALIAS, temperature, steps }, prompts };
 }
 
 function section(title: string, content: string): string {

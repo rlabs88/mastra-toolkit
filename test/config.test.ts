@@ -7,7 +7,7 @@ describe("loadToolkitConfig", () => {
 
     expect(config.mode).toBe("standalone");
     expect(config.proxy.baseUrl).toBe("https://aa.renaissancelab.org/v1");
-    expect(config.proxy.model).toBe("openai/gpt-5.6-luna");
+    expect(config.proxy.model).toBe("code-frontier-high");
     expect(config.sandbox.provider).toBe("local");
     expect(config.sandbox.specification.metadata.id).toBe("mastra-toolkit");
     expect(config.sandbox.workdir).toBe("/workspace");

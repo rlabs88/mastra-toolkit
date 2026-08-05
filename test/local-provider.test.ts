@@ -3,9 +3,10 @@ import { normalizeModelReferences, normalizeStoredModelId } from "../src/factory
 
 describe("local A1 provider migration", () => {
   test.each([
-    ["a1-proxy/gpt-5.6-luna", "mastracode/gpt-5.6-luna"],
-    ["mastracode/a1-proxy/gpt-5.6-luna", "mastracode/gpt-5.6-luna"],
-    ["mastracode/gpt-5.6-luna", "mastracode/gpt-5.6-luna"],
+    ["a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["mastracode/a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["mastracode/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["a1-proxy/code-frontier-high", "a1-proxy/code-frontier-high"],
     ["openai/gpt-5.6-luna", "openai/gpt-5.6-luna"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeStoredModelId(input)).toBe(expected);
@@ -21,8 +22,8 @@ describe("local A1 provider migration", () => {
     expect(result).toEqual({
       changed: true,
       value: {
-        currentModelId: "mastracode/gpt-5.6-luna",
-        modes: ["mastracode/gpt-5.6-luna"],
+        currentModelId: "a1-proxy/code-workhorse-high",
+        modes: ["a1-proxy/code-workhorse-high"],
         projectPath: "/workspace/a1-proxy/example",
       },
     });

@@ -1,7 +1,8 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { MastraModelGateway, type GatewayLanguageModel, type ProviderConfig } from "@mastra/core/llm";
+import { loadModelProfile } from "./profile.js";
 
-const FALLBACK_MODELS = ["gpt-5.6-luna", "gpt-5.6", "gpt-5.5"];
+const STABLE_ALIASES = loadModelProfile().aliases;
 
 export class ProxyGateway extends MastraModelGateway {
   readonly id = "proxy";
@@ -13,7 +14,7 @@ export class ProxyGateway extends MastraModelGateway {
 
   async fetchProviders(): Promise<Record<string, ProviderConfig>> {
     return {
-      openai: {
+      "a1-proxy": {
         name: "A1 OpenAI-compatible",
         models: await this.fetchModelIds(),
         apiKeyEnvVar: ["PROXY_API_KEY", "CLI_PROXY_API_KEY"],
@@ -47,15 +48,15 @@ export class ProxyGateway extends MastraModelGateway {
   }
 
   private async fetchModelIds(): Promise<string[]> {
-    if (!this.config.apiKey) return FALLBACK_MODELS;
+    if (!this.config.apiKey) return [...STABLE_ALIASES];
     try {
       const response = await fetch(`${this.config.baseUrl}/models`, { headers: { authorization: `Bearer ${this.config.apiKey}` } });
-      if (!response.ok) return FALLBACK_MODELS;
+      if (!response.ok) return [...STABLE_ALIASES];
       const body = await response.json() as { data?: Array<{ id?: unknown }> };
       const models = (body.data ?? []).flatMap(model => typeof model.id === "string" ? [model.id] : []);
-      return models.length > 0 ? models : FALLBACK_MODELS;
+      return [...new Set([...STABLE_ALIASES, ...models])];
     } catch {
-      return FALLBACK_MODELS;
+      return [...STABLE_ALIASES];
     }
   }
 }

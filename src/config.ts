@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { DEFAULT_ACTIVE_ALIAS, loadModelProfile, resolveAliasModelId } from "./models/profile.js";
 import { findSandboxSpecPath, loadSandboxSpec, type SandboxSpec } from "./sandbox/spec.js";
 
 const DEFAULT_PROXY_BASE_URL = "https://aa.renaissancelab.org/v1";
-const DEFAULT_PROXY_MODEL = "openai/gpt-5.6-luna";
+const DEFAULT_PROXY_MODEL = DEFAULT_ACTIVE_ALIAS;
 const GITHUB_APP_KEYS = [
   "GITHUB_APP_ID",
   "GITHUB_APP_PRIVATE_KEY",
@@ -89,6 +90,8 @@ export function loadToolkitConfig(environment: NodeJS.ProcessEnv = process.env):
 
   const workspaceRoot = resolve(parsed.WORKSPACE_ROOT ?? join(homedir(), ".mastra-toolkit", "sandboxes"));
   const proxyApiKey = parsed.PROXY_API_KEY ?? parsed.CLI_PROXY_API_KEY;
+  const modelProfile = loadModelProfile();
+  resolveAliasModelId(modelProfile, parsed.PROXY_MODEL);
 
   return removeUndefined({
     mode: parsed.MASTRA_TOOLKIT_MODE,
