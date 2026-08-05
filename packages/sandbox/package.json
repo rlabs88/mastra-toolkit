@@ -1,0 +1,27 @@
+{
+  "name": "@rlabs/sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sandbox.config.json": "./config/sandbox.config.json",
+    "./sandbox.schema.json": "./config/sandbox.schema.json"
+  },
+  "scripts": {
+    "test": "vitest run test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "@mastra/docker": "0.5.0",
+    "@mastra/platform-workspace": "0.2.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10"
+  }
+}

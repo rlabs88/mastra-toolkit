@@ -1,0 +1,24 @@
+{
+  "name": "@rlabs/mcode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@mastra/code-sdk": "1.1.1",
+    "@mastra/core": "1.55.0",
+    "@rlabs/agents-roles": "*",
+    "@rlabs/project-mounting-manager": "*",
+    "@rlabs/runtime-config": "*",
+    "@rlabs/sandbox": "*",
+    "mastracode": "0.32.4",
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "test": "vitest run test",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  }
+}

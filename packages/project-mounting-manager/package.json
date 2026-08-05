@@ -1,0 +1,38 @@
+{
+  "name": "@rlabs/project-mounting-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Transactional project specialist and workflow mounting for Mastra hosts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./diagnostics": "./src/diagnostics.ts",
+    "./generation": "./src/generation.ts",
+    "./manager": "./src/manager.ts",
+    "./mcp-config": "./src/mcp-config.ts",
+    "./ports": "./src/ports.ts",
+    "./specialists": "./src/specialists.ts",
+    "./watcher": "./src/watcher.ts",
+    "./workflows": "./src/workflows.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run test",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "esbuild": "0.28.1",
+    "yaml": "2.8.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@rlabs/mcode-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mcode": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@rlabs/mcode": "*"
+  }
+}

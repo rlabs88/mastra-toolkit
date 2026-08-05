@@ -1,0 +1,34 @@
+version: 1
+provider:
+  id: a1-proxy
+  name: A1 CLIProxy
+  kind: openai-compatible
+  baseUrl: https://aa.renaissancelab.org/v1
+  apiKeyEnv: CLI_PROXY_API_KEY
+aliases:
+  - primary
+  - gpt-4o
+  - secondary
+  - third
+  - code-frontier-max
+  - code-frontier-high
+  - code-frontier-low
+  - code-workhorse-high
+  - code-workhorse-low
+  - code-economic
+  - fast
+  - fast-high
+  - fast-low
+roles:
+  cortex: code-frontier-high
+  flux: code-frontier-high
+  zen: code-frontier-high
+  specialist: code-frontier-high
+  observer: code-workhorse-high
+  reflector: code-workhorse-high
+code:
+  defaultAgent: cortex
+  defaultMode: build
+memory:
+  contextBudgetTokens: 120000
+  observationThresholdTokens: 60000

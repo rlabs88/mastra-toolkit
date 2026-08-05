@@ -2,10 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createSandboxMachine } from "../src/sandbox/index.js";
-import { loadSandboxSpec } from "../src/sandbox/spec.js";
+import { createSandboxMachine, loadSandboxSpec } from "@rlabs/sandbox";
 
-const specification = loadSandboxSpec(resolve("sandbox.config.json"));
+const specification = loadSandboxSpec(resolve("packages/sandbox/config/sandbox.config.json"));
 
 describe("createSandboxMachine", () => {
   test.each(["local", "docker", "platform"] as const)("creates a cloneable %s machine", provider => {

@@ -1,0 +1,14 @@
+{
+  "name": "@rlabs/studio-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "@rlabs/agents-roles": "*",
+    "@rlabs/mcode": "*",
+    "@rlabs/project-mounting-manager": "*",
+    "@rlabs/runtime-config": "*",
+    "@rlabs/sandbox": "*"
+  }
+}
