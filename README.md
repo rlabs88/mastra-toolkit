@@ -17,9 +17,10 @@ The [Executive Direction](docs/executive-direction.md) defines the project-runti
 ```bash
 npm ci
 npm run code:infisical
+# or: npx mcode  (inject secrets yourself / use code:infisical)
 ```
 
-This starts the Mastra Code TUI directly in the containing Git checkout or worktree. It mounts one AgentController on one caller-owned Mastra, uses the same contained workspace for files and commands, and does not require an HTTP server. The default selection is `cortex/build`; Cortex, Flux, and Zen each expose `scope` and `build`, for exactly six selections. Press `Shift+Tab` to cycle selections, use `/mode` to list them, or use `/mode flux/build` to select one directly.
+This starts the Mastra Code TUI via the workspace `mcode` bin (`apps/mcode/bin/mcode.mjs`) directly in the containing Git checkout or worktree. It mounts one AgentController on one caller-owned Mastra, uses the same contained workspace for files and commands, and does not require an HTTP server. The default selection is `cortex/build`; Cortex, Flux, and Zen each expose `scope` and `build`, for exactly six selections. Press `Shift+Tab` to cycle selections, use `/mode` to list them, or use `/mode flux/build` to select one directly.
 
 Every selection can also use Mastra Code's native `subagent` tool. Its named targets are exactly `cortex`, `flux`, and `zen`, so any active canonical agent can delegate a focused task to any canonical role without changing the parent mode. These delegated runs use the canonical role prompt and model mapping, receive the project workspace, and cannot recursively launch another subagent.
 

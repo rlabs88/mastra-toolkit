@@ -23,7 +23,7 @@
     "dev:infisical": "node scripts/with-infisical.mjs npm run dev",
     "dev:factory": "MASTRA_TOOLKIT_MODE=factory mastra factory dev --dir apps/factory/src",
     "dev:factory:infisical": "node scripts/with-infisical.mjs env MASTRA_TOOLKIT_MODE=factory npm run dev:factory",
-    "code": "tsx apps/mcode/src/cli.ts",
+    "code": "mcode",
     "code:infisical": "node scripts/with-infisical.mjs env PROXY_MODEL=code-frontier-high npm run code",
     "build": "mastra build --dir apps/studio/src",
     "start": "mastra start",

@@ -25,6 +25,7 @@ applies_to: ["**/*"]
 
 ```text
 apps/
+├── mcode/bin/mcode.mjs # workspace `mcode` executable (tsx shim)
 ├── mcode/src/cli.ts    # local CLI/TUI process lifecycle
 ├── studio/src/index.ts # Studio composition root
 └── factory/src/index.ts # Factory composition root

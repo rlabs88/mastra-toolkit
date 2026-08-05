@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "bin": {
-    "mcode": "./src/cli.ts"
+    "mcode": "./bin/mcode.mjs"
   },
   "dependencies": {
-    "@rlabs/mcode": "*"
+    "@rlabs/mcode": "*",
+    "tsx": "4.20.6"
   }
 }

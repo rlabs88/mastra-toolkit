@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { createLocalMcodeRuntime } from "@rlabs/mcode";
 
 async function main(): Promise<void> {

@@ -1,6 +1,10 @@
+import { execFile } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
+
+const execFileAsync = promisify(execFile);
 
 const root = process.cwd();
 const packageNames = [
@@ -78,6 +82,41 @@ describe("workspace ownership", () => {
       include?: string[];
     };
     expect(tsconfig.include).not.toContain("src/**/*.ts");
+  });
+
+  test("mcode bin is a tsx-backed shim that can load @rlabs/mcode", async () => {
+    const manifest = JSON.parse(await readFile(join(root, "apps/mcode/package.json"), "utf8")) as {
+      bin?: Record<string, string>;
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.bin).toEqual({ mcode: "./bin/mcode.mjs" });
+    expect(manifest.dependencies?.tsx).toBe("4.20.6");
+
+    const shim = await readFile(join(root, "apps/mcode/bin/mcode.mjs"), "utf8");
+    expect(shim).toContain("tsx/esm/api");
+    expect(shim).toContain("../src/cli.ts");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+          import { register } from "tsx/esm/api";
+          register();
+          const { createLocalMcodeRuntime } = await import("@rlabs/mcode");
+          const runtime = await createLocalMcodeRuntime({
+            browser: false,
+            watch: false,
+            environment: { ...process.env, CLI_PROXY_API_KEY: "test-only-key" },
+          });
+          await runtime.close();
+          console.log("mcode-load-ok");
+        `,
+      ],
+      { cwd: root, env: process.env, timeout: 60_000 },
+    );
+    expect(stdout).toContain("mcode-load-ok");
   });
 });
 
