@@ -2,6 +2,8 @@
 
 RLabs' local Mastra agent runtime and Mastra Factory adapter. It provides Cortex, Flux, and Zen through one shared runtime, with guarded repository tools, native background work, visible browser automation, and cloneable Local, Docker, or Platform sandboxes.
 
+The [Executive Direction](docs/executive-direction.md) defines the project-runtime thesis and progression from local Mastra Code development to a multi-project Factory. The accepted package ownership and fork boundaries are documented in [Workspace Architecture](docs/workspace-architecture.md). The current repository is still the pre-migration single-package implementation.
+
 ## Requirements
 
 - Node.js 22.19 or newer
