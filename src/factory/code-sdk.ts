@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
+import { ONBOARDING_VERSION } from "@mastra/code-sdk/onboarding/index";
 import { CODE_MODE_IDS } from "../agents/modes/index.js";
 import {
   DEFAULT_ACTIVE_ALIAS,
@@ -21,6 +22,11 @@ interface SettingsDocument {
     reflectorModelOverride?: string | null;
   };
   preferences?: Record<string, unknown>;
+  customProviders?: Array<{
+    name: string;
+    url: string;
+    models: string[];
+  }>;
   [key: string]: unknown;
 }
 
@@ -38,6 +44,7 @@ export function getA1CodeModelId(model: string): string {
 export async function prepareCodeSdkSettings(options: {
   readonly dataDirectory?: string;
   readonly profile: ModelProfile;
+  readonly provider?: Omit<A1ProviderOptions, "apiKey">;
 }): Promise<string> {
   const directory = options.dataDirectory ?? process.env.MASTRA_APP_DATA_DIR ?? join(homedir(), ".mastra-toolkit", "code-sdk");
   process.env.MASTRA_APP_DATA_DIR = directory;
@@ -50,27 +57,56 @@ export async function prepareCodeSdkSettings(options: {
   const existingPreferences = existing.preferences ?? {};
   const settings: SettingsDocument = {
     ...existing,
-    onboarding: { ...(existing.onboarding ?? {}), completedAt: new Date(0).toISOString(), quietModePreferenceSelected: true },
+    onboarding: {
+      ...(existing.onboarding ?? {}),
+      version: ONBOARDING_VERSION,
+      completedAt: new Date(0).toISOString(),
+      quietModePreferenceSelected: true,
+    },
     models: {
       ...existingModels,
       modeDefaults: Object.fromEntries(CODE_MODE_IDS.map(id => [
         id,
-        existingModels.modeDefaults?.[id] ?? activeModelId,
+        resolvePersistedModelId(existingModels.modeDefaults?.[id], options.profile) ?? activeModelId,
       ])),
-      observerModelOverride: existingModels.observerModelOverride ?? observerModelId,
-      reflectorModelOverride: existingModels.reflectorModelOverride ?? observerModelId,
+      observerModelOverride: resolvePersistedModelId(existingModels.observerModelOverride, options.profile) ?? observerModelId,
+      reflectorModelOverride: resolvePersistedModelId(existingModels.reflectorModelOverride, options.profile) ?? observerModelId,
     },
     preferences: {
       ...existingPreferences,
       ...(!Object.hasOwn(existingPreferences, "yolo") ? { yolo: false } : {}),
       ...(!Object.hasOwn(existingPreferences, "thinkingLevel") ? { thinkingLevel: "off" } : {}),
     },
+    ...(options.provider ? {
+      customProviders: [
+        ...(existing.customProviders ?? []).filter(provider => provider.name !== A1_CODE_PROVIDER_NAME),
+        {
+          name: A1_CODE_PROVIDER_NAME,
+          url: options.provider.baseUrl,
+          models: [...options.provider.models],
+        },
+      ],
+    } : {}),
   };
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
   return directory;
 }
 
-function createA1Provider(options: A1ProviderOptions): MastraCodeCustomProvider {
+function resolvePersistedModelId(
+  modelId: string | null | undefined,
+  profile: ModelProfile,
+): string | undefined {
+  if (!modelId) return undefined;
+  const prefix = `${A1_CODE_PROVIDER_ID}/`;
+  if (!modelId.startsWith(prefix)) {
+    throw new Error(`Persisted model must use a stable A1 model alias: ${modelId}`);
+  }
+  const alias = modelId.slice(prefix.length);
+  resolveAliasModelId(profile, alias);
+  return modelId;
+}
+
+export function createA1CodeProvider(options: A1ProviderOptions): MastraCodeCustomProvider {
   return {
     // Matching the custom-provider id to MastraCodeGateway.id prevents core's
     // catalog from emitting the unresolvable `mastracode/a1-proxy/...` form.
@@ -85,7 +121,7 @@ export function createA1MastraCodeGateway(options: A1ProviderOptions) {
   return createMastraCodeGateway({
     mastraGatewayBaseUrl: options.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, ""),
     routeThroughMastraGateway: false,
-    customProviders: [createA1Provider(options)],
+    customProviders: [createA1CodeProvider(options)],
   });
 }
 

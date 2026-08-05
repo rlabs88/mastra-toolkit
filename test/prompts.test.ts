@@ -17,8 +17,8 @@ describe("agent archetypes", () => {
   });
 
   test("keeps the just-oc model policies", () => {
-    expect(ARCHETYPES.cortex.model).toEqual({ id: "openai/gpt-5.6-luna", temperature: 0.2, steps: 80 });
-    expect(ARCHETYPES.flux.model).toEqual({ id: "openai/gpt-5.6-luna", temperature: 0.7, steps: 80 });
-    expect(ARCHETYPES.zen.model).toEqual({ id: "openai/gpt-5.6-luna", temperature: 0.1, steps: 48 });
+    expect(ARCHETYPES.cortex.model).toEqual({ id: "code-frontier-high", temperature: 0.2, steps: 80 });
+    expect(ARCHETYPES.flux.model).toEqual({ id: "code-frontier-high", temperature: 0.7, steps: 80 });
+    expect(ARCHETYPES.zen.model).toEqual({ id: "code-frontier-high", temperature: 0.1, steps: 48 });
   });
 });

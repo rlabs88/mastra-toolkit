@@ -19,6 +19,8 @@
     "dev:infisical": "node scripts/with-infisical.mjs npm run dev",
     "dev:factory": "MASTRA_TOOLKIT_MODE=factory mastra factory dev --dir src/mastra",
     "dev:factory:infisical": "node scripts/with-infisical.mjs env MASTRA_TOOLKIT_MODE=factory npm run dev:factory",
+    "code": "tsx src/code/cli.ts",
+    "code:infisical": "node scripts/with-infisical.mjs env PROXY_MODEL=code-frontier-high npm run code",
     "build": "mastra build --dir src/mastra",
     "start": "mastra start",
     "typecheck": "tsc --noEmit",
@@ -42,12 +44,14 @@
     "@mastra/redis-streams": "0.3.0",
     "@mastra/stagehand": "0.3.1",
     "esbuild": "0.28.1",
+    "mastracode": "0.32.4",
     "yaml": "2.8.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "mastra": "1.21.0",
+    "tsx": "4.20.6",
     "typescript": "5.9.2",
     "vitest": "4.1.10"
   }

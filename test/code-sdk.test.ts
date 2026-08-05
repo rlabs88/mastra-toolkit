@@ -9,14 +9,25 @@ import { loadModelProfile } from "../src/models/profile.js";
 describe("Factory Code SDK configuration", () => {
   test("seeds A1 model defaults without persisting the proxy key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-"));
-    await prepareCodeSdkSettings({ dataDirectory: directory, profile: loadModelProfile() });
+    const profile = loadModelProfile();
+    await prepareCodeSdkSettings({
+      dataDirectory: directory,
+      profile,
+      provider: { baseUrl: "https://proxy.example.test/v1", models: profile.aliases },
+    });
     const settings = await readFile(join(directory, "settings.json"), "utf8");
     const parsed = JSON.parse(settings);
 
+    expect(parsed.onboarding).toMatchObject({ version: 1, completedAt: new Date(0).toISOString() });
     expect(Object.keys(parsed.models.modeDefaults)).toEqual(CODE_MODE_IDS);
     expect(new Set(Object.values(parsed.models.modeDefaults))).toEqual(new Set(["a1-proxy/code-frontier-high"]));
     expect(parsed.models.observerModelOverride).toBe("a1-proxy/code-workhorse-high");
     expect(parsed.models.reflectorModelOverride).toBe("a1-proxy/code-workhorse-high");
+    expect(parsed.customProviders).toEqual([{
+      name: "A1 Proxy",
+      url: "https://proxy.example.test/v1",
+      models: profile.aliases,
+    }]);
     expect(settings).not.toContain("apiKey");
     expect(settings).not.toContain("gpt-5.6-sol");
   });
@@ -61,5 +72,15 @@ describe("Factory Code SDK configuration", () => {
     expect(settings.models.modeDefaults["cortex/build"]).toBe("a1-proxy/code-frontier-max");
     expect(settings.models.observerModelOverride).toBe("a1-proxy/fast-high");
     expect(settings.preferences).toMatchObject({ yolo: true, thinkingLevel: "xhigh" });
+  });
+
+  test("rejects persisted raw upstream model IDs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-raw-model-"));
+    await writeFile(join(directory, "settings.json"), JSON.stringify({
+      models: { modeDefaults: { "cortex/build": "openai/gpt-5.6-sol" } },
+    }));
+
+    await expect(prepareCodeSdkSettings({ dataDirectory: directory, profile: loadModelProfile() }))
+      .rejects.toThrow(/stable a1 model alias/i);
   });
 });

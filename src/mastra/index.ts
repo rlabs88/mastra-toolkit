@@ -3,29 +3,28 @@ import { createToolkitAgents } from "../agents/index.js";
 import { loadToolkitConfig } from "../config.js";
 import { createToolkitFactory } from "../factory/create.js";
 import { ProxyGateway } from "../models/proxy-gateway.js";
-import { createToolkitStorage } from "../runtime/storage.js";
+import { prepareLocalProjectRuntime } from "../runtime/project.js";
 import { createToolkitWorkspace } from "../runtime/workspace.js";
 
 export const config = loadToolkitConfig();
-export const agents = createToolkitAgents({
+const factoryAgents = config.mode === "factory" ? createToolkitAgents({
   workspaceRoot: config.sandbox.workspaceRoot,
   browser: true,
   ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
   ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
-});
-export const factory = config.mode === "factory" ? await createToolkitFactory(config, agents) : undefined;
-const standalone = factory ? undefined : createToolkitStorage(config.databaseUrl);
-const prepared = factory ? await factory.prepare() : {};
+}) : undefined;
+export const factory = factoryAgents ? await createToolkitFactory(config, factoryAgents) : undefined;
+export const localProject = factory ? undefined : await prepareLocalProjectRuntime({ config, cwd: process.cwd() });
+export const agents = factoryAgents ?? localProject!.agents;
+const prepared = factory ? await factory.prepare() : localProject!.mastraArgs;
 
 export const mastra = new Mastra({
   ...prepared,
-  agents: { ...(prepared.agents ?? {}), ...agents },
-  gateways: {
-    ...(prepared.gateways ?? {}),
-    proxy: new ProxyGateway(config.proxy),
-  },
-  workspace: createToolkitWorkspace(config),
-  ...(standalone ? { storage: standalone.storage } : {}),
+  ...(factory ? {
+    agents: { ...(prepared.agents ?? {}), ...agents },
+    gateways: { ...(prepared.gateways ?? {}), proxy: new ProxyGateway(config.proxy) },
+    workspace: createToolkitWorkspace(config),
+  } : {}),
   backgroundTasks: {
     enabled: true,
     mode: "full",
@@ -37,4 +36,5 @@ export const mastra = new Mastra({
   },
 });
 
-await factory?.finalize();
+if (factory) await factory.finalize();
+else await localProject!.finalize(mastra);

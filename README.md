@@ -12,16 +12,31 @@ The [Executive Direction](docs/executive-direction.md) defines the project-runti
 - Docker when using the Docker sandbox or persistence profile
 - Chrome for visible computer-use
 
-## Local standalone
+## Local project runtime
 
 ```bash
 npm ci
-npm run dev:infisical
+npm run code:infisical
 ```
 
-The default endpoint is `https://aa.renaissancelab.org/v1`, the default model is `proxy/openai/gpt-5.6-luna`, storage is local LibSQL, and the checked-in sandbox specification selects `local`.
+This starts the Mastra Code TUI directly in the containing Git checkout or worktree. It mounts one AgentController on one caller-owned Mastra, uses the same contained workspace for files and commands, and does not require an HTTP server. The default selection is `cortex/build`; Cortex, Flux, and Zen each expose `scope` and `build`, for exactly six selections.
 
-Set the agent request context key `workspaceRoot` to bind Command Run to a project other than `WORKSPACE_ROOT`.
+The A1 provider is `a1-proxy`. Active coding defaults to `code-frontier-high`, observational memory defaults to `code-workhorse-high`, and every alias in [`config/models.yaml`](config/models.yaml) is available without persisting a proxy key or raw upstream model ID. Persisted approval, YOLO, thinking, and valid model choices remain authoritative.
+
+Project resources are loaded from the checkout and hot-reloaded without restarting Mastra or the controller:
+
+- skills from `.agents/skills/`, `.claude/skills/`, and `.mastracode/skills/`;
+- specialist Markdown agents from `.github/agents/` and `.mastracode/agents/`, with the latter winning same-ID conflicts;
+- trusted workflow modules from `.mastracode/workflow/`; only workflows with an explicit `agentTool` export become tools;
+- MCP configuration using the installed Code SDK precedence, including root `.mcp.json` and `.mastracode/mcp.json`.
+
+A resource change is compiled and validated as a complete candidate. Failed candidates leave the last-known-good generation active. Workflow tools require approval and forward cancellation and output streaming.
+
+Mastra Studio uses the same prepared project mount:
+
+```bash
+npm run dev:infisical
+```
 
 ## Mastra Factory
 
@@ -35,7 +50,7 @@ For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names
 
 Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, and `delegate_zen` to its native controller. Delegated agents cannot invoke those tools recursively.
 
-For the A1 custom provider, the MastraCode model ID stored in project/session settings is `mastracode/gpt-5.6-luna`. The provider intentionally uses the same stable ID as the MastraCode gateway so Factory's model catalog does not produce a duplicated gateway/provider prefix. Local Factory startup idempotently seeds this provider in Factory's credential store and migrates legacy `a1-proxy/...` references. API keys are never written to `settings.json` or the sandbox specification.
+For the A1 custom provider, Mastra Code stores IDs such as `a1-proxy/code-frontier-high`. Local Factory startup idempotently seeds the provider in Factory's credential store and migrates legacy raw-model references to `a1-proxy/code-workhorse-high`. API keys are never written to `settings.json` or the sandbox specification.
 
 ## Sandboxes
 

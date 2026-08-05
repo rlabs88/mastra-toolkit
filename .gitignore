@@ -11,6 +11,7 @@ compiled/
 .mastra/
 .mastra-toolkit/
 src/mastra/public/.sandbox-profiles/
+.sandbox-profiles/
 .agents/exec/snapshots/
 .pi-lens/
 
