@@ -1,149 +1,105 @@
 # Mastra Toolkit Workspace Architecture
 
-Status: accepted target architecture; migration is not yet complete.
+Status: implemented baseline.
 
-This document defines the intended ownership map for the Mastra Toolkit workspace. It separates RLabs product behavior from host adapters, sandbox build inputs, and upstream source. The layout is deliberately package-oriented so a human can tell where a change belongs before opening code.
+Mastra Toolkit is a product monorepo whose applications compose canonical RLabs packages. The structure separates agent behavior, project mounting, host adaptation, sandbox policy, and deployment intent so each concern can evolve without creating a second configuration system.
 
-## Decisions
-
-1. **One canonical agent runtime.** Cortex, Flux, and Zen prompts, skills, tool factories, role metadata, and runtime defaults have one source. Studio, Factory, and Mastra Code only adapt that source to their host APIs.
-2. **Applications are thin hosts.** Studio is a Mastra CLI/server entrypoint, Factory is the Factory deployment entrypoint, and Code mounts an AgentController on the caller-owned Mastra runtime. Host folders do not own prompt copies.
-3. **Model configuration is declarative.** A checked-in YAML profile names the endpoint, credential environment variable, model roles, and host defaults. A typed loader resolves it once and emits host-specific configuration without persisting secrets.
-4. **Sandbox builds are a separate product boundary.** Reusable package layers are composed into ephemeral and persistent environments. Application dependencies and sandbox image dependencies do not share a manifest by accident.
-5. **Forks are escape hatches.** Published Mastra packages and public extension APIs are the normal dependency path. Source forks exist only for a concrete framework, Studio, TUI, or desktop UI delta that cannot be implemented through those APIs.
-
-## Target layout
+## Layout
 
 ```text
 mastra-toolkit/
-├── AGENTS.md
-├── CONTEXT.md
-├── README.md
-├── package.json
-├── config/
-│   └── models.yaml
 ├── apps/
-│   ├── studio/                 # Mastra Studio/local server bootstrap
-│   ├── factory/                # Mastra Factory bootstrap and deployment adapter
-│   └── code/                   # Mastra Code SDK + TUI bootstrap
+│   ├── mcode/                    # local CLI process and TUI launch
+│   ├── studio/                   # Mastra Studio/server composition
+│   └── factory/                  # Mastra Factory composition
 ├── packages/
-│   ├── agent-runtime/          # canonical roles, prompts, skills bridge, tools, hooks
-│   ├── runtime-config/         # YAML schema, env resolver, host projections
-│   ├── sandbox-runtime/        # workspace and cloneable sandbox-machine contract
-│   └── factory-integration/    # Factory auth, delegation, Code SDK integration
-├── sandbox/
-│   ├── packages/
-│   │   ├── base/               # common OS/runtime package layer
-│   │   ├── coding/             # compilers, search, git, document tooling
-│   │   ├── browser/            # browser automation dependencies
-│   │   └── operations/         # deployment tooling; no credentials
-│   └── environments/
-│       ├── ephemeral/          # short-lived Factory composition
-│       └── persistent/         # hardened operations composition
-├── forks/
-│   ├── mastra/                 # pinned RLabs fork of mastra-ai/mastra
-│   └── mastra-code-ui/         # optional; only for desktop UI work
+│   ├── runtime-config/           # model YAML, env resolver, proxy gateway
+│   ├── agent-tools/              # role-neutral tools and audit policy
+│   ├── agents-roles/             # canonical Cortex, Flux, and Zen
+│   ├── sandbox/                  # Local/Docker/Platform machine contract
+│   ├── project-mounting-manager/ # hot-loaded project generations
+│   ├── mcode/                    # Code SDK/controller/TUI adapter
+│   └── factory-integration/      # Factory auth, storage, and integrations
+├── deployment/
+│   ├── mcode-sandbox/            # target intent; build assets not yet added
+│   └── studio-server/            # target intent; build assets not yet added
 ├── docs/
-└── test/
+└── test/                         # cross-package and application contracts
 ```
 
-Only the root checkpoint exists today. Nested `AGENTS.md`/`CONTEXT.md` pairs should be created with the corresponding real boundaries during migration, not in advance. The first expected nested checkpoints are `packages/agent-runtime`, `sandbox`, and `forks`; `sandbox/environments/persistent` merits a deeper checkpoint when privileged runtime integration is implemented.
+Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications share one pair at `apps/`; deployment targets each have a pair because their credential and operational policies differ. The exact dependency and extension contracts are listed in the [repository manifest](repository-manifest.md).
 
-## Canonical agent projection
-
-The canonical package should expose data and factories rather than pre-bound host singletons:
+## Canonical runtime projection
 
 ```text
-AgentProfile + prompt sections + tool factories + skill roots
-                   │
-         ┌─────────┼──────────┐
-         ▼         ▼          ▼
-  Studio adapter  Factory   Code modes/subagents
-  (Mastra Agent)  adapter    (AgentController)
+runtime-config ─┬──────────────┬───────────────────────┐
+               ▼              ▼                       ▼
+          agents-roles ◄── agent-tools             sandbox
+               │                                      │
+               ├─────────────┐                        │
+               ▼             ▼                        ▼
+             mcode   factory-integration ◄────────────┘
+               │             │
+               ▼             ▼
+     project-mounting-manager
+               │
+        ┌──────┴───────┐
+        ▼              ▼
+  apps/mcode      apps/studio       apps/factory
 ```
 
-`packages/agent-runtime` owns role IDs, prompt composition, tool contracts, hooks, and the mapping from canonical roles to host modes/subagents. `apps/studio`, `apps/factory`, and `apps/code` own only lifecycle, presentation, and host-specific wiring.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Each role owns a folder containing `prompt.ts`, `role.ts`, and `index.ts`. `agent-tools` owns reusable execution and browser capabilities. Hosts project these packages; they do not copy them.
 
-The existing implementation remains canonical in `src/agents`, `src/tools`, and `src/runtime` until this move is performed. The migration must move code and switch all consumers in one coherent series; it must not establish a second prompt tree beside the first.
+`runtime-config` owns the secret-free YAML catalog and resolves the credential named by `apiKeyEnv` at process start. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 
-The root `.agents/skills/` tree remains the repository-local skill source during migration. Both Studio workspaces and Mastra Code project discovery can consume it. Packaging or synchronization may be added later, but generated copies are not canonical.
+## Project mounting
 
-## Model profile contract
+The local runtime starts from `cwd`, resolves the containing Git checkout or worktree through Mastra Code, and lets Mastra Code own its established instruction, skill, hook, command, plugin, database, and settings conventions.
 
-The YAML file contains references and defaults, not secrets. A representative shape is:
+`project-mounting-manager` adds the missing project-scoped executable resources without adding another manifest:
 
-```yaml
-version: 1
-defaultProfile: cliproxy
+- specialists from `.github/agents/` and `.mastracode/agents/`;
+- trusted workflow modules from `.mastracode/workflow/`;
+- explicit workflow tools only when `agentTool` metadata is exported;
+- MCP candidates validated through the Code SDK adapter;
+- watched, generation-based reload with last-known-good rollback.
 
-profiles:
-  cliproxy:
-    provider:
-      id: a1-proxy
-      kind: openai-compatible
-      baseUrl: https://aa.renaissancelab.org/v1
-      apiKeyEnv: CLI_PROXY_API_KEY
-    aliases:
-      - code-frontier-high
-      - code-workhorse-high
-    roles:
-      cortex: code-frontier-high
-      flux: code-frontier-high
-      zen: code-frontier-high
-      specialist: code-frontier-high
-      observer: code-workhorse-high
-      reflector: code-workhorse-high
-    code:
-      defaultAgent: cortex
-      defaultMode: build
-      modes: [scope, build]
-```
+The package is host-neutral. Model lookup, MCP lifecycle, current tool enumeration, and Mastra registry changes are ports. `mcode` implements those ports for the in-process Code runtime. Factory can implement the same ports when its per-project runtime topology is proven.
 
-The loader should accept a profile name from a CLI flag or `MASTRA_MODEL_PROFILE`, resolve `apiKeyEnv` from the injected process environment, normalize the base URL, validate every referenced role, and return an immutable resolved profile. Arbitrary shell expansion is unnecessary; the explicit `apiKeyEnv` field keeps secret resolution auditable.
+## Host boundaries
 
-Host projections derive their IDs from that object:
+- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. It owns modes, native leaf subagents, Code settings, provider adaptation, project mounting, sessions, and reusable TUI construction.
+- `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
+- `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
+- `packages/factory-integration` owns Factory authentication, persistence, delegation integration, sandbox provisioning, and local provider migration. `apps/factory` is its composition root.
 
-- Studio registers the existing `ProxyGateway` and resolves `proxy/a1-proxy/<alias>`.
-- Factory registers the same `a1-proxy` provider through the Code SDK custom-provider source and seeds only missing, non-secret model defaults.
-- Code passes six derived namespaced modes and three canonical leaf-subagent definitions into `prepareAgentControllerMount()`. Every mode receives the native `subagent` tool and can target `cortex`, `flux`, or `zen`. Its settings file may contain non-secret user preferences but never the CLIProxy key or raw upstream model IDs.
+The local MCode path is serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process and require no central HTTP server. Studio and Factory are server hosts of shared package contracts.
 
-This adapts the useful part of the `jc` launcher pattern—named YAML profiles, environment references, validation, and an explicit user override—without importing Claude-specific tier aliases or writing resolved credentials to configuration.
+## Sandbox and deployment
 
-## Sandbox composition
+One checkout or worktree maps to one workspace root and one sandbox context. `packages/sandbox` is runtime code; `deployment/*` describes how concrete runtime targets will be built and operated. The current deployment targets intentionally contain only checkpoints because no toolkit-owned image or server recipe has yet been approved.
 
-`sandbox/packages/*` are build inputs, not JavaScript workspace packages. Each layer has a manifest, install/build logic, and a smoke test. Environment folders select layers and security policy:
+Ephemeral Factory environments receive short-lived task credentials. Persistent operations environments may receive scoped deployment credentials only at runtime with audit and rotation. Neither model YAML, sandbox specifications, images, nor repository settings may contain resolved secrets.
 
-| Environment | Intended lifetime | Package layers | Credentials |
-| --- | --- | --- | --- |
-| Ephemeral | One Factory task/run | base + coding, optional browser | Short-lived task credentials only; no deployment keys |
-| Persistent | Long-running operations workspace | base + coding + operations, optional browser | Runtime-injected, scoped operations credentials with audit and rotation |
+## Fork policy
 
-Both compositions implement the same cloneable sandbox-machine interface. Provider selection is explicit, and provider failure is terminal. Persistent environments add hardening and secret delivery; they do not become a separate agent implementation.
+No upstream fork is required for the implemented baseline. MCode is an extension/composition package, not a source fork. If a demonstrated extension-point gap requires source changes, one pinned RLabs fork of the `mastra-ai/mastra` monorepo will cover Mastra framework and Mastra Code/TUI deltas. A separate `mastra-code-ui` fork is only appropriate for actual desktop work.
 
-## Fork topology
+Fork checkouts are external trust boundaries and are not npm workspace members. Each must record an RLabs `origin`, authoritative `upstream`, pinned commit, reason for divergence, and consumer validation.
 
-Mastra Code's source and TUI live under `mastracode/` in the main [`mastra-ai/mastra`](https://github.com/mastra-ai/mastra) monorepo. Consequently:
+## Invariants
 
-- `forks/mastra` is the only source fork needed for Mastra framework, Studio, or Mastra Code TUI deltas.
-- The current private `rlabs88/mastra-code` project is a wrapper and should be migrated into `apps/code`, then retained only as a transition/archive repository if desired.
-- `forks/mastra-code-ui` is separate because [`mastra-ai/mastra-code-ui`](https://github.com/mastra-ai/mastra-code-ui) is a separate Electron project. It should not be added until desktop work is in scope.
-
-Fork checkouts should be git submodules pinned to reviewed commits. They are not members of the root npm workspace. Each fork keeps `origin` pointed at the RLabs fork and `upstream` pointed at the authoritative Mastra repository. Toolkit changes consume a fork through a package/tarball/linked build boundary, not by importing arbitrary source paths across repositories.
-
-## Migration sequence
-
-1. Add and test the typed model-profile loader while the existing single package remains intact.
-2. Extract `packages/agent-runtime` and switch the current Studio/Factory entrypoint to it.
-3. Move the private Mastra Code wrapper into `apps/code`, replace copied prompts/modes with canonical projections, and update it from its older Mastra Code API to the current public API.
-4. Extract `runtime-config`, `sandbox-runtime`, and `factory-integration` only along existing seams; keep a root compatibility export until callers migrate.
-5. Move toolkit-owned sandbox runtime manifests into `sandbox/`, then create its checkpoint pair and validate ephemeral and persistent compositions. Add image build inputs only when this repository owns a concrete derived image.
-6. Add `forks/mastra` only when the first concrete upstream delta is selected and the RLabs GitHub fork exists. Add the optional desktop fork only for actual desktop UI work.
-7. Remove legacy root `src/` ownership and the separate wrapper only after all host and contract tests use workspace packages.
+1. Canonical roles, prompts, tools, model aliases, and sandbox providers have one owner.
+2. Project discovery does not grant execution authority; workflow tool publication is explicit.
+3. Hot reload activates a complete generation or retains the prior generation.
+4. User-selected valid models and Code preferences are preserved; proxy keys are never persisted.
+5. Provider failure is explicit and cannot silently weaken sandbox or model policy.
+6. Applications remain thin and consume package public exports only.
 
 ## Validation gates
 
-- Canonical prompt snapshots must be identical across Studio and Code projections.
-- Every host must resolve the same role-to-model mapping from one profile fixture.
-- No settings file, generated artifact, image layer, or test snapshot may contain a resolved credential.
-- Ephemeral and persistent environments must pass the same sandbox-machine contract suite, plus profile-specific security tests.
-- Fork-backed builds must pass upstream-targeted tests and the toolkit consumer integration test before the pinned commit advances.
+- Root: `npm run typecheck`, `npm test`, and `npm run build`.
+- Package: the owning package's `npm run check`.
+- MCode: local project boot, six modes, native subagent targets, project workflow tools, and TUI CVUA evidence when UI behavior changes.
+- Factory: auth, storage migration, delegation, sandbox, and external integration gates appropriate to the change.
+- Repository: `git diff --check`, checkpoint verification, secret scan, and generated-state inspection.

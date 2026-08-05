@@ -1,6 +1,6 @@
 # Declarative sandbox runtime
 
-Mastra Toolkit consumes a checked-in `cortex.provisioning/v1` runtime specification from [`../sandbox.config.json`](../sandbox.config.json). The document is configuration, not authority: it contains no credentials, host paths, repository tokens, mutable image tags, container IDs, or runtime leases.
+Mastra Toolkit consumes a checked-in `cortex.provisioning/v1` runtime specification from [`../packages/sandbox/config/sandbox.config.json`](../packages/sandbox/config/sandbox.config.json). The document is configuration, not authority: it contains no credentials, host paths, repository tokens, mutable image tags, container IDs, or runtime leases.
 
 At startup, `loadToolkitConfig` validates the document and freezes its provider policy for the process. `SANDBOX_PROVIDER` may select a declared Local, Docker, or Platform policy. `WORKSPACE_ROOT` remains host configuration, and Platform credentials remain in Infisical. A malformed document, a mutable Docker image, or incomplete Platform identity fails closed.
 

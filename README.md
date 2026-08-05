@@ -2,7 +2,7 @@
 
 RLabs' local Mastra agent runtime and Mastra Factory adapter. It provides Cortex, Flux, and Zen through one shared runtime, with guarded repository tools, native background work, visible browser automation, and cloneable Local, Docker, or Platform sandboxes.
 
-The [Executive Direction](docs/executive-direction.md) defines the project-runtime thesis and progression from local Mastra Code development to a multi-project Factory. The accepted package ownership and fork boundaries are documented in [Workspace Architecture](docs/workspace-architecture.md). The current repository is still the pre-migration single-package implementation.
+The [Executive Direction](docs/executive-direction.md) defines the project-runtime thesis and progression from local Mastra Code development to a multi-project Factory. The implemented ownership and fork boundaries are documented in [Workspace Architecture](docs/workspace-architecture.md), with exact consumers and extension rules in the [Repository Manifest](docs/repository-manifest.md).
 
 ## Requirements
 
@@ -23,7 +23,7 @@ This starts the Mastra Code TUI directly in the containing Git checkout or workt
 
 Every selection can also use Mastra Code's native `subagent` tool. Its named targets are exactly `cortex`, `flux`, and `zen`, so any active canonical agent can delegate a focused task to any canonical role without changing the parent mode. These delegated runs use the canonical role prompt and model mapping, receive the project workspace, and cannot recursively launch another subagent.
 
-The A1 provider is `a1-proxy`. Active coding defaults to `code-frontier-high`, observational memory defaults to `code-workhorse-high`, and every alias in [`config/models.yaml`](config/models.yaml) is available without persisting a proxy key or raw upstream model ID. By default, the Observer runs after 60,000 message tokens and the Reflector runs after 60,000 accumulated observation tokens. Mastra Code presents those thresholds as a combined 120,000-token memory capacity; this is not a declaration of the provider model's physical context window. Persisted approval, YOLO, thinking, valid model choices, and explicit numeric memory thresholds remain authoritative.
+The A1 provider is `a1-proxy`. Active coding defaults to `code-frontier-high`, observational memory defaults to `code-workhorse-high`, and every alias in [`packages/runtime-config/config/models.yaml`](packages/runtime-config/config/models.yaml) is available without persisting a proxy key or raw upstream model ID. By default, the Observer runs after 60,000 message tokens and the Reflector runs after 60,000 accumulated observation tokens. Mastra Code presents those thresholds as a combined 120,000-token memory capacity; this is not a declaration of the provider model's physical context window. Persisted approval, YOLO, thinking, valid model choices, and explicit numeric memory thresholds remain authoritative.
 
 Project resources are loaded from the checkout and hot-reloaded without restarting Mastra or the controller:
 
@@ -56,7 +56,7 @@ For the A1 custom provider, Mastra Code stores IDs such as `a1-proxy/code-fronti
 
 ## Sandboxes
 
-[`sandbox.config.json`](sandbox.config.json) is the version-controlled runtime specification. It declares the default provider, command and fleet limits, native isolation policy, the immutable ARM64 AES image, the `sandbox-entrypoint/v1` ABI, Docker hardening, and Platform lease/network policy. Its shape is documented by [`config/sandbox.schema.json`](config/sandbox.schema.json).
+[`packages/sandbox/config/sandbox.config.json`](packages/sandbox/config/sandbox.config.json) is the version-controlled runtime specification. It declares the default provider, command and fleet limits, native isolation policy, the immutable ARM64 AES image, the `sandbox-entrypoint/v1` ABI, Docker hardening, and Platform lease/network policy. Its shape is documented by [`packages/sandbox/config/sandbox.schema.json`](packages/sandbox/config/sandbox.schema.json).
 
 `SANDBOX_PROVIDER` may select one of the declared provider policies at process start:
 
@@ -64,10 +64,10 @@ For the A1 custom provider, Mastra Code stores IDs such as `a1-proxy/code-fronti
 - `docker`: the digest-pinned canonical `ghcr.io/rlabs88/toolkit/aes-sandbox` image.
 - `platform`: Mastra Platform Workspace using `MASTRA_ENVIRONMENT_ID`, `MASTRA_PROJECT_ID`, and `MASTRA_PLATFORM_SECRET_KEY`.
 
-The Docker provider consumes the canonical image directly from the immutable reference in `sandbox.config.json`; this repository does not rebuild or republish the centrally owned Fedora baseline. To validate the pinned entrypoint on an ARM64 Docker host:
+The Docker provider consumes the canonical image directly from that package-local specification; this repository does not rebuild or republish the centrally owned Fedora baseline. To validate the pinned entrypoint on an ARM64 Docker host:
 
 ```bash
-IMAGE="$(node -p 'require("./sandbox.config.json").spec.entrypointProfile.image')"
+IMAGE="$(node -p 'require("./packages/sandbox/config/sandbox.config.json").spec.entrypointProfile.image')"
 docker pull "$IMAGE"
 docker run --rm --platform linux/arm64 "$IMAGE" probe
 ```

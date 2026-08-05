@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { normalizeModelReferences, normalizeStoredModelId } from "../src/factory/local-provider.js";
+import { normalizeModelReferences, normalizeStoredModelId } from "@rlabs/factory-integration";
 
 describe("local A1 provider migration", () => {
   test.each([

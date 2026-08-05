@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createFactoryAuth } from "../src/factory/auth.js";
+import { createFactoryAuth } from "@rlabs/factory-integration";
 
 describe("createFactoryAuth", () => {
   test("provides a local tenant in development", async () => {

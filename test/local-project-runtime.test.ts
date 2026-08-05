@@ -3,10 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import { describe, expect, test } from "vitest";
-import { CODE_MODE_IDS } from "../src/agents/modes/index.js";
-import { loadToolkitConfig } from "../src/config.js";
-import { mountLocalProjectRuntime } from "../src/runtime/project.js";
-import type { ProjectMcpRuntime } from "../src/project/runtime.js";
+import { CODE_MODE_IDS, loadMcodeConfig, mountMcodeRuntime } from "@rlabs/mcode";
+import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mounting-manager";
 
 describe("local project runtime", () => {
   test("mounts the six canonical modes on one caller-owned Mastra", async () => {
@@ -15,10 +13,10 @@ describe("local project runtime", () => {
     const workflowRoot = join(projectRoot, ".mastracode", "workflow");
     await mkdir(workflowRoot, { recursive: true });
     await writeFile(join(workflowRoot, "smoke.ts"), workflowSource());
-    const runtime = await mountLocalProjectRuntime({
+    const runtime = await mountMcodeRuntime({
       cwd: projectRoot,
       dataDirectory,
-      config: loadToolkitConfig({
+      config: loadMcodeConfig({
         WORKSPACE_ROOT: projectRoot,
         SANDBOX_PROVIDER: "local",
         CLI_PROXY_API_KEY: "test-only-key",
@@ -104,10 +102,11 @@ describe("local project runtime", () => {
   }, 30_000);
 });
 
-function fakeMcpRuntime(): ProjectMcpRuntime {
+function fakeMcpRuntime(): McpLifecyclePort {
   return {
-    async reload() {},
-    getTools: () => ({}),
+    async prepare(): Promise<PreparedMcpGeneration> {
+      return { snapshot: () => ({}), async commit() {}, async rollback() {} };
+    },
     async close() {},
   };
 }

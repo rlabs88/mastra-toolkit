@@ -10,7 +10,7 @@ compiled/
 # Mastra generated runtime/build state
 .mastra/
 .mastra-toolkit/
-src/mastra/public/.sandbox-profiles/
+apps/studio/src/public/.sandbox-profiles/
 .sandbox-profiles/
 .agents/exec/snapshots/
 .pi-lens/

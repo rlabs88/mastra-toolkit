@@ -1,0 +1,28 @@
+{
+  "name": "@rlabs/factory-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@mastra/auth-workos": "1.6.4",
+    "@mastra/core": "1.55.0",
+    "@mastra/factory": "0.3.0",
+    "@mastra/libsql": "1.18.0",
+    "@mastra/pg": "1.18.1",
+    "@mastra/redis-streams": "0.3.0",
+    "@rlabs/agents-roles": "*",
+    "@rlabs/mcode": "*",
+    "@rlabs/project-mounting-manager": "*",
+    "@rlabs/runtime-config": "*",
+    "@rlabs/sandbox": "*",
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "test": "vitest run test",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  }
+}

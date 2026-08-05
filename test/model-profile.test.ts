@@ -5,7 +5,7 @@ import {
   loadModelProfile,
   resolveAliasModelId,
   resolveProxyGatewayModelId,
-} from "../src/models/profile.js";
+} from "@rlabs/runtime-config";
 
 describe("model profile", () => {
   test("loads the stable A1 proxy catalog and role defaults", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createToolkitAgents } from "../src/agents/index.js";
+import { createToolkitAgents } from "@rlabs/agents-roles";
 import {
   CODE_MODE_IDS,
   createCodeModes,
@@ -7,7 +7,7 @@ import {
   encodeAgentMode,
   switchAgent,
   switchMode,
-} from "../src/agents/modes/index.js";
+} from "@rlabs/mcode";
 
 describe("Mastra Code canonical modes", () => {
   test("projects three canonical agents into exactly six scope/build modes", () => {

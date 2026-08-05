@@ -2,9 +2,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { CODE_MODE_IDS } from "../src/agents/modes/index.js";
-import { createA1MastraCodeGateway, getA1CodeModelId, prepareCodeSdkSettings } from "../src/factory/code-sdk.js";
-import { loadModelProfile } from "../src/models/profile.js";
+import { CODE_MODE_IDS, createA1MastraCodeGateway, getA1CodeModelId, prepareCodeSdkSettings } from "@rlabs/mcode";
+import { loadModelProfile } from "@rlabs/runtime-config";
 
 describe("Factory Code SDK configuration", () => {
   test("seeds A1 model defaults without persisting the proxy key", async () => {

@@ -1,0 +1,12 @@
+{
+  "name": "@rlabs/factory-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "@rlabs/agents-roles": "*",
+    "@rlabs/factory-integration": "*",
+    "@rlabs/runtime-config": "*"
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { fillMissingSubagentModelId } from "../src/agents/subagents.js";
-import { loadModelProfile } from "../src/models/profile.js";
+import { fillMissingSubagentModelId } from "@rlabs/mcode";
+import { loadModelProfile } from "@rlabs/runtime-config";
 
 describe("canonical subagent model routing", () => {
   test("fills an empty native subagent model with the selected role's runtime model", () => {

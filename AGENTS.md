@@ -19,7 +19,7 @@ applies_to: ["**/*"]
 
 - Keep one canonical definition of each agent ID, prompt, skill source, tool contract, model role, and runtime default. Studio, Factory, and Mastra Code adapters must consume those definitions rather than copy them.
 - Preserve the public agent IDs `cortex`, `flux`, and `zen` and the six-section prompt order.
-- Until the package migration described in the architecture document lands, treat `src/agents`, `src/tools`, and `src/runtime` as the canonical implementation. Move ownership to `packages/agent-runtime` only in a coherent migration that switches every host and its contract tests together.
+- Treat `packages/agents-roles`, `packages/agent-tools`, `packages/runtime-config`, and `packages/sandbox` as the canonical runtime sources. Applications and integration packages must consume their public exports; do not restore a root `src/` compatibility tree.
 - Let every Cortex, Flux, and Zen top-level mode invoke the native AgentController `subagent` tool with Cortex, Flux, or Zen as the selected leaf role. Delegated runs must not receive the `subagent` tool, so recursion remains bounded. Keep Factory worker delegation as a separate runtime concern.
 - Prefer supported Mastra agents, tools, workspaces, browser, background-task, approval, AgentController mount, and `MastraTUI` extension APIs before adding toolkit-owned infrastructure or patching upstream source. Treat `createMastraCode` as a compatibility alias, not a new composition boundary.
 
@@ -33,7 +33,7 @@ applies_to: ["**/*"]
 
 ## Sandbox boundary
 
-- Keep sandbox image inputs, package-layer recipes, and environment profiles under the top-level `sandbox/` boundary when that migration is implemented. Do not mix sandbox build dependencies with root application dependencies.
+- Keep sandbox runtime behavior in `packages/sandbox`. Keep target-specific deployment intent in `deployment/`; add image recipes only when a concrete target owns a build.
 - Make ephemeral and persistent environments select explicit package layers from the same sandbox contract. Ephemeral environments must not receive deployment credentials. Persistent operations environments must receive privileged credentials only at runtime from the approved secret provider.
 - Local, Docker, and Platform providers must satisfy the same cloneable sandbox-machine contract and must not silently fall back.
 - Never bake secrets, user state, host credentials, or Docker socket access into a sandbox image.
@@ -57,7 +57,7 @@ applies_to: ["**/*"]
 
 ## Validation
 
-- For current root changes, run `npm run typecheck`, `npm test`, and `npm run build`; use `npm run check` when all three are appropriate.
+- For root changes, run `npm run typecheck`, `npm test`, and `npm run build`; use `npm run check` when all three are appropriate.
 - For configuration changes, also run `npm run secrets:check` when Infisical access is available; report an unavailable external credential gate rather than weakening it.
 - For fork changes, run the fork's nearest documented checks plus the toolkit consumer contract that exercises the changed surface.
 - Confirm `git diff --check` and inspect the final diff for credentials, generated state, copied prompts, and unrelated edits.

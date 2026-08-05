@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "description": "RLabs local Mastra agent runtime and Mastra Factory adapter",
   "repository": {
     "type": "git",
@@ -15,13 +19,13 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "dev": "mastra dev --dir src/mastra",
+    "dev": "mastra dev --dir apps/studio/src",
     "dev:infisical": "node scripts/with-infisical.mjs npm run dev",
-    "dev:factory": "MASTRA_TOOLKIT_MODE=factory mastra factory dev --dir src/mastra",
+    "dev:factory": "MASTRA_TOOLKIT_MODE=factory mastra factory dev --dir apps/factory/src",
     "dev:factory:infisical": "node scripts/with-infisical.mjs env MASTRA_TOOLKIT_MODE=factory npm run dev:factory",
-    "code": "tsx src/code/cli.ts",
+    "code": "tsx apps/mcode/src/cli.ts",
     "code:infisical": "node scripts/with-infisical.mjs env PROXY_MODEL=code-frontier-high npm run code",
-    "build": "mastra build --dir src/mastra",
+    "build": "mastra build --dir apps/studio/src",
     "start": "mastra start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

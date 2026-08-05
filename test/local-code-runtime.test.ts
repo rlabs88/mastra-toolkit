@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
-import { CODE_MODE_IDS } from "../src/agents/modes/index.js";
+import { CODE_MODE_IDS } from "@rlabs/mcode";
 import {
-  createLocalCodeRuntime,
-  type LocalCodeRuntime,
-} from "../src/code/local-runtime.js";
+  createLocalMcodeRuntime,
+  type LocalMcodeRuntime,
+} from "@rlabs/mcode";
 
 const execFileAsync = promisify(execFile);
-const openRuntimes: LocalCodeRuntime[] = [];
+const openRuntimes: LocalMcodeRuntime[] = [];
 
 afterEach(async () => {
   await Promise.all(openRuntimes.splice(0).map(runtime => runtime.close()));
@@ -25,7 +25,7 @@ describe("local Mastra Code runtime", () => {
     await execFileAsync("git", ["init", "--quiet", projectRoot]);
     await mkdir(nestedCwd, { recursive: true });
 
-    const runtime = await createLocalCodeRuntime({
+    const runtime = await createLocalMcodeRuntime({
       cwd: nestedCwd,
       dataDirectory,
       browser: false,

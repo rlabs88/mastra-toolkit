@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { createToolkitAgents } from "../src/agents/index.js";
-import { createCommandRunTool } from "../src/tools/command-run/tool.js";
+import { createCommandRunTool } from "@rlabs/agent-tools";
+import { createToolkitAgents } from "@rlabs/agents-roles";
 
 describe("Mastra agents", () => {
   test("registers Cortex, Flux, and Zen with bounded delegation", async () => {

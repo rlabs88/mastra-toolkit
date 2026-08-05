@@ -1,0 +1,30 @@
+{
+  "name": "@rlabs/agents-roles",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cortex": "./src/cortex/index.ts",
+    "./flux": "./src/flux/index.ts",
+    "./zen": "./src/zen/index.ts",
+    "./factory": "./src/factory.ts",
+    "./prompt": "./src/prompt.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "@mastra/stagehand": "0.3.1",
+    "@rlabs/agent-tools": "*",
+    "@rlabs/runtime-config": "*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10"
+  }
+}

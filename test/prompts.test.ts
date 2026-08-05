@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ARCHETYPES, composePrompt } from "../src/agents/archetypes.js";
+import { ARCHETYPES, composePrompt } from "@rlabs/agents-roles";
 
 describe("agent archetypes", () => {
   test.each(["cortex", "flux", "zen"] as const)("%s has the six prompt sections", id => {

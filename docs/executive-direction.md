@@ -57,9 +57,9 @@ Mastra Code projects Cortex, Flux, and Zen into a namespaced AgentController mod
 
 Workflows form the executable agentic layer above project tests. They coordinate deterministic checks, agent tasks, evaluation, approvals, and remediation while leaving the test suite as the source of functional evidence.
 
-Mastra Code does not currently discover a workflow folder. Mastra's `src/mastra/workflows` convention is a separate `mastra dev` and `mastra build` feature. For an embedded project runtime, the host imports or compiles a trusted workflow, registers it with the same Mastra runtime, and exposes selected entry points to Mastra Code through schema-validated tools.
+Mastra Code itself does not discover a workflow folder. The toolkit's `project-mounting-manager` now fills that extension gap for the embedded runtime: it compiles trusted `.mastracode/workflow/` modules, registers them with the same caller-owned Mastra instance, and exposes only workflows with explicit `agentTool` metadata through schema-validated tools. This remains distinct from Mastra's build-time `src/mastra/workflows` convention.
 
-The first implementation should add only the workflow composition and reload behavior that this path proves necessary. It should reuse Mastra Code's existing project discovery for instructions, skills, MCP, hooks, commands, and plugins rather than introduce a generalized mounting framework.
+The first implementation adds only the workflow, specialist, MCP-generation, and reload behavior proven by this path. It reuses Mastra Code's existing discovery for instructions, skills, hooks, commands, and plugins rather than introducing a second project manifest.
 
 Local workflow execution is in-process and does not require an HTTP server. Durable or distributed execution may later use Mastra workers, storage, and PubSub. A workflow being registered beside Mastra Code does not automatically make it agent-callable; exposure remains explicit so permissions, schemas, versions, and audit events stay controlled.
 
