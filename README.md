@@ -107,4 +107,4 @@ npm test
 npm run build
 ```
 
-The native capability decisions are recorded in [docs/mastra-capability-matrix.md](docs/mastra-capability-matrix.md). The declarative sandbox contract and its Linear provenance are recorded in [docs/sandbox-runtime.md](docs/sandbox-runtime.md).
+Package ownership and extension rules are recorded in the [Repository Manifest](docs/repository-manifest.md). The declarative sandbox contract and its provenance are recorded in [docs/sandbox-runtime.md](docs/sandbox-runtime.md).

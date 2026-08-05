@@ -102,7 +102,6 @@ The direction is realized when:
 ## Supporting evidence
 
 - [Workspace architecture](workspace-architecture.md)
-- [Mastra capability matrix](mastra-capability-matrix.md)
 - [Mastra Code mounting primitives](research/mastra-code-mounting-primitives.md)
 - [Mastra Code project configuration](research/mastra-code-project-configuration.md)
 - [GitHub Discussion #115](https://github.com/rlabs88/mastra-toolkit/discussions/115)

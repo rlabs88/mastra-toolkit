@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
@@ -68,6 +68,16 @@ describe("workspace ownership", () => {
       const entries = await readdir(join(root, "deployment", target));
       expect(entries.sort()).toEqual(["AGENTS.md", "CONTEXT.md"]);
     }
+  });
+
+  test("does not retain a legacy root source boundary", async () => {
+    for (const staleRoot of ["src", "config", "docker", ".pi"]) {
+      await expect(access(join(root, staleRoot))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    const tsconfig = JSON.parse(await readFile(join(root, "tsconfig.json"), "utf8")) as {
+      include?: string[];
+    };
+    expect(tsconfig.include).not.toContain("src/**/*.ts");
   });
 });
 
