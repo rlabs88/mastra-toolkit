@@ -10,16 +10,19 @@ compiled/
 # Mastra generated runtime/build state
 .mastra/
 .mastra-toolkit/
+apps/studio/src/public/.sandbox-profiles/
+.sandbox-profiles/
 .agents/exec/snapshots/
 .pi-lens/
 
-# Generated scratch artifacts
+# Generated scratch and analysis artifacts
 story*.md
 **/story*.md
 test*snapshot*.mjs
 .agents/exec/*snapshot*/
 .agents/exec/*snapshot*.md
 .agents/plans/*snapshot*.md
+graphify-out/
 
 # Environment files (contain secrets)
 .env.local

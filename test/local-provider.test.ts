@@ -1,0 +1,31 @@
+import { describe, expect, test } from "vitest";
+import { normalizeModelReferences, normalizeStoredModelId } from "@rlabs/factory-integration";
+
+describe("local A1 provider migration", () => {
+  test.each([
+    ["a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["mastracode/a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["mastracode/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    ["a1-proxy/code-frontier-high", "a1-proxy/code-frontier-high"],
+    ["openai/gpt-5.6-luna", "openai/gpt-5.6-luna"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeStoredModelId(input)).toBe(expected);
+  });
+
+  test("migrates nested thread model references without changing unrelated metadata", () => {
+    const result = normalizeModelReferences({
+      currentModelId: "mastracode/a1-proxy/gpt-5.6-luna",
+      modes: ["a1-proxy/gpt-5.6-luna"],
+      projectPath: "/workspace/a1-proxy/example",
+    });
+
+    expect(result).toEqual({
+      changed: true,
+      value: {
+        currentModelId: "a1-proxy/code-workhorse-high",
+        modes: ["a1-proxy/code-workhorse-high"],
+        projectPath: "/workspace/a1-proxy/example",
+      },
+    });
+  });
+});

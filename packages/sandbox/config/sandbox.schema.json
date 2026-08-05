@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rlabs.dev/schemas/mastra-toolkit/sandbox.v1.json",
+  "title": "Mastra Toolkit sandbox runtime",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "apiVersion": { "const": "cortex.provisioning/v1" },
+    "kind": { "const": "SandboxRuntime" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultProvider", "commandTimeoutMs", "maxSandboxes", "workdir", "entrypointProfile", "local", "docker", "platform"],
+      "properties": {
+        "defaultProvider": { "enum": ["local", "docker", "platform"] },
+        "commandTimeoutMs": { "type": "integer", "minimum": 1 },
+        "maxSandboxes": { "type": "integer", "minimum": 1 },
+        "workdir": { "type": "string", "pattern": "^/" },
+        "entrypointProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "image", "platform", "abi", "command", "probeCommand"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+            "image": { "type": "string", "pattern": "^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$" },
+            "platform": { "const": "linux/arm64" },
+            "abi": { "const": "sandbox-entrypoint/v1" },
+            "command": { "const": ["serve"] },
+            "probeCommand": { "const": ["probe"] }
+          }
+        },
+        "local": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["isolation", "allowNetwork", "allowSystemBinaries", "readOnly", "readOnlyPaths", "readWritePaths"],
+          "properties": {
+            "isolation": { "enum": ["auto", "none", "seatbelt", "bwrap"] },
+            "allowNetwork": { "type": "boolean" },
+            "allowSystemBinaries": { "type": "boolean" },
+            "readOnly": { "type": "boolean" },
+            "readOnlyPaths": { "type": "array", "items": { "type": "string" } },
+            "readWritePaths": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readonlyRootfs", "capDrop", "securityOpt", "pidsLimit", "memoryBytes", "tmpfs"],
+          "properties": {
+            "readonlyRootfs": { "type": "boolean" },
+            "capDrop": { "type": "array", "items": { "type": "string" } },
+            "securityOpt": { "type": "array", "items": { "type": "string" } },
+            "pidsLimit": { "type": "integer", "minimum": 1 },
+            "memoryBytes": { "type": "integer", "minimum": 1 },
+            "tmpfs": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["networkIsolation", "idleTimeoutMinutes"],
+          "properties": {
+            "networkIsolation": { "enum": ["ISOLATED", "PRIVATE"] },
+            "idleTimeoutMinutes": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    }
+  }
+}
