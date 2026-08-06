@@ -1,0 +1,333 @@
+import { randomUUID } from "node:crypto";
+import { createTool } from "@mastra/core/tools";
+import {
+  SANDBOX_PROJECT_WORKFLOW_RESULT_PREFIX,
+  SANDBOX_PROJECT_WORKFLOW_RUNNER,
+  SANDBOX_PROJECT_WORKFLOW_STREAM_PREFIX,
+} from "@rlabs/project-mounting-manager";
+
+const projectWorkflowInputSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("list") }).strict(),
+  z.object({
+    action: z.literal("run"),
+    workflowId: z.string().min(1).max(200),
+    input: z.record(z.string(), z.unknown()),
+  }).strict(),
+]);
+
+export function createFactoryProjectWorkflowTool() {
+  return createTool({
+    id: "project_workflow",
+    description: "List or run workflows explicitly published by the active Factory project. Workflow source and execution stay inside the session sandbox.",
+    inputSchema: projectWorkflowInputSchema,
+    // Listing imports project modules, so it needs the same approval boundary as execution.
+    requireApproval: true,
+    execute: async (input, context) => {
+      const workspace = context.workspace;
+      if (!workspace) throw new Error("Project workflows require an active Factory session workspace");
+      const [filesystem, sandbox] = await Promise.all([
+        workspace.resolveFilesystem({ requestContext: context.requestContext }),
+        workspace.resolveSandbox({ requestContext: context.requestContext }),
+      ]);
+      if (filesystem?.provider !== "sandbox" || !filesystem.basePath || !sandbox?.executeCommand) {
+        throw new Error("Project workflows require a sandbox-backed Factory session workspace");
+      }
+      const args = ["--eval", SANDBOX_PROJECT_WORKFLOW_RUNNER, "--", input.action];
+      const cancellationPath = input.action === "run"
+        ? `.mastracode/.factory-runtime/cancel-${randomUUID()}`
+        : undefined;
+      if (input.action === "run") {
+        args.push(
+          input.workflowId,
+          Buffer.from(JSON.stringify(input.input)).toString("base64url"),
+          cancellationPath!,
+        );
+      }
+      const forcedCancellation = new AbortController();
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      let cancellationWrite = Promise.resolve();
+      const cancel = () => {
+        if (!cancellationPath) {
+          forcedCancellation.abort();
+          return;
+        }
+        cancellationWrite = filesystem.writeFile(cancellationPath, "", { recursive: true })
+          .catch(() => forcedCancellation.abort());
+        forceTimer = setTimeout(() => forcedCancellation.abort(), 2_000);
+      };
+      if (context.abortSignal?.aborted) cancel();
+      else context.abortSignal?.addEventListener("abort", cancel, { once: true });
+      let result;
+      const output = createRunnerOutputForwarder(context.writer);
+      try {
+        result = await sandbox.executeCommand("tsx", args, {
+          cwd: filesystem.basePath,
+          timeout: 300_000,
+          abortSignal: forcedCancellation.signal,
+          onStdout: output.push,
+        });
+      } catch (error) {
+        if (context.abortSignal?.aborted) {
+          throw new Error("Project workflow execution was cancelled", { cause: error });
+        }
+        throw error;
+      } finally {
+        context.abortSignal?.removeEventListener("abort", cancel);
+        if (forceTimer) clearTimeout(forceTimer);
+        await cancellationWrite;
+        if (cancellationPath) {
+          await filesystem.deleteFile(cancellationPath, { force: true }).catch(() => undefined);
+        }
+      }
+      if (context.abortSignal?.aborted) throw new Error("Project workflow execution was cancelled");
+      if (!output.received) output.push(result.stdout);
+      await output.finish();
+      if (result.exitCode !== 0) {
+        if (result.exitCode === 127 || /tsx: (?:command )?not found/i.test(result.stderr)) {
+          throw new Error("The sandbox mcode-runtime layer must provide the tsx project workflow runner");
+        }
+        const output = parseRunnerOutput(result.stdout, false);
+        const detail = output && typeof output.error === "string"
+          ? output.error
+          : result.stderr.trim() || `sandbox command exited ${result.exitCode}`;
+        throw new Error(`Project workflow execution failed inside the sandbox: ${detail}`);
+      }
+      return parseRunnerOutput(result.stdout, true)!;
+    },
+  });
+}
+
+function createRunnerOutputForwarder(
+  writer: { write(chunk: unknown): Promise<unknown> | unknown } | undefined,
+): {
+  readonly received: boolean;
+  push(data: string): void;
+  finish(): Promise<void>;
+} {
+  let received = false;
+  let tail = "";
+  let writes = Promise.resolve();
+  const forwardLine = (line: string) => {
+    if (!writer || !line.startsWith(SANDBOX_PROJECT_WORKFLOW_STREAM_PREFIX)) return;
+    const encoded = line.slice(SANDBOX_PROJECT_WORKFLOW_STREAM_PREFIX.length);
+    const chunk = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown;
+    writes = writes.then(async () => { await writer.write(chunk); });
+  };
+  return {
+    get received() { return received; },
+    push(data) {
+      received = true;
+      const lines = `${tail}${data}`.split("\n");
+      tail = lines.pop() ?? "";
+      for (const line of lines) forwardLine(line);
+    },
+    async finish() {
+      if (tail) forwardLine(tail);
+      await writes;
+    },
+  };
+}
+
+function parseRunnerOutput(stdout: string, required: boolean): Record<string, unknown> | undefined {
+  const marker = stdout.lastIndexOf(SANDBOX_PROJECT_WORKFLOW_RESULT_PREFIX);
+  if (marker < 0) {
+    if (required) throw new Error("Project workflow runner returned no structured result");
+    return undefined;
+  }
+  const serialized = stdout.slice(marker + SANDBOX_PROJECT_WORKFLOW_RESULT_PREFIX.length).trim().split("\n", 1)[0];
+  if (!serialized) throw new Error("Project workflow runner returned an empty result");
+  const parsed = JSON.parse(serialized) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Project workflow runner returned an invalid result");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+import type { Agent } from "@mastra/core/agent";
+import { RequestContext } from "@mastra/core/request-context";
+import type { ApiRoute } from "@mastra/core/server";
+import type { FactoryIntegration, IntegrationContext, IntegrationTools } from "@mastra/factory";
+import { getFactorySessionAddress } from "@mastra/factory/rules/binding-context";
+import {
+  createToolkitAgents,
+  TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
+  TOOLKIT_WORKSPACE_CONTEXT_KEY,
+  type ToolkitAgents,
+  type ToolkitAgentsOptions,
+} from "@rlabs/agents-roles";
+import {
+  createSandboxCommandRunTool,
+  type SandboxCommandRunAuthorizationContext,
+} from "@rlabs/sandbox";
+import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import { z } from "zod";
+
+const MAX_DELEGATED_TOOL_RESULTS = 24;
+const MAX_DELEGATED_TOOL_RESULT_CHARS = 4_000;
+const FACTORY_AGENT_BUNDLE = Symbol("factory-agent-bundle");
+
+export interface FactoryAgentBundle {
+  readonly agents: ToolkitAgents;
+  readonly [FACTORY_AGENT_BUNDLE]: true;
+};
+
+const delegationOutputSchema = z.object({
+  agentId: z.string(),
+  text: z.string(),
+  runId: z.string().optional(),
+  toolResults: z.array(z.object({
+    toolCallId: z.string(),
+    toolName: z.string(),
+    output: z.string().max(MAX_DELEGATED_TOOL_RESULT_CHARS),
+    truncated: z.boolean(),
+  })).max(MAX_DELEGATED_TOOL_RESULTS),
+});
+
+export class ToolkitFactoryIntegration implements FactoryIntegration {
+  readonly id = "mastra-toolkit";
+
+  constructor(
+    private readonly bundle: FactoryAgentBundle,
+    private readonly runtimeDefaults: RuntimeDefaultsV1,
+  ) {
+    if (bundle[FACTORY_AGENT_BUNDLE] !== true) {
+      throw new Error("Factory agent bundles must be created with createFactoryAgentBundle");
+    }
+  }
+
+  routes(_context: IntegrationContext): ApiRoute[] {
+    return [];
+  }
+
+  async agentTools(): Promise<IntegrationTools> {
+    return {
+      delegate_cortex: delegationTool("delegate_cortex", this.bundle.agents.cortex),
+      delegate_flux: delegationTool("delegate_flux", this.bundle.agents.flux),
+      delegate_zen: delegationTool("delegate_zen", this.bundle.agents.zen),
+      command_run: createFactoryCommandRunTool(),
+      project_workflow: createFactoryProjectWorkflowTool(),
+    } as IntegrationTools;
+  }
+
+  diagnostics(): Record<string, unknown> {
+    return {
+      configured: true,
+      agents: ["cortex", "flux", "zen"],
+      recursionGuarded: true,
+      runtimeDefaults: {
+        source: "@rlabs/runtime-config/models.yaml",
+        version: this.runtimeDefaults.version,
+        factoryMemory: this.runtimeDefaults.factory,
+        persistedPrecedence: "memory-settings-over-startup-defaults",
+        fillPolicy: "null-fields-only",
+        thresholdFillAtomicity: "unsupported-upstream",
+        sessionDisplayConvergence: {
+          status: "upstream-blocked",
+          issue: "#129",
+        },
+      },
+      agentBoundary: {
+        source: "@rlabs/agents-roles",
+        controllerConstruction: "unsupported-upstream",
+        repositoryConfiguration: {
+          verified: ["published-workflows"],
+          upstreamUnverified: ["skills"],
+          unsupported: ["instructions", "hooks", "commands", "plugins", "mcp", "specialists"],
+        },
+      },
+    };
+  }
+}
+
+export function createFactoryCommandRunTool() {
+  return createSandboxCommandRunTool({ authorize: requireFactoryProjectSession });
+}
+
+export function createFactoryAgentBundle(
+  options: Omit<ToolkitAgentsOptions, "commandRun">,
+): FactoryAgentBundle {
+  return {
+    agents: createToolkitAgents({ ...options, commandRun: createFactoryCommandRunTool() }),
+    [FACTORY_AGENT_BUNDLE]: true,
+  };
+}
+
+function delegationTool(id: `delegate_${string}`, agent: Agent) {
+  return createTool({
+    id,
+    description: `Delegate a bounded task to ${agent.name}. The Factory controller remains accountable for integration and verification.`,
+    inputSchema: z.object({
+      task: z.string().min(1).max(20_000),
+      maxSteps: z.number().int().min(1).max(24).default(12),
+    }),
+    outputSchema: delegationOutputSchema,
+    background: { enabled: true, timeoutMs: 300_000 },
+    execute: async (input, context) => {
+      await requireFactoryProjectSession(context);
+      const requestContext = new RequestContext(context.requestContext?.entries());
+      requestContext.set(TOOLKIT_DELEGATED_RUN_CONTEXT_KEY, true);
+      if (context.workspace) requestContext.set(TOOLKIT_WORKSPACE_CONTEXT_KEY, context.workspace);
+      const result = await agent.generate(input.task, {
+        requestContext,
+        maxSteps: input.maxSteps,
+        ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+      });
+      return {
+        agentId: agent.id,
+        text: result.text,
+        runId: result.runId,
+        toolResults: result.steps
+          .flatMap(step => step.toolResults)
+          .slice(0, MAX_DELEGATED_TOOL_RESULTS)
+          .map(projectDelegatedToolResult),
+      };
+    },
+  });
+}
+
+function projectDelegatedToolResult(input: unknown): z.infer<typeof delegationOutputSchema>["toolResults"][number] {
+  const record = asRecord(input);
+  const payload = asRecord(record?.payload) ?? record;
+  const value = payload && "result" in payload ? payload.result : input;
+  const serialized = serializeToolResult(value);
+  return {
+    toolCallId: stringField(payload, "toolCallId", "unknown-tool-call"),
+    toolName: stringField(payload, "toolName", "unknown-tool"),
+    output: serialized.slice(0, MAX_DELEGATED_TOOL_RESULT_CHARS),
+    truncated: serialized.length > MAX_DELEGATED_TOOL_RESULT_CHARS,
+  };
+}
+
+function serializeToolResult(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return "[Unserializable tool result]";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string, fallback: string): string {
+  return typeof record?.[key] === "string" ? record[key] : fallback;
+}
+
+async function requireFactoryProjectSession(
+  context: SandboxCommandRunAuthorizationContext,
+): Promise<void> {
+  const workspace = context.workspace;
+  if (!getFactorySessionAddress(context.requestContext) || !workspace?.id.startsWith("mfw-")) {
+    throw new Error("Factory execution requires a persisted Factory project session");
+  }
+  const [filesystem, sandbox] = await Promise.all([
+    workspace.resolveFilesystem({ requestContext: context.requestContext }),
+    workspace.resolveSandbox({ requestContext: context.requestContext }),
+  ]);
+  if (filesystem?.provider !== "sandbox" || !filesystem.basePath || !sandbox?.executeCommand) {
+    throw new Error("Factory execution requires a persisted Factory project session sandbox");
+  }
+}

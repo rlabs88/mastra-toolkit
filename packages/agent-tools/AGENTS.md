@@ -26,16 +26,15 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── adhd.ts, audit.ts, browser.ts # small standalone capabilities
-├── command-run/                  # one deep command-language contract
-│   ├── parser, scheduler, process, paths, web, media, trace, adapters
-│   └── index.ts                  # Command Run facade
-└── index.ts                      # package facade
+├── capabilities.ts        # ADHD, audit, and visible-browser policy
+├── command-run-contract.ts # schemas, parsing, paths, and trace contract
+├── command-run.ts          # scheduling and execution adapters
+└── index.ts                # sole TypeScript package facade
 ```
 
-- Treat `command-run/` and the sandbox-owned executable tool as one behavioral contract; changes spanning parser, execution, containment, media, web, and audit surfaces must remain coherent across both packages.
-- Start a new role- and host-neutral tool as one module. Create a subdirectory only after it has multiple private responsibilities behind one narrow facade.
-- Existing helper exports are compatibility surfaces. New internals do not become public solely for testing; add or narrow exports only through an explicit compatibility migration.
+- Treat the two Command Run modules and the sandbox-owned executable tool as one behavioral contract; changes spanning parser, execution, containment, media, web, and audit surfaces must remain coherent across both packages.
+- Keep all supported TypeScript consumers on the package root. Do not restore implementation subpath exports.
+- Start a new role- and host-neutral capability inside `capabilities.ts` until it proves a deeper independent contract.
 - `command_run` and `adhd_run` are retained compatibility capabilities. Do not add new consumers or expand their DSL/fan-out scope; future replacement uses native Mastra workflows, task state, subagents, and background tasks after parity is proven.
 
 ## Change boundaries

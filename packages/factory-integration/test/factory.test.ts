@@ -9,12 +9,11 @@ import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-confi
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import { Hono } from "hono";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { loadFactoryConfig } from "../src/config.js";
-import { createToolkitFactory } from "../src/create.js";
+import { createToolkitFactory, loadFactoryConfig } from "../src/index.js";
 import {
   createFactoryAgentBundle,
   ToolkitFactoryIntegration,
-} from "../src/toolkit-integration.js";
+} from "../src/index.js";
 
 let dataDirectory: string | undefined;
 

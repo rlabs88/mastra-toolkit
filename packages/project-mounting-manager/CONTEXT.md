@@ -13,7 +13,7 @@ Project specialist, workflow, MCP, and watcher behavior first lived inside the r
 
 ## Present
 
-This package owns project specialist and workflow discovery, explicit workflow-tool publication, generation state, diagnostics, resource watching, and the transactional mounting facade. Host-specific model lookup, MCP connections, current tool enumeration, and registry mutation enter through ports.
+This package owns project specialist and workflow discovery, explicit workflow-tool publication, generation state, diagnostics, resource watching, and the transactional mounting facade. Its root Interface exposes deep contract, discovery, and manager Modules. Host-specific model lookup, MCP connections, current tool enumeration, and registry mutation enter through ports defined by the contract Module.
 
 ## Future
 

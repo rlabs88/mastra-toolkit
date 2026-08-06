@@ -7,7 +7,7 @@ import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
 import { afterEach, describe, expect, test } from "vitest";
-import { createFactoryAgentBundle, ToolkitFactoryIntegration } from "../src/toolkit-integration.js";
+import { createFactoryAgentBundle, ToolkitFactoryIntegration } from "../src/index.js";
 
 let projectRoot: string | undefined;
 

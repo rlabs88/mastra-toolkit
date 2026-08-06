@@ -26,15 +26,16 @@ applies_to: ["**/*"]
 ```text
 config/                  # package-owned schema and defaults
 src/
-├── spec.ts, config.ts, types.ts
-├── machine.ts           # cloneable machine contract and routing
-├── command-run.ts       # sandbox-contained executable agent tool
-├── local.ts, docker.ts, platform.ts # provider adapters
-└── index.ts             # package facade
+├── contract.ts    # schema, environment projection, options, runtime profiles
+├── providers.ts   # Local, Docker, Platform, and runtime admission adapters
+├── machine.ts     # explicit provider routing
+├── command-run.ts # sandbox-contained executable agent tool
+└── index.ts       # sole TypeScript package facade
 ```
 
-- Preserve the shallow provider layout while each adapter is cohesive. Give a provider a subdirectory only when it gains multiple private modules or an independently evolving policy and test seam.
-- Adding a provider requires schema and default updates, narrow credential inputs, an adapter, explicit router selection, exports, and contract tests in the same change.
+- Keep provider implementations behind `providers.ts` while they share the cloneable machine contract and admission lifecycle. Extract a provider only when it gains a genuinely independent policy and test seam.
+- Keep all supported TypeScript consumers on the package root; package-owned JSON assets may retain explicit data subpaths.
+- Adding a provider requires schema and default updates, narrow credential inputs, `providers.ts`, explicit router selection, root exports, and contract tests in the same change.
 - Never add an implicit provider fallback or move host orchestration into this package.
 
 ## Change boundaries

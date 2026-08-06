@@ -30,6 +30,23 @@ mastra-toolkit/
 
 Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications share one pair at `apps/`; deployment targets each have a pair because their credential and operational policies differ. The exact dependency and extension contracts are listed in the [repository manifest](repository-manifest.md).
 
+## Production module structure
+
+The seven package boundaries remain distinct, but their implementation is intentionally concentrated into 29 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
+
+```text
+packages/
+├── runtime-config/src/{index,profile,environment,gateway}.ts
+├── agent-tools/src/{index,capabilities,command-run-contract,command-run}.ts
+├── agents-roles/src/{index,roles,prompts,agents}.ts
+├── sandbox/src/{index,contract,machine,providers,command-run}.ts
+├── project-mounting-manager/src/{index,contract,discovery,manager}.ts
+├── mcode/src/{index,recipe,project,runtime}.ts
+└── factory-integration/src/{index,config,integration,runtime}.ts
+```
+
+Do not create one-function files, role directories, compatibility barrels, or TypeScript implementation subpaths. A new source module requires an independently changing responsibility or lifecycle; otherwise extend the existing deep module that owns the behavior.
+
 ## Canonical runtime projection
 
 ```text
@@ -49,7 +66,7 @@ project-mounting-manager  factory-github-projects
   apps/mcode      apps/studio  apps/factory
 ```
 
-`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Each role owns a folder containing `prompt.ts`, `role.ts`, and `index.ts`. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
 
 `runtime-config` owns the secret-free YAML catalog, startup environment resolution, and host data paths. MCode, Studio, and Factory persist local state beneath `~/.mastra-toolkit/{mcode,studio,factory}` unless `MASTRA_APP_DATA_DIR` explicitly selects another host directory. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 

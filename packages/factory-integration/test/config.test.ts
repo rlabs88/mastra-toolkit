@@ -1,10 +1,34 @@
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { loadModelProfile } from "@rlabs/runtime-config";
 import type { CloneableSandboxMachine, SandboxMachineOptions } from "@rlabs/sandbox";
-import { loadFactoryConfig } from "../src/config.js";
-import { createFactorySandboxMachine } from "../src/create.js";
+import { createFactorySandboxMachine, loadFactoryConfig } from "../src/index.js";
 
 describe("loadFactoryConfig", () => {
+  test("publishes one root facade over four cohesive source modules", async () => {
+    const packageRoot = join(import.meta.dirname, "..");
+    const sourceEntries = await readdir(join(packageRoot, "src"));
+    const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+      exports?: Record<string, string>;
+    };
+
+    expect(sourceEntries.sort()).toEqual(["config.ts", "index.ts", "integration.ts", "runtime.ts"]);
+    expect(manifest.exports).toEqual({ ".": "./src/index.ts" });
+  });
+
+  test("keeps the Factory application behind the package facade", async () => {
+    const repositoryRoot = join(import.meta.dirname, "..", "..", "..");
+    const appManifest = JSON.parse(
+      await readFile(join(repositoryRoot, "apps", "factory", "package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+    const appSource = await readFile(join(repositoryRoot, "apps", "factory", "src", "index.ts"), "utf8");
+
+    expect(appManifest.dependencies).toEqual({ "@rlabs/factory-integration": "*" });
+    expect(appSource).toContain('from "@rlabs/factory-integration"');
+    expect(appSource).not.toMatch(/from "@rlabs\/(runtime-config|sandbox|agents-roles)"/);
+  });
+
   test("uses the startup-resolved model profile", () => {
     const profile = structuredClone(loadModelProfile());
     profile.aliases.push("startup-only");

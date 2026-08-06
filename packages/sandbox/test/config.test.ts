@@ -42,7 +42,7 @@ describe("loadSandboxConfig", () => {
     const directory = await mkdtemp(join(tmpdir(), "sandbox-config-bundle-"));
     const outfile = join(directory, "config.mjs");
     await build({
-      entryPoints: [join(import.meta.dirname, "..", "src", "config.ts")],
+      entryPoints: [join(import.meta.dirname, "..", "src", "contract.ts")],
       outfile,
       bundle: true,
       format: "esm",

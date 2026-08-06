@@ -26,15 +26,16 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── auth.ts, storage.ts, config.ts
-├── local-provider.ts, toolkit-integration.ts
-├── create.ts # Factory composition facade
-└── index.ts  # package facade
+├── config.ts      # validated config, auth, storage, and local provider migration
+├── integration.ts # canonical agent bundle, delegation, and project workflow tools
+├── runtime.ts     # Factory and Mastra composition lifecycle
+└── index.ts       # the only public TypeScript facade
 ```
 
-- Preserve the flat layout while each integration concern has one implementation. Create an auth, storage, provider, or integration subdirectory only after multiple implementations or private policies must evolve behind a narrow facade.
-- Keep `create.ts` as the composition facade and keep executable bootstrap in `apps/factory`.
-- Do not claim or add project execution context here until a dedicated slice proves a single-project Factory runtime with lifecycle, isolation, rollback, and resume contracts. Only then may this package consume `project-mounting-manager`.
+- Keep configuration-backed infrastructure together while each concern has one implementation. Extract a fifth source module only after multiple implementations or a private policy must evolve behind a narrow facade.
+- Keep `runtime.ts` as the composition facade and keep executable signal handling in `apps/factory`.
+- Do not add TypeScript implementation subpath exports.
+- Factory may consume only the sandbox workflow protocol exported by `project-mounting-manager`. Do not mount its in-process generation manager until a dedicated slice proves a single-project Factory runtime with lifecycle, isolation, rollback, and resume contracts.
 - Existing exports are compatibility surfaces; narrow them only through an explicit consumer migration.
 
 ## Change boundaries

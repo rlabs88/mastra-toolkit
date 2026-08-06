@@ -13,7 +13,7 @@ Factory construction, authentication, provider preparation, storage, canonical a
 
 ## Present
 
-This package projects canonical agents directly into Mastra Factory. It owns Factory-specific lifecycle, persistence, authorization, and integration composition while applications and deployment targets remain separate boundaries. The control plane can omit repository execution; enabled repository execution consumes the shared sandbox machine as a fleet template and persists project/user/session bindings. Ephemeral development and persistent operations are explicit, fail-closed runtime profiles. Until upstream Factory accepts controller-construction ingredients, diagnostics explicitly report canonical mode/native-subagent mounting as unsupported.
+This package projects canonical agents directly into Mastra Factory. Its four-module facade owns Factory-specific configuration-backed infrastructure, integrations, and the complete Factory/Mastra runtime lifecycle while the application owns signal handling only. The control plane can omit repository execution; enabled repository execution consumes the shared sandbox machine as a fleet template and persists project/user/session bindings. Ephemeral development and persistent operations are explicit, fail-closed runtime profiles. Until upstream Factory accepts controller-construction ingredients, diagnostics explicitly report canonical mode/native-subagent mounting as unsupported.
 
 ## Future
 

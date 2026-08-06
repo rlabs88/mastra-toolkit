@@ -60,6 +60,8 @@ describe("ProjectMountingManager", () => {
 
     expect(manager.snapshot()).toBe(first);
     expect(host.current?.generation.id).toBe(1);
+    expect(host.current?.generation.specialistAgents).toBe(first.specialistAgents);
+    expect(host.current?.generation.workflows).toBe(first.workflows);
     expect(host.rollbackCount).toBe(1);
     expect(mcp.currentGeneration).toBe(1);
     expect(mcp.rollbackCount).toBe(1);

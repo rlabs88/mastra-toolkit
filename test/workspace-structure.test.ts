@@ -53,7 +53,6 @@ describe("workspace ownership", () => {
       "packages/project-mounting-manager/package.json": ["@mastra/core"],
       "packages/runtime-config/package.json": ["@mastra/core"],
       "packages/sandbox/package.json": ["@mastra/core"],
-      "apps/factory/package.json": ["@mastra/core"],
       "apps/studio/package.json": ["@mastra/core"],
       "deployment/mcode-sandbox/runtime/package.json": ["@mastra/core"],
     };
@@ -94,10 +93,46 @@ describe("workspace ownership", () => {
     }
   });
 
-  test("stores each canonical role in its own TypeScript module", async () => {
-    for (const role of ["cortex", "flux", "zen"] as const) {
-      await expect(readFile(join(root, "packages/agents-roles/src", role, "prompt.ts"), "utf8")).resolves.toBeTruthy();
-      await expect(readFile(join(root, "packages/agents-roles/src", role, "role.ts"), "utf8")).resolves.toBeTruthy();
+  test("uses the approved deep-module source layout", async () => {
+    const expectedSources: Record<(typeof packageNames)[number], readonly string[]> = {
+      "runtime-config": ["environment.ts", "gateway.ts", "index.ts", "profile.ts"],
+      "agent-tools": ["capabilities.ts", "command-run-contract.ts", "command-run.ts", "index.ts"],
+      "agents-roles": ["agents.ts", "index.ts", "prompts.ts", "roles.ts"],
+      "sandbox": ["command-run.ts", "contract.ts", "index.ts", "machine.ts", "providers.ts"],
+      "project-mounting-manager": ["contract.ts", "discovery.ts", "index.ts", "manager.ts"],
+      "mcode": ["index.ts", "project.ts", "recipe.ts", "runtime.ts"],
+      "factory-integration": ["config.ts", "index.ts", "integration.ts", "runtime.ts"],
+    };
+
+    for (const packageName of packageNames) {
+      expect(await relativeTypeScriptFiles(join(root, "packages", packageName, "src")), packageName)
+        .toEqual(expectedSources[packageName]);
+    }
+  });
+
+  test("exports TypeScript only through package roots", async () => {
+    for (const packageName of packageNames) {
+      const manifest = JSON.parse(
+        await readFile(join(root, "packages", packageName, "package.json"), "utf8"),
+      ) as { exports?: Record<string, string> };
+      for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
+        if (target.endsWith(".ts")) expect(subpath, packageName).toBe(".");
+      }
+    }
+  });
+
+  test("keeps applications behind one RLabs host facade", async () => {
+    const expected = {
+      factory: "@rlabs/factory-integration",
+      mcode: "@rlabs/mcode",
+      studio: "@rlabs/mcode",
+    } as const;
+    for (const [app, facade] of Object.entries(expected)) {
+      const manifest = JSON.parse(await readFile(join(root, "apps", app, "package.json"), "utf8")) as {
+        dependencies?: Record<string, string>;
+      };
+      const rlabsDependencies = Object.keys(manifest.dependencies ?? {}).filter(name => name.startsWith("@rlabs/"));
+      expect(rlabsDependencies, app).toEqual([facade]);
     }
   });
 
@@ -119,16 +154,13 @@ describe("workspace ownership", () => {
     ]);
   });
 
-  test("keeps canonical Factory agents behind the sandbox-bound integration", async () => {
+  test("keeps Factory lifecycle behind its host facade", async () => {
     const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
 
-    expect(source).toContain("createFactoryAgentBundle");
-    expect(source).toContain("createToolkitFactory(config, agents, runtimeDefaults)");
-    expect(source).toContain("models: runtimeDefaults.gateway.models");
+    expect(source).toContain("createFactoryRuntime");
     expect(source).toContain('process.once("SIGINT"');
     expect(source).toContain('process.once("SIGTERM"');
-    expect(source).toContain("factory.shutdown()");
-    expect(source).not.toContain("createToolkitAgents");
+    expect(source).toContain("runtime.close()");
   });
 
   test("keeps inactive deployment targets documentation-only", async () => {
@@ -210,9 +242,12 @@ describe("workspace ownership", () => {
     const artifacts = JSON.parse(stdout) as Array<{ files: Array<{ path: string }> }>;
     const paths = artifacts[0]?.files.map(file => file.path) ?? [];
 
-    expect(paths).toContain("src/recipe.ts");
-    expect(paths).toContain("src/modes/scope/prompt.ts");
-    expect(paths).toContain("src/modes/build/prompt.ts");
+    expect(paths.filter(path => path.startsWith("src/") && path.endsWith(".ts")).sort()).toEqual([
+      "src/index.ts",
+      "src/project.ts",
+      "src/recipe.ts",
+      "src/runtime.ts",
+    ]);
   }, 60_000);
 });
 
@@ -239,4 +274,14 @@ async function readTypeScriptTree(directory: string): Promise<string> {
     if (entry.isFile() && entry.name.endsWith(".ts")) chunks.push(await readFile(path, "utf8"));
   }
   return chunks.join("\n");
+}
+
+async function relativeTypeScriptFiles(directory: string, prefix = ""): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await relativeTypeScriptFiles(join(directory, entry.name), relative));
+    if (entry.isFile() && entry.name.endsWith(".ts")) files.push(relative);
+  }
+  return files.sort();
 }
