@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { build } from "esbuild";
@@ -34,7 +34,9 @@ describe("model profile", () => {
   });
 
   test("loads the canonical catalog after Mastra relocates the bundled module", async () => {
-    const cacheDirectory = await mkdtemp(join(packageRoot, "node_modules/model-profile-bundle-"));
+    const modulesDirectory = join(packageRoot, "node_modules");
+    await mkdir(modulesDirectory, { recursive: true });
+    const cacheDirectory = await mkdtemp(join(modulesDirectory, "model-profile-bundle-"));
     const output = join(cacheDirectory, "index.mjs");
 
     try {
