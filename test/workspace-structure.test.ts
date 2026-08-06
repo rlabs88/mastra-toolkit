@@ -122,8 +122,8 @@ describe("workspace ownership", () => {
   test("keeps canonical Factory agents behind the sandbox-bound integration", async () => {
     const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
 
-    expect(source).toContain("createFactoryMcodeRecipe");
-    expect(source).toContain("createToolkitFactory(config, recipe, runtimeDefaults)");
+    expect(source).toContain("createFactoryAgentBundle");
+    expect(source).toContain("createToolkitFactory(config, agents, runtimeDefaults)");
     expect(source).toContain("models: runtimeDefaults.gateway.models");
     expect(source).toContain('process.once("SIGINT"');
     expect(source).toContain('process.once("SIGTERM"');
@@ -197,7 +197,7 @@ describe("workspace ownership", () => {
       await readTypeScriptTree(join(root, "packages/sandbox/src")),
     ].join("\n");
 
-    expect(factorySources).toContain('from "@rlabs/mcode"');
+    expect(factorySources).not.toContain('from "@rlabs/mcode"');
     expect(factorySources).not.toMatch(/from "@rlabs\/[^"/]+\//);
   });
 

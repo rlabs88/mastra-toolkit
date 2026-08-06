@@ -20,6 +20,7 @@ applies_to: ["**/*"]
 - Model host and MCP changes as prepared transactions with explicit commit and rollback.
 - Publish workflows as agent tools only when their module exports valid `agentTool` metadata.
 - Preserve the last-known-good generation whenever discovery, validation, preparation, or commit fails.
+- Keep GitHub Project planning, work selection, execution leases, Factory transitions, and status projection outside this package. Project resources cannot change Factory bindings or control-plane policy.
 
 ## Structure and extension
 

@@ -6,7 +6,6 @@
   "dependencies": {
     "@mastra/core": "1.57.0",
     "@rlabs/factory-integration": "*",
-    "@rlabs/mcode": "*",
     "@rlabs/runtime-config": "*",
     "@rlabs/sandbox": "*"
   }

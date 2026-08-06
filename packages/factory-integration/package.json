@@ -14,7 +14,6 @@
     "@mastra/pg": "1.19.0",
     "@mastra/redis-streams": "0.3.0",
     "@rlabs/agents-roles": "*",
-    "@rlabs/mcode": "*",
     "@rlabs/project-mounting-manager": "*",
     "@rlabs/runtime-config": "*",
     "@rlabs/sandbox": "*",

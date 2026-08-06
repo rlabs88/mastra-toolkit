@@ -1,10 +1,9 @@
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { LibSQLFactoryStorage } from "@mastra/libsql";
 import { PgFactoryStorage, PgVector } from "@mastra/pg";
 
-export function createFactoryStorage(databaseUrl?: string) {
+export function createFactoryStorage(databaseUrl?: string, localDatabasePath?: string) {
   if (databaseUrl) {
     const factoryStorage = new PgFactoryStorage({
       id: "mastra-toolkit-storage",
@@ -16,9 +15,8 @@ export function createFactoryStorage(databaseUrl?: string) {
       vector: new PgVector({ id: "mastra-toolkit-vectors", connectionString: databaseUrl }),
     };
   }
-  const dataDirectory = process.env.MASTRA_APP_DATA_DIR
-    ?? join(homedir(), ".mastra-toolkit", "data");
-  const databasePath = join(dataDirectory, "factory.db");
+  if (!localDatabasePath) throw new Error("Local Factory storage requires a resolved database path");
+  const databasePath = localDatabasePath;
   mkdirSync(dirname(databasePath), { recursive: true });
   const factoryStorage = new LibSQLFactoryStorage({
     id: "mastra-toolkit-storage",

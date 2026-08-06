@@ -7,7 +7,7 @@ import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
 import { afterEach, describe, expect, test } from "vitest";
-import { createFactoryMcodeRecipe, ToolkitFactoryIntegration } from "../src/toolkit-integration.js";
+import { createFactoryAgentBundle, ToolkitFactoryIntegration } from "../src/toolkit-integration.js";
 
 let projectRoot: string | undefined;
 
@@ -307,7 +307,7 @@ describe("Factory project workflows", () => {
 
 function factoryIntegration(): ToolkitFactoryIntegration {
   const profile = loadModelProfile();
-  return new ToolkitFactoryIntegration(createFactoryMcodeRecipe({
+  return new ToolkitFactoryIntegration(createFactoryAgentBundle({
     profile,
     browser: false,
   }), resolveRuntimeDefaultsV1(profile));

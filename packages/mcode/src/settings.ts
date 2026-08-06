@@ -1,13 +1,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
 import { ONBOARDING_VERSION } from "@mastra/code-sdk/onboarding/index";
-import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import {
+  A1_PROXY_PROVIDER_ID,
+  A1_PROXY_PROVIDER_NAME,
+  getA1ProxyModelId,
+  prepareHostDataDirectory,
+  type RuntimeDefaultsV1,
+  type ToolkitHostId,
+} from "@rlabs/runtime-config";
 import { CANONICAL_AGENT_IDS, CODE_MODE_IDS } from "./modes/index.js";
 
-export const A1_CODE_PROVIDER_ID = "a1-proxy";
-export const A1_CODE_PROVIDER_NAME = "A1 Proxy";
+export const A1_CODE_PROVIDER_ID = A1_PROXY_PROVIDER_ID;
+export const A1_CODE_PROVIDER_NAME = A1_PROXY_PROVIDER_NAME;
 
 interface SettingsDocument {
   onboarding?: Record<string, unknown>;
@@ -31,17 +37,19 @@ export interface A1ProviderOptions {
 }
 
 export function getA1CodeModelId(model: string): string {
-  return `${A1_CODE_PROVIDER_ID}/${model.replace(/^a1-proxy\//, "")}`;
+  return getA1ProxyModelId(model);
 }
 
 export async function prepareCodeSdkSettings(options: {
   readonly dataDirectory?: string;
+  readonly host?: Extract<ToolkitHostId, "mcode" | "studio">;
+  readonly environment?: NodeJS.ProcessEnv;
   readonly defaults: RuntimeDefaultsV1;
   readonly provider?: Omit<A1ProviderOptions, "apiKey">;
 }): Promise<string> {
+  const environment = options.environment ?? process.env;
   const directory = options.dataDirectory
-    ?? process.env.MASTRA_APP_DATA_DIR
-    ?? join(homedir(), ".mastra-toolkit", "code-sdk");
+    ?? (await prepareHostDataDirectory(options.host ?? "mcode", environment)).directory;
   process.env.MASTRA_APP_DATA_DIR = directory;
   await mkdir(directory, { recursive: true });
   const settingsPath = join(directory, "settings.json");

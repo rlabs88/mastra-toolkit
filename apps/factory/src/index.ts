@@ -1,6 +1,6 @@
 import { Mastra } from "@mastra/core/mastra";
 import {
-  createFactoryMcodeRecipe,
+  createFactoryAgentBundle,
   createToolkitFactory,
   loadFactoryConfig,
 } from "@rlabs/factory-integration";
@@ -9,11 +9,11 @@ import { loadModelProfile, ProxyGateway, resolveRuntimeDefaultsV1 } from "@rlabs
 const profile = loadModelProfile();
 const runtimeDefaults = resolveRuntimeDefaultsV1(profile);
 export const config = loadFactoryConfig(process.env, process.cwd(), profile);
-const recipe = createFactoryMcodeRecipe({
+const agents = createFactoryAgentBundle({
   profile,
   browser: false,
 });
-export const factory = await createToolkitFactory(config, recipe, runtimeDefaults);
+export const factory = await createToolkitFactory(config, agents, runtimeDefaults);
 const prepared = await factory.prepare();
 export const mastra = new Mastra({
   ...prepared,
@@ -34,10 +34,29 @@ export const mastra = new Mastra({
 
 await factory.finalize();
 
-const stopFactory = () => {
-  void factory.shutdown().catch(error => {
+let shutdown: Promise<void> | undefined;
+export const stopFactory = async () => {
+  shutdown ??= (async () => {
+    const failures: unknown[] = [];
+    try {
+      await factory.shutdown();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await mastra.shutdown();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length > 0) throw new AggregateError(failures, "Factory shutdown failed");
+  })();
+  await shutdown;
+};
+const handleStopSignal = () => {
+  void stopFactory().catch(error => {
     console.error("Factory shutdown failed", error);
+    process.exitCode = 1;
   });
 };
-process.once("SIGINT", stopFactory);
-process.once("SIGTERM", stopFactory);
+process.once("SIGINT", handleStopSignal);
+process.once("SIGTERM", handleStopSignal);

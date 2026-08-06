@@ -5,15 +5,12 @@ import { createTool } from "@mastra/core/tools";
 import type { FactoryIntegration, IntegrationContext, IntegrationTools } from "@mastra/factory";
 import { getFactorySessionAddress } from "@mastra/factory/rules/binding-context";
 import {
+  createToolkitAgents,
   TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY,
   TOOLKIT_WORKSPACE_CONTEXT_KEY,
+  type ToolkitAgents,
+  type ToolkitAgentsOptions,
 } from "@rlabs/agents-roles";
-import {
-  createMcodeRecipe,
-  type McodeCapabilityDescriptorV1,
-  type McodeRecipeOptions,
-  type McodeRecipeV1,
-} from "@rlabs/mcode";
 import {
   createSandboxCommandRunTool,
   type SandboxCommandRunAuthorizationContext,
@@ -24,10 +21,11 @@ import { createFactoryProjectWorkflowTool } from "./project-workflow.js";
 
 const MAX_DELEGATED_TOOL_RESULTS = 24;
 const MAX_DELEGATED_TOOL_RESULT_CHARS = 4_000;
-const FACTORY_MCODE_RECIPE = Symbol("factory-mcode-recipe");
+const FACTORY_AGENT_BUNDLE = Symbol("factory-agent-bundle");
 
-export type FactoryMcodeRecipe = McodeRecipeV1 & {
-  readonly [FACTORY_MCODE_RECIPE]: true;
+export interface FactoryAgentBundle {
+  readonly agents: ToolkitAgents;
+  readonly [FACTORY_AGENT_BUNDLE]: true;
 };
 
 const delegationOutputSchema = z.object({
@@ -46,11 +44,11 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
   readonly id = "mastra-toolkit";
 
   constructor(
-    private readonly recipe: FactoryMcodeRecipe,
+    private readonly bundle: FactoryAgentBundle,
     private readonly runtimeDefaults: RuntimeDefaultsV1,
   ) {
-    if (recipe[FACTORY_MCODE_RECIPE] !== true) {
-      throw new Error("Factory MCode recipes must be created with createFactoryMcodeRecipe");
+    if (bundle[FACTORY_AGENT_BUNDLE] !== true) {
+      throw new Error("Factory agent bundles must be created with createFactoryAgentBundle");
     }
   }
 
@@ -60,16 +58,15 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
 
   async agentTools(): Promise<IntegrationTools> {
     return {
-      delegate_cortex: delegationTool("delegate_cortex", this.recipe.agents.cortex),
-      delegate_flux: delegationTool("delegate_flux", this.recipe.agents.flux),
-      delegate_zen: delegationTool("delegate_zen", this.recipe.agents.zen),
+      delegate_cortex: delegationTool("delegate_cortex", this.bundle.agents.cortex),
+      delegate_flux: delegationTool("delegate_flux", this.bundle.agents.flux),
+      delegate_zen: delegationTool("delegate_zen", this.bundle.agents.zen),
       command_run: createFactoryCommandRunTool(),
       project_workflow: createFactoryProjectWorkflowTool(),
     } as IntegrationTools;
   }
 
   diagnostics(): Record<string, unknown> {
-    const capability = this.recipe.capability;
     return {
       configured: true,
       agents: ["cortex", "flux", "zen"],
@@ -86,7 +83,15 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
           issue: "#129",
         },
       },
-      mcode: factoryMcodeDiagnostics(capability),
+      agentBoundary: {
+        source: "@rlabs/agents-roles",
+        controllerConstruction: "unsupported-upstream",
+        repositoryConfiguration: {
+          verified: ["published-workflows"],
+          upstreamUnverified: ["skills"],
+          unsupported: ["instructions", "hooks", "commands", "plugins", "mcp", "specialists"],
+        },
+      },
     };
   }
 }
@@ -95,29 +100,12 @@ export function createFactoryCommandRunTool() {
   return createSandboxCommandRunTool({ authorize: requireFactoryProjectSession });
 }
 
-export function createFactoryMcodeRecipe(
-  options: Omit<McodeRecipeOptions, "commandRun">,
-): FactoryMcodeRecipe {
-  return Object.assign(createMcodeRecipe({
-    ...options,
-    commandRun: createFactoryCommandRunTool(),
-  }), {
-    [FACTORY_MCODE_RECIPE]: true as const,
-  });
-}
-
-function factoryMcodeDiagnostics(capability: McodeCapabilityDescriptorV1): Record<string, unknown> {
+export function createFactoryAgentBundle(
+  options: Omit<ToolkitAgentsOptions, "commandRun">,
+): FactoryAgentBundle {
   return {
-    schemaVersion: capability.schemaVersion,
-    digest: capability.digest,
-    controllerConstruction: "unsupported-upstream",
-    repositoryConfiguration: {
-      verified: ["published-workflows"],
-      upstreamUnverified: ["skills"],
-      unsupported: ["instructions", "hooks", "commands", "plugins", "mcp", "specialists"],
-    },
-    controlPlaneProjectConfig: "isolated-empty-directory",
-    globalExecutableConfig: "unsupported-upstream",
+    agents: createToolkitAgents({ ...options, commandRun: createFactoryCommandRunTool() }),
+    [FACTORY_AGENT_BUNDLE]: true,
   };
 }
 

@@ -23,6 +23,16 @@ applies_to: ["**/*"]
 - Let every Cortex, Flux, and Zen top-level mode invoke the native AgentController `subagent` tool with Cortex, Flux, or Zen as the selected leaf role. Delegated runs must not receive the `subagent` tool, so recursion remains bounded. Keep Factory worker delegation as a separate runtime concern.
 - Prefer supported Mastra agents, tools, workspaces, browser, background-task, approval, AgentController mount, and `MastraTUI` extension APIs before adding toolkit-owned infrastructure or patching upstream source. Treat `createMastraCode` as a compatibility alias, not a new composition boundary.
 
+## Dependency and trust layers
+
+- Keep canonical role and model policy independent of MCode, Factory, GitHub, storage domains, API clients, credentials, project bindings, and scheduler state.
+- Let agent configuration receive request-scoped tool capabilities, never raw SDK clients, tokens, database handles, or control-plane commands.
+- Put host-neutral agent tool schemas and policy in `packages/agent-tools`; inject authenticated API ports from the consuming host or integration after project, session, repository, workspace, and approval checks succeed.
+- Never expose Factory scheduling, leases, status projection, or governed work-item commands as general agent tools. Project fields, issue bodies, webhook payloads, and API results are untrusted data, not authority.
+- Keep Factory composition in `packages/factory-integration`. It may consume a future `factory-github-projects` control-plane package; that package must not import agents, agent tools, sandboxes, MCode, or project mounting.
+- Keep exactly one GitHub integration responsible for credentials, installation state, token acquisition, signature verification, and webhook ingress. Downstream integrations may consume normalized, already-verified events only.
+- Applications import their host package facade only. Packages expose root exports only; do not add wildcard implementation subpaths.
+
 ## Configuration and secrets
 
 - Keep checked-in model configuration declarative and secret-free. Store environment-variable names such as `CLI_PROXY_API_KEY`, never resolved credential values.
@@ -61,6 +71,7 @@ applies_to: ["**/*"]
 - For configuration changes, also run `npm run secrets:check` when Infisical access is available; report an unavailable external credential gate rather than weakening it.
 - For fork changes, run the fork's nearest documented checks plus the toolkit consumer contract that exercises the changed surface.
 - Confirm `git diff --check` and inspect the final diff for credentials, generated state, copied prompts, and unrelated edits.
+- For MCode runtime changes, validate the real TUI through a PTY and a CUA/computer-use pass when available. For Factory UI/runtime changes, validate the real server with browser automation and an independent CUA pass. Treat an unavailable CUA or credential gate as blocked validation, never as a pass.
 
 ## Handoff
 

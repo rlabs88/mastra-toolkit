@@ -1,14 +1,9 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
-import {
-  prepareCodeSdkSettings,
-  type A1ProviderOptions,
-} from "@rlabs/mcode";
-import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import { prepareHostDataDirectory, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -18,11 +13,17 @@ import { createFactoryAuth } from "./auth.js";
 import type { FactoryConfig } from "./config.js";
 import { prepareLocalA1Provider } from "./local-provider.js";
 import { createFactoryStorage } from "./storage.js";
-import { ToolkitFactoryIntegration, type FactoryMcodeRecipe } from "./toolkit-integration.js";
+import { ToolkitFactoryIntegration, type FactoryAgentBundle } from "./toolkit-integration.js";
+
+interface A1ProviderOptions {
+  readonly baseUrl: string;
+  readonly apiKey?: string;
+  readonly models: readonly string[];
+}
 
 export async function createToolkitFactory(
   config: FactoryConfig,
-  recipe: FactoryMcodeRecipe,
+  bundle: FactoryAgentBundle,
   defaults: RuntimeDefaultsV1,
 ): Promise<MastraFactory> {
   const provider = {
@@ -30,10 +31,10 @@ export async function createToolkitFactory(
     models: defaults.gateway.models,
     ...(config.runtime.proxy.apiKey ? { apiKey: config.runtime.proxy.apiKey } : {}),
   } satisfies A1ProviderOptions;
-  const dataDirectory = await prepareCodeSdkSettings({ defaults });
-  const controlPlaneDirectory = join(dataDirectory, "factory-control-plane");
+  const hostData = await prepareHostDataDirectory("factory");
+  const controlPlaneDirectory = hostData.controlPlaneDirectory!;
   await mkdir(controlPlaneDirectory, { recursive: true, mode: 0o700 });
-  const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl);
+  const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl, hostData.databasePath);
   const github = config.github ? new GithubIntegration({
     appId: config.github.GITHUB_APP_ID,
     privateKey: config.github.GITHUB_APP_PRIVATE_KEY,
@@ -51,7 +52,7 @@ export async function createToolkitFactory(
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
-    integrations: [new ToolkitFactoryIntegration(recipe, defaults), ...(github ? [github] : [])],
+    integrations: [new ToolkitFactoryIntegration(bundle, defaults), ...(github ? [github] : [])],
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -68,7 +69,7 @@ export async function createToolkitFactory(
   return new ToolkitMastraFactory(
     factoryConfig,
     factoryStorage,
-    recipe.agents,
+    bundle.agents,
     config.workos ? undefined : { provider, defaults },
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
@@ -94,7 +95,7 @@ class ToolkitMastraFactory extends MastraFactory {
   constructor(
     config: MastraFactoryConfig,
     private readonly factoryStorage: FactoryStorage,
-    private readonly toolkitAgents: FactoryMcodeRecipe["agents"],
+    private readonly toolkitAgents: FactoryAgentBundle["agents"],
     private readonly localA1?: { provider: A1ProviderOptions; defaults: RuntimeDefaultsV1 },
     private readonly controlPlaneDirectory?: string,
     private readonly localServerHost?: string,
