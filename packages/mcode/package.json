@@ -4,8 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./recipe": "./src/recipe.ts",
+    "./settings": "./src/settings.ts"
   },
+  "files": [
+    "src"
+  ],
   "dependencies": {
     "@mastra/code-sdk": "1.1.1",
     "@mastra/core": "1.55.0",

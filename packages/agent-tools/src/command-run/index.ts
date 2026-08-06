@@ -9,7 +9,6 @@ export { parseCommands, parseStrictObject, requireString } from "./parser.js";
 export { resolveWorkspacePath } from "./paths.js";
 export { runProcess, type ProcessResult } from "./process.js";
 export { runCommandSchedule } from "./scheduler.js";
-export { createCommandRunTool } from "./tool.js";
 export { createTraceRecorder, type TraceRecorder } from "./trace.js";
 export {
   COMMAND_PHASES,

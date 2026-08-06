@@ -168,7 +168,7 @@ function successDiagnostics(
     ...recognizedDiagnostics(metadata),
     stdoutChars: numberMetadata(metadata.stdoutChars) ?? result.output.length,
     stderrChars: numberMetadata(metadata.stderrChars) ?? 0,
-    stdoutTruncated: booleanMetadata(metadata.stdoutTruncated) ?? result.output.length > maximum,
+    stdoutTruncated: booleanMetadata(metadata.stdoutTruncated) === true || result.output.length > maximum,
     stderrTruncated: booleanMetadata(metadata.stderrTruncated) ?? false,
     resultPreview: output,
   }

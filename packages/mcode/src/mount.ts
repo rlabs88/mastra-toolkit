@@ -9,27 +9,28 @@ import { detectProject, type ProjectInfo } from "@mastra/code-sdk/utils/project"
 import type { AgentControllerConfig } from "@mastra/core/agent-controller";
 import { Mastra } from "@mastra/core/mastra";
 import type { ToolkitAdditionalTools, ToolkitAgents } from "@rlabs/agents-roles";
-import { createToolkitAgents } from "@rlabs/agents-roles";
 import {
   ProjectMountingManager,
   type McpLifecyclePort,
   type PreparedMcpGeneration,
   type ProjectMountingDiagnostic,
 } from "@rlabs/project-mounting-manager";
-import { loadModelProfile, ProxyGateway } from "@rlabs/runtime-config";
+import { loadModelProfile, ProxyGateway, type ModelProfile } from "@rlabs/runtime-config";
+import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import type { McodeConfig } from "./config.js";
 import { loadMcodeConfig } from "./config.js";
 import { createCodeMcpAdapter } from "./mcp-adapter.js";
-import { createCodeModes } from "./modes/index.js";
-import { EmptyToolSnapshot, MastraProjectHostRegistry, ProfileModelAliasResolver } from "./project-adapters.js";
+import { MastraProjectHostRegistry, ProfileModelAliasResolver, StaticToolSnapshot } from "./project-adapters.js";
+import { createMcodeRecipe } from "./recipe.js";
 import { createA1CodeProvider, prepareCodeSdkSettings } from "./settings.js";
-import { createCodeSubagents, fillMissingSubagentModelId } from "./subagents.js";
+import { fillMissingSubagentModelId } from "./subagents.js";
 import { createMcodeWorkspace } from "./workspace.js";
 
 export interface McodeRuntimeOptions {
   readonly cwd?: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly config?: McodeConfig;
+  readonly profile?: ModelProfile;
   readonly dataDirectory?: string;
   readonly browser?: boolean;
   readonly watch?: boolean;
@@ -66,25 +67,27 @@ export async function prepareMcodeRuntime(
 ): Promise<PreparedMcodeRuntime> {
   const project = detectProject(resolve(options.cwd ?? process.cwd()));
   const environment = { ...(options.environment ?? process.env), WORKSPACE_ROOT: project.rootPath };
-  const config = options.config ?? loadMcodeConfig(environment, project.rootPath);
-  const profile = loadModelProfile();
+  const profile = options.profile ?? loadModelProfile();
+  const config = options.config ?? loadMcodeConfig(environment, project.rootPath, profile);
   const workspace = createMcodeWorkspace(config.sandbox, {
     projectRoot: project.rootPath,
     hotReloadSkills: true,
   });
+  const commandRun = createSandboxCommandRunTool();
   let resources: ProjectMountingManager | undefined;
   const dynamicTools = createDynamicTools(undefined, () =>
     (resources?.getTools() ?? {}) as Record<string, ToolLike>,
   ) as ToolkitAdditionalTools;
-  const agents = createToolkitAgents({
-    workspaceRoot: project.rootPath,
+  const recipe = createMcodeRecipe({
     browser: options.browser ?? true,
+    commandRun,
     additionalTools: dynamicTools,
     hooks: { beforeToolCall: ({ input }) => fillMissingSubagentModelId(profile, input) },
     profile,
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
+  const agents = recipe.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
     profile,
@@ -101,8 +104,8 @@ export async function prepareMcodeRuntime(
     controllerMount = await prepareAgentControllerMount({
       cwd: project.rootPath,
       settingsPath: join(dataDirectory, "settings.json"),
-      modes: createCodeModes(agents),
-      subagents: createCodeSubagents(profile),
+      modes: recipe.controller.modes,
+      subagents: recipe.controller.subagents,
       workspace,
       disableMcp: true,
       disableHooks: options.disableHooks ?? false,
@@ -148,7 +151,8 @@ export async function prepareMcodeRuntime(
           projectRoot: project.rootPath,
           modelAliases: new ProfileModelAliasResolver(profile),
           mcp,
-          currentTools: new EmptyToolSnapshot(),
+          currentTools: new StaticToolSnapshot({ command_run: commandRun }),
+          requiredSpecialistTools: ["command_run"],
           host: new MastraProjectHostRegistry(mastra),
           workspace,
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),

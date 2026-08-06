@@ -36,10 +36,11 @@ source "$probe_root/usr/local/lib/mastra-toolkit/credential-guard.sh"
 
 command -v git >/dev/null
 command -v node >/dev/null
+command -v rg >/dev/null
 command -v tsx >/dev/null
 (
   cd /opt/mastra-toolkit/mcode-runtime
-  node --input-type=module -e 'await import("@mastra/core/workflows"); await import("esbuild")'
+  node --input-type=module -e 'const { globSync } = await import("node:fs"); if (typeof globSync !== "function") process.exit(1); await import("@mastra/core/workflows"); await import("esbuild")'
 )
 
 if [[ "$profile_json" == *'"operations"'* ]]; then

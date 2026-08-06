@@ -6,7 +6,6 @@ export {
   COMMAND_TYPES,
   TASK_TYPES,
   commandRequiresApproval,
-  createCommandRunTool,
   createTraceRecorder,
   executeAdapter,
   executeReadMedia,

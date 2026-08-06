@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import {
   findSandboxSpecPath,
+  loadDefaultSandboxSpec,
   loadSandboxSpec,
   type SandboxProvider,
   type SandboxSpec,
@@ -44,9 +45,9 @@ export function loadSandboxConfig(
   const parsed = sandboxEnvironmentSchema.parse(environment);
   assertCompleteGroup(parsed, PLATFORM_CREDENTIAL_KEYS, "Platform sandbox");
 
-  const specification = loadSandboxSpec(
-    findSandboxSpecPath(parsed.SANDBOX_SPEC_PATH, startDirectory),
-  );
+  const specification = parsed.SANDBOX_SPEC_PATH
+    ? loadSandboxSpec(findSandboxSpecPath(parsed.SANDBOX_SPEC_PATH, startDirectory))
+    : loadDefaultSandboxSpec();
   const platform = completePlatformCredentials(parsed);
   const config = {
     provider: parsed.SANDBOX_PROVIDER ?? specification.spec.defaultProvider,

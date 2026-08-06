@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import { LocalFilesystem, LocalSandbox, Workspace } from "@mastra/core/workspace";
 import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
-import { createToolkitAgents } from "@rlabs/agents-roles";
-import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
+import { createMcodeRecipe } from "@rlabs/mcode/recipe";
+import { loadModelProfile } from "@rlabs/runtime-config";
+import { createSandboxCommandRunTool, createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
 import { afterEach, describe, expect, test } from "vitest";
 import { ToolkitFactoryIntegration } from "../src/toolkit-integration.js";
 
@@ -35,20 +36,22 @@ describe("Factory project workflows", () => {
       workdir: projectRoot,
     });
     const workspace = new Workspace({
-      id: "factory-project-workflow-test",
+      id: "mfw-factory-project-workflow-test",
       filesystem: sandboxFilesystem,
       sandbox,
     });
     await workspace.init();
-    const agents = createToolkitAgents({ workspaceRoot: projectRoot, browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       requireApproval?: boolean;
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
+    const commandRun = tools.command_run as {
+      execute?: (input: unknown, context: unknown) => Promise<unknown>;
+    };
     const streamed: unknown[] = [];
     const context = {
-      requestContext: new RequestContext(),
+      requestContext: factorySessionRequestContext(),
       workspace,
       writer: { write: async (chunk: unknown) => { streamed.push(chunk); } },
     };
@@ -56,6 +59,12 @@ describe("Factory project workflows", () => {
     try {
       expect(projectWorkflow).toBeDefined();
       expect(projectWorkflow.requireApproval).toBe(true);
+      await expect(commandRun.execute?.({
+        description: "locate the Factory project checkout",
+        commands: [{ command_type: "shell", command_line: "pwd", step: 1 }],
+      }, context)).resolves.toMatchObject({
+        results: [{ status: "completed", output: `${canonicalProjectRoot}\n` }],
+      });
 
       await expect(projectWorkflow.execute?.({ action: "list" }, context)).resolves.toEqual({
         workflows: [{ id: "demo", description: "Run demo", metadata: { fixture: true } }],
@@ -107,8 +116,7 @@ describe("Factory project workflows", () => {
       sandbox,
     });
     await workspace.init();
-    const agents = createToolkitAgents({ workspaceRoot: projectRoot, browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -144,8 +152,7 @@ describe("Factory project workflows", () => {
       sandbox,
     });
     await workspace.init();
-    const agents = createToolkitAgents({ workspaceRoot: projectRoot, browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -161,8 +168,7 @@ describe("Factory project workflows", () => {
   });
 
   test("reports an actionable runtime-layer error when the sandbox lacks the workflow runner", async () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -205,8 +211,7 @@ describe("Factory project workflows", () => {
       sandbox,
     });
     await workspace.init();
-    const agents = createToolkitAgents({ workspaceRoot: projectRoot, browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -222,8 +227,7 @@ describe("Factory project workflows", () => {
   });
 
   test("normalizes provider abort failures and cleans up when the cancellation marker cannot be written", async () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -278,8 +282,7 @@ describe("Factory project workflows", () => {
       sandbox,
     });
     await workspace.init();
-    const agents = createToolkitAgents({ workspaceRoot: projectRoot, browser: false });
-    const tools = await new ToolkitFactoryIntegration(agents).agentTools();
+    const tools = await factoryIntegration().agentTools();
     const projectWorkflow = tools.project_workflow as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -302,6 +305,25 @@ describe("Factory project workflows", () => {
     }
   }, 30_000);
 });
+
+function factoryIntegration(): ToolkitFactoryIntegration {
+  return new ToolkitFactoryIntegration(createMcodeRecipe({
+    profile: loadModelProfile(),
+    commandRun: createSandboxCommandRunTool(),
+    browser: false,
+  }));
+}
+
+function factorySessionRequestContext(): RequestContext {
+  const requestContext = new RequestContext();
+  requestContext.set("user", { id: "user-1", organizationId: "org-1" });
+  requestContext.set("controller", {
+    threadId: "thread-1",
+    resourceId: "session-1",
+    getState: () => ({ factoryProjectId: "project-1" }),
+  });
+  return requestContext;
+}
 
 function workflowFixture(id: string, published: boolean): string {
   return `import { writeFile } from "node:fs/promises";

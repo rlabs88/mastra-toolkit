@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import defaultSandboxSpec from "../config/sandbox.config.json" with { type: "json" };
 import { immutableSandboxImageSchema } from "./image.js";
 
 export const DEFAULT_SANDBOX_SPEC_PATH = fileURLToPath(
@@ -75,4 +76,8 @@ export function loadSandboxSpec(path: string): SandboxSpec {
     throw new Error(`Unable to read sandbox specification at ${path}`, { cause: error });
   }
   return parseSandboxSpec(input);
+}
+
+export function loadDefaultSandboxSpec(): SandboxSpec {
+  return parseSandboxSpec(defaultSandboxSpec);
 }

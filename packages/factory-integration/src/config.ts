@@ -1,4 +1,4 @@
-import { loadRuntimeConfig, type RuntimeConfig } from "@rlabs/runtime-config";
+import { loadRuntimeConfig, type ModelProfile, type RuntimeConfig } from "@rlabs/runtime-config";
 import {
   loadSandboxConfig,
   resolveSandboxRuntimeProfile,
@@ -66,6 +66,7 @@ export interface FactoryConfig {
 export function loadFactoryConfig(
   environment: NodeJS.ProcessEnv = process.env,
   startDirectory = process.cwd(),
+  profile?: ModelProfile,
 ): FactoryConfig {
   const parsed = factoryEnvironmentSchema.parse(environment);
   const publicUrl = normalizeOrigin(parsed.FACTORY_PUBLIC_URL, "FACTORY_PUBLIC_URL");
@@ -122,7 +123,7 @@ export function loadFactoryConfig(
     }
   }
   const base = {
-    runtime: loadRuntimeConfig(environment),
+    runtime: loadRuntimeConfig(environment, profile),
     projectRuntime: resolveSandboxRuntimeProfile(parsed.FACTORY_PROJECT_RUNTIME_PROFILE),
     server: { publicUrl, allowedOrigins },
     ...(sandbox ? { sandbox } : {}),

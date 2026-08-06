@@ -1,14 +1,17 @@
 import { Mastra } from "@mastra/core/mastra";
-import { createToolkitAgents } from "@rlabs/agents-roles";
 import { createToolkitFactory, loadFactoryConfig } from "@rlabs/factory-integration";
-import { ProxyGateway } from "@rlabs/runtime-config";
+import { createMcodeRecipe } from "@rlabs/mcode/recipe";
+import { loadModelProfile, ProxyGateway } from "@rlabs/runtime-config";
+import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
-export const config = loadFactoryConfig();
-const agents = createToolkitAgents({
-  workspaceRoot: config.sandbox?.workspaceRoot ?? process.cwd(),
-  browser: true,
+const profile = loadModelProfile();
+export const config = loadFactoryConfig(process.env, process.cwd(), profile);
+const recipe = createMcodeRecipe({
+  profile,
+  commandRun: createSandboxCommandRunTool(),
+  browser: false,
 });
-export const factory = await createToolkitFactory(config, agents);
+export const factory = await createToolkitFactory(config, recipe);
 const prepared = await factory.prepare();
 export const mastra = new Mastra({
   ...prepared,

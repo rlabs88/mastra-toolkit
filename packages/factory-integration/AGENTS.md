@@ -17,8 +17,8 @@ applies_to: ["**/*"]
 ## Operating rules
 
 - Own Factory authentication, storage, integrations, provider migration, and sandbox composition here.
-- Consume canonical roles directly from `agents-roles` and sandbox machines from `sandbox`.
-- Depend on `mcode` only through a narrow export when Factory concretely hosts Code sessions or provider state.
+- Consume canonical agents and Code construction metadata through the versioned public MCode recipe, and sandbox machines from `sandbox`.
+- Report unsupported upstream controller or repository-configuration surfaces explicitly; do not patch Factory, construct a second controller, or read project settings from the Factory checkout.
 - Keep the executable Factory composition in `apps/factory` and deployment artifacts outside packages.
 
 ## Structure and extension

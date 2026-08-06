@@ -19,10 +19,8 @@ export function createAdhdTool(resolveFlux: () => Agent) {
       if (context.requestContext.get("adhdDepth") === 1) throw new Error("Nested adhd_run calls are not allowed");
       const flux = resolveFlux();
       const candidates = await Promise.all(input.perspectives.map(async perspective => {
-        const workspaceRoot = context.requestContext.get("workspaceRoot");
-        const entries: Array<[string, {} | undefined]> = [["adhdDepth", 1]];
-        if (typeof workspaceRoot === "string") entries.push(["workspaceRoot", workspaceRoot]);
-        const requestContext = new RequestContext(entries);
+        const requestContext = new RequestContext(context.requestContext.entries());
+        requestContext.set("adhdDepth", 1);
         const result = await flux.generate(
           `Independently investigate this framing. Do not call adhd_run.\n\nProblem: ${input.problem}\n\nPerspective: ${perspective}`,
           { maxSteps: 8, modelSettings: { temperature: 0.9 }, requestContext },

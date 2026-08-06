@@ -1,4 +1,8 @@
-import { resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_SANDBOX_SPEC_PATH, loadSandboxConfig } from "../src/index.js";
 
@@ -32,6 +36,24 @@ describe("loadSandboxConfig", () => {
       apiVersion: "cortex.provisioning/v1",
     }));
     expect(config.platform).toBeUndefined();
+  });
+
+  test("embeds package defaults when the sandbox config loader is bundled", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sandbox-config-bundle-"));
+    const outfile = join(directory, "config.mjs");
+    await build({
+      entryPoints: [join(import.meta.dirname, "..", "src", "config.ts")],
+      outfile,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      packages: "external",
+    });
+
+    const bundled = await import(`${pathToFileURL(outfile).href}?test=${Date.now()}`) as {
+      loadSandboxConfig(environment?: NodeJS.ProcessEnv, startDirectory?: string): ReturnType<typeof loadSandboxConfig>;
+    };
+    expect(bundled.loadSandboxConfig({}, directory).specification.metadata.id).toBe("mastra-toolkit");
   });
 
   test("resolves an explicit specification and provider", () => {

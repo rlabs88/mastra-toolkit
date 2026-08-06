@@ -5,6 +5,7 @@ import type { MastraCodeState } from "@mastra/code-sdk/schema";
 import { detectProject } from "@mastra/code-sdk/utils/project";
 import { releaseAllThreadLocks } from "@mastra/code-sdk/utils/thread-lock";
 import type { Session } from "@mastra/core/agent-controller";
+import { loadModelProfile } from "@rlabs/runtime-config";
 import { MastraTUI } from "mastracode/tui";
 import { loadMcodeConfig } from "./config.js";
 import {
@@ -23,11 +24,13 @@ export async function createLocalMcodeRuntime(
 ): Promise<LocalMcodeRuntime> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const project = detectProject(cwd);
+  const profile = options.profile ?? loadModelProfile();
   const config = options.config ?? loadMcodeConfig(
     { ...(options.environment ?? process.env), WORKSPACE_ROOT: project.rootPath },
     project.rootPath,
+    profile,
   );
-  const mounted = await mountMcodeRuntime({ ...options, cwd, config });
+  const mounted = await mountMcodeRuntime({ ...options, cwd, profile, config });
   const session = await mounted.controller.createSession({
     id: localSessionId(mounted.project.rootPath),
     ownerId: mounted.code.ownerId,

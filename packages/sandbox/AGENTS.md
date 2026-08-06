@@ -19,6 +19,7 @@ applies_to: ["**/*"]
 - Keep provider selection explicit and fail when required provider identity is absent.
 - Keep checked-in sandbox configuration free of credentials, host user state, and mutable image tags.
 - Keep runtime profile names, lifecycle, package layers, and credential classes canonical in `config/runtime-profiles.json`; deployment targets must consume that manifest rather than copy it.
+- Own the executable `command_run` tool. It must require an active request workspace, execute through that workspace's sandbox, and never fall back to the host process checkout.
 
 ## Structure and extension
 
@@ -27,6 +28,7 @@ config/                  # package-owned schema and defaults
 src/
 ├── spec.ts, config.ts, types.ts
 ├── machine.ts           # cloneable machine contract and routing
+├── command-run.ts       # sandbox-contained executable agent tool
 ├── local.ts, docker.ts, platform.ts # provider adapters
 └── index.ts             # package facade
 ```
@@ -37,7 +39,8 @@ src/
 
 ## Change boundaries
 
-- Change sandbox schemas, package-local configuration, parser tests, and adapter contract tests together.
+- Change sandbox schemas, package-local configuration, command execution tests, and adapter contract tests together.
+- Change `command_run` parser, scheduling, approval, containment, timeout, cancellation, output, attachment, and SSRF contracts together with `packages/agent-tools`.
 - Depend only on sandbox-owned narrow option types; do not import an aggregate application config.
 - Do not grant Docker socket access or broaden local environment forwarding.
 
@@ -48,4 +51,4 @@ src/
 
 ## Handoff
 
-- State which provider or specification contract changed and list the package-local checks that ran.
+- State which provider, specification, or executable tool contract changed and list the package-local checks that ran.

@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
+import { createTool } from "@mastra/core/tools";
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import {
   CORTEX_ROLE,
   FLUX_ROLE,
@@ -56,7 +58,7 @@ describe("canonical agent roles", () => {
   });
 
   test("creates the current Mastra delegation topology", async () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
+    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
     expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
@@ -64,18 +66,35 @@ describe("canonical agent roles", () => {
     expect(Object.keys(await agents.flux.listAgents())).toEqual([]);
   });
 
-  test("assigns canonical tools and removes host commands during delegated runs", async () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
+  test("keeps command_run available during delegated runs", async () => {
+    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
     const delegatedContext = new RequestContext<unknown>([[TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY, true]]);
 
     expect(Object.keys(await agents.cortex.listTools())).toEqual(["command_run"]);
     expect(Object.keys(await agents.flux.listTools())).toEqual(["command_run", "adhd_run"]);
     expect(Object.keys(await agents.zen.listTools())).toEqual(["command_run"]);
-    expect(Object.keys(await agents.cortex.listTools({ requestContext: delegatedContext }))).toEqual([]);
+    expect(Object.keys(await agents.cortex.listTools({ requestContext: delegatedContext }))).toEqual(["command_run"]);
+  });
+
+  test("uses the command_run tool supplied by the runtime host", async () => {
+    const commandRun = createTool({
+      id: "command_run",
+      description: "sandbox command fixture",
+      inputSchema: z.object({}),
+      execute: async () => ({ ok: true }),
+    });
+    const agents = createToolkitAgents({
+      browser: false,
+      commandRun,
+    });
+
+    expect((await agents.cortex.listTools()).command_run).toBe(commandRun);
+    expect((await agents.flux.listTools()).command_run).toBe(commandRun);
+    expect((await agents.zen.listTools()).command_run).toBe(commandRun);
   });
 
   test("configures visible browser support for every canonical agent", () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: true });
+    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: true });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
@@ -87,7 +106,7 @@ describe("canonical agent roles", () => {
     const afterToolCall = vi.fn();
     const audit = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const agents = createToolkitAgents({
-      workspaceRoot: process.cwd(),
+      commandRun: commandRunFixture(),
       browser: false,
       hooks: { beforeToolCall, afterToolCall },
     });
@@ -116,3 +135,12 @@ describe("canonical agent roles", () => {
     expect(source.join("\n")).not.toMatch(/agent-controller|createCodeModes|prepareAgentControllerMount/);
   });
 });
+
+function commandRunFixture() {
+  return createTool({
+    id: "command_run",
+    description: "command fixture",
+    inputSchema: z.object({}),
+    execute: async () => ({ ok: true }),
+  });
+}
