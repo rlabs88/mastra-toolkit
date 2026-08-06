@@ -3,6 +3,8 @@ import { loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
 import { z } from "zod";
 
 const factoryEnvironmentSchema = z.object({
+  FACTORY_PROJECT_RUNTIME_PROFILE: z.enum(["ephemeral-development", "persistent-operations"])
+    .default("ephemeral-development"),
   DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
   GITHUB_APP_ID: z.string().min(1).optional(),
@@ -24,9 +26,46 @@ const GITHUB_KEYS = [
 ] as const;
 const WORKOS_KEYS = ["WORKOS_API_KEY", "WORKOS_CLIENT_ID", "WORKOS_COOKIE_PASSWORD"] as const;
 
+export type FactoryProjectRuntimeProfile = "ephemeral-development" | "persistent-operations";
+
+export interface FactoryProjectRuntimeConfig {
+  readonly profile: FactoryProjectRuntimeProfile;
+  readonly lifecycle: "ephemeral" | "persistent";
+  readonly packageLayers: readonly string[];
+  readonly credentials: "task-scoped" | "runtime-secret-provider";
+  readonly secretProvider?: {
+    readonly kind: "infisical";
+    readonly projectId: string;
+    readonly environment: "dev";
+    readonly path: string;
+  };
+}
+
+const PROJECT_RUNTIME_PROFILES = {
+  "ephemeral-development": {
+    profile: "ephemeral-development",
+    lifecycle: "ephemeral",
+    packageLayers: ["mcode-runtime", "project-development"],
+    credentials: "task-scoped",
+  },
+  "persistent-operations": {
+    profile: "persistent-operations",
+    lifecycle: "persistent",
+    packageLayers: ["mcode-runtime", "project-development", "operations"],
+    credentials: "runtime-secret-provider",
+    secretProvider: {
+      kind: "infisical",
+      projectId: "0b0f6354-029f-45a7-9c1c-b65968b5f46c",
+      environment: "dev",
+      path: "/mastra-toolkit",
+    },
+  },
+} as const satisfies Record<FactoryProjectRuntimeProfile, FactoryProjectRuntimeConfig>;
+
 export interface FactoryConfig {
   readonly runtime: RuntimeConfig;
   readonly sandbox: SandboxConfig;
+  readonly projectRuntime: FactoryProjectRuntimeConfig;
   readonly databaseUrl?: string;
   readonly redisUrl?: string;
   readonly github?: {
@@ -51,9 +90,26 @@ export function loadFactoryConfig(
   const parsed = factoryEnvironmentSchema.parse(environment);
   assertCompleteGroup(parsed, GITHUB_KEYS, "GitHub App");
   assertCompleteGroup(parsed, WORKOS_KEYS, "WorkOS");
+  const sandbox = loadSandboxConfig(environment, startDirectory);
+  if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations" && sandbox.provider !== "platform") {
+    throw new Error("The persistent-operations project runtime requires the Platform sandbox provider");
+  }
+  if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations") {
+    const missing = [
+      ...(!parsed.DATABASE_URL ? ["DATABASE_URL"] : []),
+      ...(!parsed.REDIS_URL ? ["REDIS_URL"] : []),
+    ];
+    if (missing.length > 0) {
+      throw new Error(`The persistent-operations project runtime requires durable Factory state; missing ${missing.join(", ")}`);
+    }
+    if (!parsed.WORKOS_API_KEY) {
+      throw new Error("The persistent-operations project runtime requires WorkOS deployment authentication");
+    }
+  }
   const base = {
     runtime: loadRuntimeConfig(environment),
-    sandbox: loadSandboxConfig(environment, startDirectory),
+    sandbox,
+    projectRuntime: PROJECT_RUNTIME_PROFILES[parsed.FACTORY_PROJECT_RUNTIME_PROFILE],
     ...(parsed.DATABASE_URL ? { databaseUrl: parsed.DATABASE_URL } : {}),
     ...(parsed.REDIS_URL ? { redisUrl: parsed.REDIS_URL } : {}),
   };

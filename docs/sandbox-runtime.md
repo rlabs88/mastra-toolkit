@@ -18,3 +18,12 @@ This runtime profile is separate from a model-facing Preset Card. A Preset Card 
 - [RT-81](https://linear.app/rt88/issue/RT-81/formulate-docker-sandbox-execution-environment-in-mastra-system) keeps Compose-owned services outside Mastra while Mastra owns sandbox command execution.
 
 The current slice intentionally stops at declarative runtime/profile consumption. Gateway publication, repository allowlists, frozen exact-SHA envelopes, idempotent operation identities, resumable stop, and destructive purge remain separate control-plane work rather than hidden inside the sandbox adapter.
+
+## Factory project runtime profiles
+
+Factory selects one project-runtime composition at process startup through `FACTORY_PROJECT_RUNTIME_PROFILE`:
+
+- `ephemeral-development` is the default. It selects the `mcode-runtime` and `project-development` package layers and admits task-scoped credentials only.
+- `persistent-operations` adds the `operations` package layer and requires the Platform sandbox provider, Postgres-backed `DATABASE_URL`, Redis-backed `REDIS_URL`, and WorkOS deployment authentication. Its credential contract references the approved Infisical project `0b0f6354-029f-45a7-9c1c-b65968b5f46c`, environment `dev`, path `/mastra-toolkit`; resolved values are not stored in the profile.
+
+Selecting a hardened profile with a weaker provider or in-process state fails at startup. The profile contract is the first single-project Factory slice: it freezes environment, durability, and credential policy before a project sandbox is provisioned. Issue #119 still needs to verify that the Factory-hosted controller resolves one project's checkout, filesystem, commands, setup, git operations, and project-local tools through the same persisted sandbox/session binding. Moving the complete Factory or AgentController process into that sandbox is not required unless the vertical slice exposes a concrete execution gap.
