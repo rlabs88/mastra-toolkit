@@ -16,7 +16,9 @@ export function createFactoryStorage(databaseUrl?: string) {
       vector: new PgVector({ id: "mastra-toolkit-vectors", connectionString: databaseUrl }),
     };
   }
-  const databasePath = join(homedir(), ".mastra-toolkit", "data", "factory.db");
+  const dataDirectory = process.env.MASTRA_APP_DATA_DIR
+    ?? join(homedir(), ".mastra-toolkit", "data");
+  const databasePath = join(dataDirectory, "factory.db");
   mkdirSync(dirname(databasePath), { recursive: true });
   const factoryStorage = new LibSQLFactoryStorage({
     id: "mastra-toolkit-storage",

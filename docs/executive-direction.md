@@ -67,7 +67,9 @@ Local workflow execution is in-process and does not require an HTTP server. Dura
 
 The local development target is one persistent sandbox per checkout or worktree. Filesystem and command tools must address the same contained checkout. Simultaneous worktrees receive distinct runtimes and sandboxes even when they share a logical project identity for history or reporting.
 
-Factory first scales one project runtime. The current Factory sandbox model isolates the checkout and command execution; running the complete agent and workflow runtime within the governed project sandbox is an explicit topology to prove, not assumed inherited behavior. Only after that contract is validated should Factory schedule the same runtime across projects.
+Factory is a control plane and can run without a sandbox. When GitHub-backed repository execution is enabled, its configured sandbox machine is a fleet template: Factory provisions or reattaches a workspace for each persisted project, user, and session binding. Repository checkout, filesystem access, setup commands, and Git operations occur through that bound sandbox, not on the Factory host. A Factory process or agent runtime does not own one shared sandbox. Isolation between multiple simultaneous bindings remains a later contract to prove.
+
+The single-project slice proves the sandbox-free control plane, explicit failure when repository execution is unavailable, and durable provision/reattach/teardown behavior through the shared sandbox-machine contract. Running the complete project workflow runtime inside that governed workspace remains an explicit topology to prove, not assumed inherited behavior. Only after that contract is validated should Factory schedule the same runtime across projects.
 
 Ephemeral sandboxes receive short-lived task credentials. Persistent operations sandboxes may receive scoped deployment credentials at runtime with audit and rotation. Secrets do not belong in repository configuration, settings snapshots, images, workflow source, or model profiles.
 

@@ -4,15 +4,14 @@ import { createToolkitFactory, loadFactoryConfig } from "@rlabs/factory-integrat
 import { ProxyGateway } from "@rlabs/runtime-config";
 
 export const config = loadFactoryConfig();
-export const agents = createToolkitAgents({
-  workspaceRoot: config.sandbox.workspaceRoot,
+const agents = createToolkitAgents({
+  workspaceRoot: config.sandbox?.workspaceRoot ?? process.cwd(),
   browser: true,
 });
 export const factory = await createToolkitFactory(config, agents);
 const prepared = await factory.prepare();
 export const mastra = new Mastra({
   ...prepared,
-  agents: { ...(prepared.agents ?? {}), ...agents },
   gateways: {
     ...(prepared.gateways ?? {}),
     proxy: new ProxyGateway(config.runtime.proxy),

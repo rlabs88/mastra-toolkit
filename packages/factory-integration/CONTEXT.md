@@ -13,8 +13,8 @@ Factory construction, authentication, provider preparation, storage, canonical a
 
 ## Present
 
-This package adapts canonical RLabs runtime packages to Mastra Factory. It owns Factory-specific lifecycle and persistence while applications and deployment targets remain separate boundaries.
+This package adapts canonical RLabs runtime packages to Mastra Factory. It owns Factory-specific lifecycle and persistence while applications and deployment targets remain separate boundaries. The control plane can omit repository execution; enabled repository execution consumes the shared sandbox machine as a fleet template and persists project/user/session bindings. Ephemeral development and persistent operations are explicit, fail-closed runtime profiles.
 
 ## Future
 
-Factory will first provision and resume the same single-project runtime, then scale it across isolated projects. Cross-project control-plane behavior will not redefine agents, workflows, project formats, or sandbox contracts.
+Factory must next execute the checkout's canonical project workflow definitions through the bound sandbox without adding a second project format or workflow registry. Only after that single-project contract is proven may it scale across isolated projects. Cross-project control-plane behavior will not redefine agents, workflows, project formats, or sandbox contracts.

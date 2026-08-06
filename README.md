@@ -49,6 +49,10 @@ Factory can boot locally without GitHub or WorkOS credentials for manual single-
 npm run dev:factory:infisical
 ```
 
+Factory is the control plane, not the project sandbox. Set `FACTORY_REPOSITORY_EXECUTION=disabled` to run its authentication, storage, integrations, and scheduling surfaces without configuring a sandbox; attempts to start a GitHub-backed project then fail explicitly with `sandbox_not_configured`. With repository execution enabled (the default), Factory uses the configured sandbox template as a fleet and persists a workspace binding for each project, user, and session rather than assigning one sandbox to the Factory process. Cross-binding filesystem isolation is part of the still-blocked multi-project stage, not a property claimed by this slice.
+
+`FACTORY_PROJECT_RUNTIME_PROFILE` defaults to `ephemeral-development` and declares task-scoped credentials. `persistent-operations` fails closed unless Platform sandboxing, durable database and Redis state, and WorkOS deployment authentication are all configured. The profile is admission metadata for the still-incomplete project runtime; privileged credential delivery and package-layer activation must be proven before #119 is complete.
+
 For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names documented in `.env.example`. The GitHub App must be owned by `rlabs88`, use the slug `rlabs-mastra-toolkit`, and be limited to metadata, contents, issues, pull requests, checks, and statuses. Credential creation and app installation are human-confirmed operations.
 
 Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, and `delegate_zen` to its native controller. Delegated agents cannot invoke those tools recursively.
