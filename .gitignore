@@ -4,6 +4,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+!packages/mcode/src/modes/build/
+!packages/mcode/src/modes/build/**
 compiled/
 *.tsbuildinfo
 

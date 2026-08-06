@@ -39,18 +39,20 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
     integrations: [new ToolkitFactoryIntegration(agents), ...(github ? [github] : [])],
-    sandbox: {
-      machine: createSandboxMachine({
-        provider: config.sandbox.provider,
-        workspaceRoot: config.sandbox.workspaceRoot,
-        specification: config.sandbox.specification,
-        ...(config.sandbox.platform ? { platform: config.sandbox.platform } : {}),
-      }),
-      workdir: config.sandbox.provider === "local"
-        ? config.sandbox.workspaceRoot
-        : config.sandbox.workdir,
-      maxSandboxes: config.sandbox.maxSandboxes,
-    },
+    ...(config.sandbox ? {
+      sandbox: {
+        machine: createSandboxMachine({
+          provider: config.sandbox.provider,
+          workspaceRoot: config.sandbox.workspaceRoot,
+          specification: config.sandbox.specification,
+          ...(config.sandbox.platform ? { platform: config.sandbox.platform } : {}),
+        }),
+        workdir: config.sandbox.provider === "local"
+          ? config.sandbox.workspaceRoot
+          : config.sandbox.workdir,
+        maxSandboxes: config.sandbox.maxSandboxes,
+      },
+    } : {}),
     publicUrl: "http://localhost:4111",
     allowedOrigins: ["http://localhost:4111"],
     ...(stateSecret ? { stateSecret } : {}),

@@ -67,6 +67,13 @@ describe("workspace ownership", () => {
     ]);
   });
 
+  test("keeps canonical Factory agents behind the sandbox-bound integration", async () => {
+    const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
+
+    expect(source).toContain("createToolkitFactory(config, agents)");
+    expect(source).not.toContain("...agents");
+  });
+
   test("keeps deployment targets documentation-only", async () => {
     for (const target of ["mcode-sandbox", "studio-server"]) {
       const entries = await readdir(join(root, "deployment", target));
@@ -117,7 +124,7 @@ describe("workspace ownership", () => {
       { cwd: root, env: process.env, timeout: 60_000 },
     );
     expect(stdout).toContain("mcode-load-ok");
-  });
+  }, 60_000);
 });
 
 async function expectPackageNames(folder: string, expected: readonly string[]): Promise<void> {

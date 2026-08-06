@@ -5,6 +5,7 @@ import { z } from "zod";
 const factoryEnvironmentSchema = z.object({
   FACTORY_PROJECT_RUNTIME_PROFILE: z.enum(["ephemeral-development", "persistent-operations"])
     .default("ephemeral-development"),
+  FACTORY_REPOSITORY_EXECUTION: z.enum(["enabled", "disabled"]).default("enabled"),
   DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
   GITHUB_APP_ID: z.string().min(1).optional(),
@@ -64,7 +65,7 @@ const PROJECT_RUNTIME_PROFILES = {
 
 export interface FactoryConfig {
   readonly runtime: RuntimeConfig;
-  readonly sandbox: SandboxConfig;
+  readonly sandbox?: SandboxConfig;
   readonly projectRuntime: FactoryProjectRuntimeConfig;
   readonly databaseUrl?: string;
   readonly redisUrl?: string;
@@ -90,9 +91,23 @@ export function loadFactoryConfig(
   const parsed = factoryEnvironmentSchema.parse(environment);
   assertCompleteGroup(parsed, GITHUB_KEYS, "GitHub App");
   assertCompleteGroup(parsed, WORKOS_KEYS, "WorkOS");
-  const sandbox = loadSandboxConfig(environment, startDirectory);
-  if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations" && sandbox.provider !== "platform") {
+  if (parsed.GITHUB_APP_ID && !parsed.GITHUB_APP_WEBHOOK_SECRET && !parsed.WORKOS_COOKIE_PASSWORD) {
+    throw new Error("GitHub App configuration requires a replica-stable state secret from GITHUB_APP_WEBHOOK_SECRET or WorkOS");
+  }
+  if (
+    parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations"
+    && parsed.FACTORY_REPOSITORY_EXECUTION === "disabled"
+  ) {
+    throw new Error("The persistent-operations project runtime requires a configured repository sandbox");
+  }
+  const sandbox = parsed.FACTORY_REPOSITORY_EXECUTION === "enabled"
+    ? loadSandboxConfig(environment, startDirectory)
+    : undefined;
+  if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations" && sandbox?.provider !== "platform") {
     throw new Error("The persistent-operations project runtime requires the Platform sandbox provider");
+  }
+  if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations" && !sandbox?.platform) {
+    throw new Error("The persistent-operations project runtime requires complete Platform identity");
   }
   if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations") {
     const missing = [
@@ -108,8 +123,8 @@ export function loadFactoryConfig(
   }
   const base = {
     runtime: loadRuntimeConfig(environment),
-    sandbox,
     projectRuntime: PROJECT_RUNTIME_PROFILES[parsed.FACTORY_PROJECT_RUNTIME_PROFILE],
+    ...(sandbox ? { sandbox } : {}),
     ...(parsed.DATABASE_URL ? { databaseUrl: parsed.DATABASE_URL } : {}),
     ...(parsed.REDIS_URL ? { redisUrl: parsed.REDIS_URL } : {}),
   };

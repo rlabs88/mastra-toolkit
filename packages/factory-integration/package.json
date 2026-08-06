@@ -24,5 +24,8 @@
     "test": "vitest run test",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "hono": "4.12.15"
   }
 }

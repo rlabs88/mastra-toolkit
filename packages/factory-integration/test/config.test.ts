@@ -12,7 +12,7 @@ describe("loadFactoryConfig", () => {
 
     expect(config.runtime.mode).toBe("factory");
     expect(config.runtime.proxy.apiKey).toBe("test-only-key");
-    expect(config.sandbox.provider).toBe("local");
+    expect(config.sandbox?.provider).toBe("local");
     expect(config.projectRuntime).toEqual({
       profile: "ephemeral-development",
       lifecycle: "ephemeral",
@@ -23,6 +23,16 @@ describe("loadFactoryConfig", () => {
     expect(config.workos).toBeUndefined();
   });
 
+  test("boots the Factory control plane without repository sandboxes", () => {
+    const config = loadFactoryConfig({
+      MASTRA_TOOLKIT_MODE: "factory",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+    }, process.cwd());
+
+    expect(config.sandbox).toBeUndefined();
+    expect(config.projectRuntime.profile).toBe("ephemeral-development");
+  });
+
   test("rejects partial GitHub and WorkOS credentials", () => {
     expect(() => loadFactoryConfig({ GITHUB_APP_ID: "partial" }, process.cwd()))
       .toThrow(/GitHub App.*missing/i);
@@ -30,11 +40,27 @@ describe("loadFactoryConfig", () => {
       .toThrow(/WorkOS.*missing/i);
   });
 
+  test("rejects GitHub without a stable state secret", () => {
+    expect(() => loadFactoryConfig({
+      GITHUB_APP_ID: "1",
+      GITHUB_APP_PRIVATE_KEY: "test-private-key",
+      GITHUB_APP_CLIENT_ID: "client",
+      GITHUB_APP_CLIENT_SECRET: "client-secret",
+    }, process.cwd())).toThrow(/GitHub.*state secret/i);
+  });
+
   test("rejects a persistent operations runtime on the host-local sandbox provider", () => {
     expect(() => loadFactoryConfig({
       FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
       SANDBOX_PROVIDER: "local",
     }, process.cwd())).toThrow(/persistent-operations.*Platform/i);
+  });
+
+  test("rejects persistent operations when repository execution is disabled", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+    }, process.cwd())).toThrow(/persistent-operations.*sandbox/i);
   });
 
   test("rejects a persistent operations runtime without durable Factory state", () => {
@@ -57,6 +83,18 @@ describe("loadFactoryConfig", () => {
       DATABASE_URL: "postgres://factory",
       REDIS_URL: "redis://factory",
     }, process.cwd())).toThrow(/persistent-operations.*WorkOS/i);
+  });
+
+  test("rejects a persistent operations runtime without Platform identity", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      SANDBOX_PROVIDER: "platform",
+      DATABASE_URL: "postgres://factory",
+      REDIS_URL: "redis://factory",
+      WORKOS_API_KEY: "workos-key",
+      WORKOS_CLIENT_ID: "workos-client",
+      WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+    }, process.cwd())).toThrow(/persistent-operations.*Platform identity/i);
   });
 
   test("selects the hardened persistent operations profile with an approved runtime secret provider", () => {
