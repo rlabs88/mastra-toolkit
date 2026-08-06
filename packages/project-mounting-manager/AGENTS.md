@@ -26,17 +26,16 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── manager.ts, generation.ts, diagnostics.ts # reload and publication lifecycle
-├── specialists.ts, specialist-tool.ts         # mounted agent resources
-├── workflows.ts, mcp-config.ts                 # workflow and MCP discovery
-├── watcher.ts, ports.ts                        # observation and host boundaries
-└── index.ts                                    # package facade
+├── contract.ts  # ports, generation state, diagnostics, and sandbox runner contract
+├── discovery.ts # specialists, workflows, MCP validation, and resource watching
+├── manager.ts   # reload, publication, rollback, and specialist-tool lifecycle
+└── index.ts     # package facade
 ```
 
 - `manager.ts` owns reload serialization, activation, and rollback. Extract a candidate-generation object only when it gains an independent lifecycle or a second coordinator consumes it.
-- Keep host effects behind `ports.ts`. External mutations must be prepared, then committed or rolled back; publication remains explicit and last-known-good state remains available.
+- Keep host effects behind `contract.ts`. External mutations must be prepared, then committed or rolled back; publication remains explicit and last-known-good state remains available.
 - Extract workflow compilation or tool publication only when it gains independent caching, sandboxing, dependency, permission, versioning, audit, or reuse policy.
-- New consumers import from the package root. Existing root and subpath exports are compatibility surfaces and require an explicit migration before removal.
+- All consumers import from the package root; do not publish TypeScript subpath exports.
 
 ## Change boundaries
 

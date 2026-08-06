@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
@@ -11,18 +11,34 @@ import {
   ROLE_IDS,
   ROLES,
   ZEN_ROLE,
-  TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY,
+  TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
   composePrompt,
   createToolkitAgents,
 } from "../src/index.js";
 
 describe("canonical agent roles", () => {
-  test("exports Cortex, Flux, and Zen from separate role modules", () => {
+  test("exports the canonical Cortex, Flux, and Zen role definitions", () => {
     expect(ROLE_IDS).toEqual(["cortex", "flux", "zen"]);
     expect(ROLES).toEqual({ cortex: CORTEX_ROLE, flux: FLUX_ROLE, zen: ZEN_ROLE });
     expect(ROLES.cortex.name).toBe("Cortex");
     expect(ROLES.flux.name).toBe("Flux");
     expect(ROLES.zen.name).toBe("Zen");
+  });
+
+  test("publishes one root facade over four cohesive source modules", async () => {
+    const packageRoot = join(import.meta.dirname, "..");
+    const sourceEntries = await readdir(join(packageRoot, "src"), { withFileTypes: true });
+    const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+      exports?: Record<string, string>;
+    };
+
+    expect(sourceEntries.map(entry => entry.name).sort()).toEqual([
+      "agents.ts",
+      "index.ts",
+      "prompts.ts",
+      "roles.ts",
+    ]);
+    expect(manifest.exports).toEqual({ ".": "./src/index.ts" });
   });
 
   test.each(ROLE_IDS)("%s preserves the six prompt sections", id => {
@@ -68,7 +84,7 @@ describe("canonical agent roles", () => {
 
   test("keeps command_run available during delegated runs", async () => {
     const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
-    const delegatedContext = new RequestContext<unknown>([[TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY, true]]);
+    const delegatedContext = new RequestContext<unknown>([[TOOLKIT_DELEGATED_RUN_CONTEXT_KEY, true]]);
 
     expect(Object.keys(await agents.cortex.listTools())).toEqual(["command_run"]);
     expect(Object.keys(await agents.flux.listTools())).toEqual(["command_run", "adhd_run"]);
@@ -128,8 +144,9 @@ describe("canonical agent roles", () => {
     const sourceRoot = join(import.meta.dirname, "..", "src");
     const source = await Promise.all([
       "index.ts",
-      "factory.ts",
-      "prompt.ts",
+      "agents.ts",
+      "prompts.ts",
+      "roles.ts",
     ].map(path => readFile(join(sourceRoot, path), "utf8")));
 
     expect(source.join("\n")).not.toMatch(/agent-controller|createCodeModes|prepareAgentControllerMount/);

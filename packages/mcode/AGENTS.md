@@ -25,17 +25,15 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── config.ts, settings.ts, workspace.ts, recipe.ts
-├── subagents.ts, modes/             # Code projections and mode submodule
-├── mcp-adapter.ts, project-adapters.ts
-├── mount.ts                         # composition lifecycle
-├── local-runtime.ts                 # session and reusable TUI runtime
-└── index.ts                         # package facade
+├── recipe.ts  # versioned agents, modes, subagents, and capability projection
+├── project.ts # workspace, MCP lifecycle, and project host adapters
+├── runtime.ts # configuration, settings, mount lifecycle, session, and TUI
+└── index.ts   # package facade
 ```
 
 - Treat configuration, projection, project adaptation, runtime, and TUI as responsibility labels, not mandatory directories. Preserve the flat layout while each module remains cohesive.
 - Extract a submodule only when a concern has multiple cohesive implementations behind a narrow facade or needs an independently evolving test seam.
-- Import published Mastra APIs and package-root RLabs contracts. Existing exports are compatibility surfaces; replace wildcard or legacy exports only through an explicit consumer migration.
+- Import published Mastra APIs and package-root RLabs contracts. Publish TypeScript only through the package-root export.
 
 ## Change boundaries
 

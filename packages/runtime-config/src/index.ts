@@ -25,4 +25,4 @@ export {
   type RuntimeMode,
   type ToolkitHostId,
 } from "./environment.js";
-export { ProxyGateway, type ProxyGatewayConfig } from "./proxy-gateway.js";
+export { ProxyGateway, type ProxyGatewayConfig } from "./gateway.js";

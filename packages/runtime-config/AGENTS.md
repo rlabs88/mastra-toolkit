@@ -25,7 +25,7 @@ applies_to: ["**/*"]
 config/models.yaml     # canonical, secret-free model catalog
 src/profile.ts         # schema, loading, and host-neutral projections
 src/environment.ts     # environment resolution
-src/proxy-gateway.ts   # Mastra gateway construction
+src/gateway.ts         # Mastra gateway construction
 src/index.ts           # public facade
 test/                  # contract tests mirroring the modules above
 ```

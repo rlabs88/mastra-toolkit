@@ -1,8 +1,10 @@
-import { createDockerSandboxMachine } from "./docker.js";
-import { createLocalSandboxMachine } from "./local.js";
-import { createPlatformSandboxMachine } from "./platform.js";
-import { enforceSandboxRuntimeProfile } from "./profile-machine.js";
-import type { CloneableSandboxMachine, SandboxMachineOptions } from "./types.js";
+import type { CloneableSandboxMachine, SandboxMachineOptions } from "./contract.js";
+import {
+  createDockerSandboxMachine,
+  createLocalSandboxMachine,
+  createPlatformSandboxMachine,
+  enforceSandboxRuntimeProfile,
+} from "./providers.js";
 
 type SandboxProviderMachineFactory = (options: SandboxMachineOptions) => CloneableSandboxMachine;
 

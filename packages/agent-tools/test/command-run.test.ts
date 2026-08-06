@@ -8,7 +8,7 @@ import {
   parseCommands,
   resolveWorkspacePath,
   runCommandSchedule,
-} from "../src/command-run/index.js";
+} from "../src/index.js";
 
 describe("command_run", () => {
   test("validates batch bounds, steps, and timeouts", () => {

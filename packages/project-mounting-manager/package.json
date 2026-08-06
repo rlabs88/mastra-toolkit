@@ -5,15 +5,7 @@
   "type": "module",
   "description": "Transactional project specialist and workflow mounting for Mastra hosts",
   "exports": {
-    ".": "./src/index.ts",
-    "./diagnostics": "./src/diagnostics.ts",
-    "./generation": "./src/generation.ts",
-    "./manager": "./src/manager.ts",
-    "./mcp-config": "./src/mcp-config.ts",
-    "./ports": "./src/ports.ts",
-    "./specialists": "./src/specialists.ts",
-    "./watcher": "./src/watcher.ts",
-    "./workflows": "./src/workflows.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -1,6 +1,6 @@
 import type { McpManager } from "@mastra/code-sdk/mcp/index";
 import { describe, expect, test } from "vitest";
-import { CodeMcpAdapter } from "../src/mcp-adapter.js";
+import { CodeMcpAdapter } from "../src/index.js";
 
 describe("CodeMcpAdapter", () => {
   test("restores the active MCP generation when a later host commit rolls back", async () => {

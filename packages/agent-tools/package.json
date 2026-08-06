@@ -4,11 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./adhd": "./src/adhd.ts",
-    "./audit": "./src/audit.ts",
-    "./browser": "./src/browser.ts",
-    "./command-run": "./src/command-run/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",

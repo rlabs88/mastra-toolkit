@@ -1,10 +1,40 @@
-export * from "./diagnostics.js";
-export * from "./generation.js";
-export * from "./manager.js";
-export * from "./mcp-config.js";
-export * from "./ports.js";
-export * from "./sandbox-workflows.js";
-export * from "./specialist-tool.js";
-export * from "./specialists.js";
-export * from "./watcher.js";
-export * from "./workflows.js";
+export {
+  ProjectGenerationStore,
+  ProjectMountingDiagnostics,
+  SANDBOX_PROJECT_WORKFLOW_RESULT_PREFIX,
+  SANDBOX_PROJECT_WORKFLOW_RUNNER,
+  SANDBOX_PROJECT_WORKFLOW_STREAM_PREFIX,
+  emptyProjectGeneration,
+  type CurrentToolSnapshotPort,
+  type HostGenerationRegistration,
+  type McpLifecyclePort,
+  type ModelAliasResolverPort,
+  type PreparedHostRegistration,
+  type PreparedMcpGeneration,
+  type ProjectGenerationState,
+  type ProjectMountingDiagnostic,
+  type ProjectMountingDiagnosticListener,
+  type ProjectMountingDiagnosticPhase,
+  type StagedHostRegistrationPort,
+} from "./contract.js";
+export {
+  discoverProjectSpecialists,
+  discoverProjectWorkflows,
+  isProjectResourcePath,
+  loadProjectSpecialists,
+  loadProjectWorkflows,
+  validateMcpConfigFiles,
+  validateProjectMcpConfiguration,
+  watchProjectResources,
+  type ProjectResourceWatcher,
+  type ProjectResourceWatcherOptions,
+  type ProjectSpecialist,
+  type ProjectWorkflow,
+  type ProjectWorkflowAgentTool,
+} from "./discovery.js";
+export {
+  ProjectMountingManager,
+  createProjectSpecialistTool,
+  type ProjectMountingManagerOptions,
+  type ProjectMountingWatchOptions,
+} from "./manager.js";

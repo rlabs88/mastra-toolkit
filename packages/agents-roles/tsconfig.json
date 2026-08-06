@@ -4,7 +4,6 @@
     "baseUrl": ".",
     "paths": {
       "@rlabs/agent-tools": ["../agent-tools/src/index.ts"],
-      "@rlabs/agent-tools/*": ["../agent-tools/src/*"],
       "@rlabs/runtime-config": ["../runtime-config/src/index.ts"]
     }
   },

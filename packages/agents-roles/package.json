@@ -4,12 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./cortex": "./src/cortex/index.ts",
-    "./flux": "./src/flux/index.ts",
-    "./zen": "./src/zen/index.ts",
-    "./factory": "./src/factory.ts",
-    "./prompt": "./src/prompt.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",

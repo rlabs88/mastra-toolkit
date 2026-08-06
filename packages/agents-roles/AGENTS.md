@@ -16,7 +16,7 @@ applies_to: ["**/*"]
 
 ## Operating rules
 
-- Keep Cortex, Flux, and Zen in separate `prompt.ts`, `role.ts`, and `index.ts` module folders.
+- Keep Cortex, Flux, and Zen together behind the canonical role and prompt contracts.
 - Consume role-independent tools from `@rlabs/agent-tools` and model profiles from `@rlabs/runtime-config`.
 - Preserve public role IDs and the exact six-section prompt order.
 - Do not import Factory, MCode, GitHub, storage, scheduler, project-binding, credential, or API-client packages. Agent definitions may receive host-neutral tools, but never the clients or authority behind them.
@@ -26,17 +26,16 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── cortex|flux|zen/{prompt.ts,role.ts,index.ts} # canonical roles
-├── prompts/                                    # shared prompt sections
-├── prompt.ts                                   # six-section composition
-├── role.ts                                     # shared role contract
-├── factory.ts                                  # host-neutral agent construction
-└── index.ts                                    # package facade
+├── roles.ts    # role IDs, metadata, and model policy
+├── prompts.ts  # shared and role prompts plus six-section composition
+├── agents.ts   # host-neutral Mastra agent construction
+└── index.ts    # the only public TypeScript facade
 ```
 
-- Add a role only when it is a durable, canonical role shared across hosts. Add its folder, registry and factory wiring, exports, tests, and downstream projections in the same change.
-- Put genuinely shared prompt sections and role contracts in the shared modules; keep role-specific identity, policy, and defaults inside the role folder.
-- Keep `factory.ts` host-neutral: it constructs agents but is not Mastra Factory integration. Host-named request-context switches, controller lifecycle, and host-specific delegation policy belong downstream behind neutral capability contracts.
+- Add a role only when it is a durable, canonical role shared across hosts. Update its role policy, prompt, registry, agent wiring, tests, and downstream projections in the same change.
+- Keep the three roles together because their schema and public registry change as one contract. Keep prompts with their composition contract so text cannot drift from the six-section order.
+- Do not add TypeScript subpath exports or one-file role directories. Extract a fifth source module only after a responsibility gains an independent lifecycle or test seam.
+- Keep `agents.ts` host-neutral. Host-named request-context switches, controller lifecycle, and host-specific delegation policy belong downstream behind neutral capability contracts.
 
 ## Change boundaries
 

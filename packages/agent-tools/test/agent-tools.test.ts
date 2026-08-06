@@ -81,13 +81,11 @@ describe("agent tool policies", () => {
 
   test("does not import role, Code SDK, or Factory code", async () => {
     const source = await Promise.all([
-      "adhd.ts",
-      "audit.ts",
-      "browser.ts",
+      "capabilities.ts",
+      "command-run-contract.ts",
+      "command-run.ts",
       "index.ts",
     ].map(path => readFile(join(import.meta.dirname, "..", "src", path), "utf8")));
-    const commandRun = await readFile(join(import.meta.dirname, "..", "src", "command-run", "index.ts"), "utf8");
-
-    expect([...source, commandRun].join("\n")).not.toMatch(/agents-roles|code-sdk|factory/i);
+    expect(source.join("\n")).not.toMatch(/agents-roles|code-sdk|factory/i);
   });
 });

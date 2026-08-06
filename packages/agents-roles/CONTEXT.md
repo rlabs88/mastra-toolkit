@@ -13,7 +13,7 @@ Cortex, Flux, and Zen were defined together under root `src/agents`, where promp
 
 ## Present
 
-This private package owns the three role definitions, their exact prompt content and composition contract, and the factory that creates their Mastra agents. It consumes tool behavior and runtime model configuration through package exports and does not own host projections.
+This private package owns the three role definitions, their exact prompt content and composition contract, and the host-neutral factory that creates their Mastra agents. Four cohesive source modules group role policy, prompt policy, agent construction, and the single public facade without one-file role directories or implementation subpaths. It consumes tool behavior and runtime model configuration through package exports and does not own host projections.
 
 ## Future
 

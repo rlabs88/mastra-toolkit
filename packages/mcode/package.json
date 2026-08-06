@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./recipe": "./src/recipe.ts",
-    "./settings": "./src/settings.ts"
+    ".": "./src/index.ts"
   },
   "files": [
     "src"

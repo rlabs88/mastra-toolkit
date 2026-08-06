@@ -1,32 +1,9 @@
+import { type CurrentToolSnapshotPort, type HostGenerationRegistration, type McpLifecyclePort, type ModelAliasResolverPort, type PreparedHostRegistration, type PreparedMcpGeneration, type ProjectGenerationState, ProjectGenerationStore, type ProjectMountingDiagnostic, type ProjectMountingDiagnosticListener, type ProjectMountingDiagnosticPhase, ProjectMountingDiagnostics, type StagedHostRegistrationPort } from "./contract.js";
+import { discoverProjectSpecialists, discoverProjectWorkflows, type ProjectResourceWatcher, type ProjectSpecialist, type ProjectWorkflow, validateProjectMcpConfiguration, watchProjectResources } from "./discovery.js";
 import { Agent, type ToolsInput } from "@mastra/core/agent";
+import { createTool } from "@mastra/core/tools";
 import type { Workspace } from "@mastra/core/workspace";
-import {
-  ProjectMountingDiagnostics,
-  type ProjectMountingDiagnostic,
-  type ProjectMountingDiagnosticListener,
-  type ProjectMountingDiagnosticPhase,
-} from "./diagnostics.js";
-import {
-  ProjectGenerationStore,
-  type ProjectGenerationState,
-} from "./generation.js";
-import { validateProjectMcpConfiguration } from "./mcp-config.js";
-import type {
-  CurrentToolSnapshotPort,
-  HostGenerationRegistration,
-  McpLifecyclePort,
-  ModelAliasResolverPort,
-  PreparedHostRegistration,
-  PreparedMcpGeneration,
-  StagedHostRegistrationPort,
-} from "./ports.js";
-import { createProjectSpecialistTool } from "./specialist-tool.js";
-import { discoverProjectSpecialists, type ProjectSpecialist } from "./specialists.js";
-import {
-  watchProjectResources,
-  type ProjectResourceWatcher,
-} from "./watcher.js";
-import { discoverProjectWorkflows, type ProjectWorkflow } from "./workflows.js";
+import { z } from "zod";
 
 export interface ProjectMountingManagerOptions {
   readonly projectRoot: string;
@@ -245,4 +222,38 @@ function mergeToolSnapshots(...snapshots: readonly Readonly<ToolsInput>[]): Tool
     }
   }
   return merged;
+}
+
+const specialistInputSchema = z.object({
+  specialist: z.string().min(1),
+  task: z.string().min(1),
+});
+
+const specialistOutputSchema = z.object({
+  specialist: z.string(),
+  generation: z.number().int().nonnegative(),
+  text: z.string(),
+});
+
+export function createProjectSpecialistTool(
+  getGeneration: () => ProjectGenerationState,
+): ReturnType<typeof createTool> {
+  return createTool({
+    id: "project_specialist",
+    description: "Delegate a bounded task to a mounted project specialist.",
+    inputSchema: specialistInputSchema,
+    outputSchema: specialistOutputSchema,
+    execute: async (input, context) => {
+      const generation = getGeneration();
+      const specialist = generation.specialists.get(input.specialist);
+      if (!specialist) throw new Error(`Unknown project specialist: ${input.specialist}`);
+      if (specialist.disableModelInvocation) {
+        throw new Error(`Project specialist is disabled for model invocation: ${input.specialist}`);
+      }
+      const agent = generation.specialistAgents.get(input.specialist);
+      if (!agent) throw new Error(`Project specialist is unavailable: ${input.specialist}`);
+      const result = await agent.generate(input.task, { requestContext: context.requestContext });
+      return { specialist: specialist.id, generation: generation.id, text: result.text };
+    },
+  });
 }

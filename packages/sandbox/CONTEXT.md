@@ -13,7 +13,7 @@ Sandbox parsing and provider construction originally lived under the root applic
 
 ## Present
 
-This package owns the validated sandbox specification, its checked-in schema and default configuration, the canonical runtime-profile manifest, environment projection, the cloneable machine contract, remote runtime admission, narrow provider credentials, the three provider adapters, and the executable `command_run` Mastra tool. `command_run` resolves the active request workspace and executes only through its sandbox. Applications may select a workspace root and supply runtime-only Platform credentials.
+This package exposes one root facade over its validated contract, explicit machine router, consolidated provider implementations, and executable `command_run` tool. The contract includes the checked-in schema and defaults, canonical runtime profiles, environment projection, cloneable machine options, remote admission, and narrow provider credentials. `command_run` resolves the active request workspace and executes only through its sandbox. Applications may select a workspace root and supply runtime-only Platform credentials.
 
 ## Future
 
