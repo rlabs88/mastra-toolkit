@@ -50,6 +50,19 @@ describe("MCode sandbox deployment source", () => {
     expect(dockerfile.match(/COPY --from=mcode-runtime-build \/usr\/local\/bin\/mastra-toolkit-runtime-probe/g)).toHaveLength(2);
   });
 
+  test("restores the pinned AES admission ABI over the persistent operations overlay", async () => {
+    const dockerfile = await readFile(resolve(deploymentRoot, "Dockerfile"), "utf8");
+    const persistentTarget = dockerfile.slice(dockerfile.indexOf("FROM ${OPS_IMAGE} AS persistent-operations"));
+
+    expect(dockerfile).toContain("FROM ${AES_IMAGE} AS sandbox-admission-runtime");
+    expect(persistentTarget).toContain(
+      "COPY --from=sandbox-admission-runtime /usr/local/bin/sandbox-entrypoint /usr/local/bin/sandbox-entrypoint",
+    );
+    expect(persistentTarget).toContain(
+      "COPY --from=sandbox-admission-runtime /opt/agent-sandbox/cortex/provisioning.ts /opt/agent-sandbox/cortex/provisioning.ts",
+    );
+  });
+
   test("binds each image target to the only runtime profile its probe may admit", async () => {
     const [dockerfile, probe, profiles] = await Promise.all([
       readFile(resolve(deploymentRoot, "Dockerfile"), "utf8"),
