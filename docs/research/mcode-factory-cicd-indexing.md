@@ -57,7 +57,7 @@ The existing `prepareCodeSdkSettings()` is useful but is not yet the full constr
 
 ## Current official/upstream evidence
 
-The installed repository versions are `@mastra/code-sdk@1.1.1`, `@mastra/factory@0.3.0`, and `@mastra/core@1.55.0` ([root package.json:37-53](../../package.json#L37-L53)). On the research date, upstream commit `45a9147` published package metadata for `@mastra/code-sdk@1.1.3` and `@mastra/factory@0.5.0`, both from the same Mastra monorepo and both as public packages ([Code SDK package](https://github.com/mastra-ai/mastra/blob/45a914741f578754d79d8b7de7b4e4f304d8e14a/mastracode/sdk/package.json#L1-L44), [Factory package](https://github.com/mastra-ai/mastra/blob/45a914741f578754d79d8b7de7b4e4f304d8e14a/mastracode/factory/package.json#L1-L60)).
+At the time of this historical research snapshot, the installed repository versions were `@mastra/code-sdk@1.1.1`, `@mastra/factory@0.3.0`, and `@mastra/core@1.55.0`. The repository has since upgraded; version-sensitive statements in this note refer to the inspected snapshot. On the research date, upstream commit `45a9147` published package metadata for `@mastra/code-sdk@1.1.3` and `@mastra/factory@0.5.0`, both from the same Mastra monorepo and both as public packages ([Code SDK package](https://github.com/mastra-ai/mastra/blob/45a914741f578754d79d8b7de7b4e4f304d8e14a/mastracode/sdk/package.json#L1-L44), [Factory package](https://github.com/mastra-ai/mastra/blob/45a914741f578754d79d8b7de7b4e4f304d8e14a/mastracode/factory/package.json#L1-L60)).
 
 The relevant upstream facts are stable across the installed and inspected current source:
 

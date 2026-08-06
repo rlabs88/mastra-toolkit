@@ -8,7 +8,7 @@ import {
   TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY,
   TOOLKIT_WORKSPACE_CONTEXT_KEY,
 } from "@rlabs/agents-roles";
-import type { McodeCapabilityDescriptorV1, McodeRecipeV1 } from "@rlabs/mcode/recipe";
+import type { McodeCapabilityDescriptorV1, McodeRecipeV1 } from "@rlabs/mcode";
 import {
   createSandboxCommandRunTool,
   type SandboxCommandRunAuthorizationContext,

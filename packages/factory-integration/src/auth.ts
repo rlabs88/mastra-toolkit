@@ -1,5 +1,8 @@
 import { MastraAuthWorkos } from "@mastra/auth-workos";
-import { SimpleAuth } from "@mastra/core/server";
+import {
+  SimpleAuth,
+  type MastraAuthRequest,
+} from "@mastra/core/server";
 import type { FactoryConfig } from "./config.js";
 
 interface LocalFactoryUser {
@@ -21,7 +24,7 @@ class LocalFactoryAuth extends SimpleAuth<LocalFactoryUser> {
     super({ tokens: { local: LOCAL_USER } });
   }
 
-  override async authenticateToken(): Promise<LocalFactoryUser> {
+  override async authenticateToken(_token: string, _request: MastraAuthRequest): Promise<LocalFactoryUser> {
     return LOCAL_USER;
   }
 }

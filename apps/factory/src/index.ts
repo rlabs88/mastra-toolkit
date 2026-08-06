@@ -1,6 +1,6 @@
 import { Mastra } from "@mastra/core/mastra";
 import { createToolkitFactory, loadFactoryConfig } from "@rlabs/factory-integration";
-import { createMcodeRecipe } from "@rlabs/mcode/recipe";
+import { createMcodeRecipe } from "@rlabs/mcode";
 import { loadModelProfile, ProxyGateway } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 

@@ -13,7 +13,7 @@ import {
   type CommandRunTrace,
   type CommandTraceUpdate,
   type ParsedCommand,
-} from "@rlabs/agent-tools/command-run";
+} from "@rlabs/agent-tools";
 import { z } from "zod";
 
 const MAX_RESULT_CHARS = 20_000;

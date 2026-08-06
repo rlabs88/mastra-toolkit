@@ -19,6 +19,57 @@ const packageNames = [
 ] as const;
 
 describe("workspace ownership", () => {
+  test("pins one coherent stable Mastra release set across every runtime manifest", async () => {
+    const expected = {
+      "@mastra/factory": "0.5.0",
+      "@mastra/code-sdk": "1.1.3",
+      "mastracode": "0.32.6",
+      "@mastra/core": "1.57.0",
+      "mastra": "1.23.0",
+      "@mastra/libsql": "1.19.0",
+      "@mastra/pg": "1.19.0",
+      "@mastra/memory": "1.26.0",
+    } as const;
+    const manifestPaths = [
+      "package.json",
+      ...packageNames.map(name => `packages/${name}/package.json`),
+      "apps/factory/package.json",
+      "apps/mcode/package.json",
+      "apps/studio/package.json",
+      "deployment/mcode-sandbox/runtime/package.json",
+    ];
+    const requiredByManifest: Record<string, readonly (keyof typeof expected)[]> = {
+      "package.json": Object.keys(expected) as (keyof typeof expected)[],
+      "packages/agent-tools/package.json": ["@mastra/core"],
+      "packages/agents-roles/package.json": ["@mastra/core"],
+      "packages/factory-integration/package.json": [
+        "@mastra/factory",
+        "@mastra/code-sdk",
+        "@mastra/core",
+        "@mastra/libsql",
+        "@mastra/pg",
+      ],
+      "packages/mcode/package.json": ["@mastra/code-sdk", "@mastra/core", "mastracode"],
+      "packages/project-mounting-manager/package.json": ["@mastra/core"],
+      "packages/runtime-config/package.json": ["@mastra/core"],
+      "packages/sandbox/package.json": ["@mastra/core"],
+      "apps/factory/package.json": ["@mastra/core"],
+      "apps/studio/package.json": ["@mastra/core"],
+      "deployment/mcode-sandbox/runtime/package.json": ["@mastra/core"],
+    };
+
+    for (const manifestPath of manifestPaths) {
+      const manifest = JSON.parse(await readFile(join(root, manifestPath), "utf8")) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
+      for (const name of requiredByManifest[manifestPath] ?? []) {
+        expect(dependencies[name], `${manifestPath}: ${name}`).toBe(expected[name]);
+      }
+    }
+  });
+
   test("declares the approved applications and packages", async () => {
     const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
       workspaces?: string[];
@@ -134,6 +185,17 @@ describe("workspace ownership", () => {
       await rm(dataDirectory, { recursive: true, force: true });
     }
   }, 60_000);
+
+  test("keeps Factory on bundle-safe root workspace package boundaries", async () => {
+    const factorySources = [
+      await readTypeScriptTree(join(root, "apps/factory/src")),
+      await readTypeScriptTree(join(root, "packages/factory-integration/src")),
+      await readTypeScriptTree(join(root, "packages/sandbox/src")),
+    ].join("\n");
+
+    expect(factorySources).toContain('from "@rlabs/mcode"');
+    expect(factorySources).not.toMatch(/from "@rlabs\/[^"/]+\//);
+  });
 
   test("packs every canonical MCode recipe source", async () => {
     const { stdout } = await execFileAsync(

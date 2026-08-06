@@ -2,7 +2,7 @@
 
 Research date: 2026-08-04 (America/Vancouver)
 
-Installed versions inspected: `@mastra/code-sdk@1.1.1`, `@mastra/core@1.55.0`, `mastra@1.21.0`. The published SDK includes source maps with the original TypeScript; links below point to the shipped JavaScript or declarations so the findings are reproducible from this checkout.
+Historical research snapshot: the versions inspected at capture time were `@mastra/code-sdk@1.1.1`, `@mastra/core@1.55.0`, and `mastra@1.21.0`. The repository has since upgraded, so version-sensitive findings below describe that snapshot. The published SDK included source maps with the original TypeScript; links point to the shipped JavaScript or declarations that were inspected.
 
 Evidence labels used below:
 

@@ -4,8 +4,11 @@ import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
-import type { McodeRecipeV1 } from "@rlabs/mcode/recipe";
-import { prepareCodeSdkSettings, type A1ProviderOptions } from "@rlabs/mcode/settings";
+import {
+  prepareCodeSdkSettings,
+  type A1ProviderOptions,
+  type McodeRecipeV1,
+} from "@rlabs/mcode";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -64,6 +67,7 @@ export async function createToolkitFactory(config: FactoryConfig, recipe: McodeR
     factoryStorage,
     config.workos ? undefined : provider,
     controlPlaneDirectory,
+    !config.workos,
   );
 }
 
@@ -88,6 +92,7 @@ class ToolkitMastraFactory extends MastraFactory {
     private readonly factoryStorage: FactoryStorage,
     private readonly localA1Provider?: A1ProviderOptions,
     private readonly controlPlaneDirectory?: string,
+    private readonly loopbackOnly = false,
   ) {
     super(config);
   }
@@ -100,7 +105,9 @@ class ToolkitMastraFactory extends MastraFactory {
     if (this.localA1Provider) {
       await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
     }
-    return prepared;
+    return this.loopbackOnly
+      ? { ...prepared, server: { ...prepared.server, host: "127.0.0.1" } }
+      : prepared;
   }
 }
 
