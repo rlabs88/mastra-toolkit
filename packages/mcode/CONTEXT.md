@@ -13,7 +13,7 @@ The RLabs Mastra Code wrapper lived across `src/code`, agent mode files, Factory
 
 ## Present
 
-This package is the reusable adapter for RLabs' extended Mastra Code runtime. Its versioned recipe is the one construction seam for canonical agents, modes, native subagents, model settings input, and the secret-free capability descriptor consumed by local MCode and Factory. It projects canonical packages into published Code SDK and TUI APIs without owning the executable process or forking upstream source.
+This package is the reusable adapter for RLabs' extended Mastra Code runtime. Its versioned recipe is the one construction seam for canonical agents, modes, native subagents, tools, and the secret-free capability descriptor consumed by local MCode and Factory. Runtime defaults remain a separate `@rlabs/runtime-config` projection consumed directly by each host. MCode projects those canonical packages into published Code SDK and TUI APIs without owning the executable process or forking upstream source.
 
 ## Future
 

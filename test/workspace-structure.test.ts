@@ -123,8 +123,8 @@ describe("workspace ownership", () => {
     const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
 
     expect(source).toContain("createFactoryMcodeRecipe");
-    expect(source).toContain("createToolkitFactory(config, recipe)");
-    expect(source).toContain("models: profile.aliases");
+    expect(source).toContain("createToolkitFactory(config, recipe, runtimeDefaults)");
+    expect(source).toContain("models: runtimeDefaults.gateway.models");
     expect(source).toContain('process.once("SIGINT"');
     expect(source).toContain('process.once("SIGTERM"');
     expect(source).toContain("factory.shutdown()");

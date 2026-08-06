@@ -13,6 +13,7 @@ describe("canonical MCode recipe", () => {
     });
 
     expect(recipe.version).toBe(1);
+    expect(recipe).not.toHaveProperty("settings");
     expect(recipe.controller.modes.map(mode => mode.id)).toEqual([
       "cortex/scope",
       "cortex/build",
@@ -64,6 +65,26 @@ describe("canonical MCode recipe", () => {
     });
 
     expect(changed.capability.digest).not.toBe(original.capability.digest);
+  });
+
+  test("keeps runtime memory defaults outside the recipe capability and digest", () => {
+    const profile = loadModelProfile();
+    const changedMemory = structuredClone(profile);
+    changedMemory.memory.contextBudgetTokens = 180_000;
+    changedMemory.memory.observationThresholdTokens = 70_000;
+    const original = createMcodeRecipe({
+      profile,
+      commandRun: createSandboxCommandRunTool(),
+      browser: false,
+    });
+    const changed = createMcodeRecipe({
+      profile: changedMemory,
+      commandRun: createSandboxCommandRunTool(),
+      browser: false,
+    });
+
+    expect(original.capability.models).not.toHaveProperty("memory");
+    expect(changed.capability.digest).toBe(original.capability.digest);
   });
 
   test("changes the capability digest when canonical instructions change", () => {

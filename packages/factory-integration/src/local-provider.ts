@@ -5,6 +5,7 @@ import {
   getA1CodeModelId,
   type A1ProviderOptions,
 } from "@rlabs/mcode";
+import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 
 const LOCAL_ORG_ID = "local-org";
 const LOCAL_USER_ID = "local-user";
@@ -28,20 +29,43 @@ interface ModelPacksDomain {
   upsert(input: { orgId: string; userId: string; input: { name: string; models: ModeModels } }): Promise<unknown>;
 }
 
-type ModelMemorySettings = { observerModelId: string | null; reflectorModelId: string | null };
-type ModelMemorySettingsPatch = { observerModelId?: string; reflectorModelId?: string };
+type ModelMemorySettings = {
+  observerModelId: string | null;
+  reflectorModelId: string | null;
+  observationThreshold: number | null;
+  reflectionThreshold: number | null;
+};
+type ModelMemorySettingsPatch = {
+  observerModelId?: string;
+  reflectorModelId?: string;
+  observationThreshold?: number;
+  reflectionThreshold?: number;
+};
+type ModelMemorySettingsFillIfUnset = {
+  observerModelId?: string;
+  reflectorModelId?: string;
+};
 
 interface MemorySettingsDomain {
   ensureReady(): Promise<void>;
   get(input: { orgId: string; userId: string }): Promise<ModelMemorySettings | null>;
-  patch(input: { orgId: string; userId: string; patch: ModelMemorySettingsPatch }): Promise<unknown>;
+  patch(input: {
+    orgId: string;
+    userId: string;
+    patch: ModelMemorySettingsPatch;
+    fillIfUnset?: ModelMemorySettingsFillIfUnset;
+  }): Promise<unknown>;
 }
 
-export async function prepareLocalA1Provider(storage: FactoryStorage, provider: A1ProviderOptions): Promise<void> {
+export async function prepareLocalA1Provider(
+  storage: FactoryStorage,
+  provider: A1ProviderOptions,
+  defaults: RuntimeDefaultsV1,
+): Promise<void> {
   await seedProvider(storage, provider);
   await migrateProjectDefaults(storage);
   await migrateModelPacks(storage);
-  await migrateMemorySettings(storage);
+  await migrateMemorySettings(storage, defaults);
   await migrateThreadMetadata(storage);
 }
 
@@ -82,14 +106,36 @@ async function migrateModelPacks(storage: FactoryStorage): Promise<void> {
   }
 }
 
-async function migrateMemorySettings(storage: FactoryStorage): Promise<void> {
+async function migrateMemorySettings(storage: FactoryStorage, defaults: RuntimeDefaultsV1): Promise<void> {
   const domain = getDomain<MemorySettingsDomain>(storage, "memory-settings");
   await domain.ensureReady();
   const memory = await domain.get({ orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID });
-  if (!memory) return;
-  const patch = normalizeMemorySettings(memory);
-  if (Object.keys(patch).length > 0) {
-    await domain.patch({ orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID, patch });
+  const memoryDefaults = defaults.factory;
+  const normalizedModels = memory ? normalizeMemorySettings(memory) : {};
+  const patch: ModelMemorySettingsPatch = {
+    ...normalizedModels,
+    ...(memory?.observationThreshold == null
+      ? { observationThreshold: memoryDefaults.observationThreshold }
+      : {}),
+    ...(memory?.reflectionThreshold == null
+      ? { reflectionThreshold: memoryDefaults.reflectionThreshold }
+      : {}),
+  };
+  const fillIfUnset: ModelMemorySettingsFillIfUnset = {
+    ...(memory?.observerModelId == null
+      ? { observerModelId: memoryDefaults.observerModelId }
+      : {}),
+    ...(memory?.reflectorModelId == null
+      ? { reflectorModelId: memoryDefaults.reflectorModelId }
+      : {}),
+  };
+  if (Object.keys(patch).length > 0 || Object.keys(fillIfUnset).length > 0) {
+    await domain.patch({
+      orgId: LOCAL_ORG_ID,
+      userId: LOCAL_USER_ID,
+      patch,
+      ...(Object.keys(fillIfUnset).length > 0 ? { fillIfUnset } : {}),
+    });
   }
 }
 

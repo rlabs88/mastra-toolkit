@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import { LocalFilesystem, LocalSandbox, Workspace } from "@mastra/core/workspace";
 import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
-import { loadModelProfile } from "@rlabs/runtime-config";
+import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
 import { afterEach, describe, expect, test } from "vitest";
 import { createFactoryMcodeRecipe, ToolkitFactoryIntegration } from "../src/toolkit-integration.js";
@@ -306,10 +306,11 @@ describe("Factory project workflows", () => {
 });
 
 function factoryIntegration(): ToolkitFactoryIntegration {
+  const profile = loadModelProfile();
   return new ToolkitFactoryIntegration(createFactoryMcodeRecipe({
-    profile: loadModelProfile(),
+    profile,
     browser: false,
-  }));
+  }), resolveRuntimeDefaultsV1(profile));
 }
 
 function factorySessionRequestContext(): RequestContext {

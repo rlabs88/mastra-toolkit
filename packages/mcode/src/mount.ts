@@ -15,7 +15,12 @@ import {
   type PreparedMcpGeneration,
   type ProjectMountingDiagnostic,
 } from "@rlabs/project-mounting-manager";
-import { loadModelProfile, ProxyGateway, type ModelProfile } from "@rlabs/runtime-config";
+import {
+  loadModelProfile,
+  ProxyGateway,
+  resolveRuntimeDefaultsV1,
+  type ModelProfile,
+} from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import type { McodeConfig } from "./config.js";
 import { loadMcodeConfig } from "./config.js";
@@ -68,6 +73,7 @@ export async function prepareMcodeRuntime(
   const project = detectProject(resolve(options.cwd ?? process.cwd()));
   const environment = { ...(options.environment ?? process.env), WORKSPACE_ROOT: project.rootPath };
   const profile = options.profile ?? loadModelProfile();
+  const runtimeDefaults = resolveRuntimeDefaultsV1(profile);
   const config = options.config ?? loadMcodeConfig(environment, project.rootPath, profile);
   const workspace = createMcodeWorkspace(config.sandbox, {
     projectRoot: project.rootPath,
@@ -90,13 +96,13 @@ export async function prepareMcodeRuntime(
   const agents = recipe.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
-    profile,
-    provider: { baseUrl: config.runtime.proxy.baseUrl, models: profile.aliases },
+    defaults: runtimeDefaults,
+    provider: { baseUrl: config.runtime.proxy.baseUrl, models: runtimeDefaults.gateway.models },
   });
   setCustomProvidersSource(() => [createA1CodeProvider({
     baseUrl: config.runtime.proxy.baseUrl,
     ...(config.runtime.proxy.apiKey ? { apiKey: config.runtime.proxy.apiKey } : {}),
-    models: profile.aliases,
+    models: runtimeDefaults.gateway.models,
   })]);
 
   let controllerMount: Awaited<ReturnType<typeof prepareAgentControllerMount>>;
@@ -124,7 +130,7 @@ export async function prepareMcodeRuntime(
     agents: { ...(controllerMount.mastraArgs.agents ?? {}), ...agents },
     gateways: {
       ...(controllerMount.mastraArgs.gateways ?? {}),
-      proxy: new ProxyGateway({ ...config.runtime.proxy, models: profile.aliases }),
+      proxy: new ProxyGateway({ ...config.runtime.proxy, models: runtimeDefaults.gateway.models }),
     },
     workspace,
     backgroundTasks: {
