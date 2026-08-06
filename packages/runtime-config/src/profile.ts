@@ -55,6 +55,42 @@ const modelProfileSchema = z.object({
 
 export type ModelProfile = Readonly<z.infer<typeof modelProfileSchema>>;
 export type ModelAlias = ModelProfile["aliases"][number];
+export const RUNTIME_DEFAULTS_VERSION = 1 as const;
+
+type ModelRole = keyof ModelProfile["roles"];
+
+export interface RuntimeDefaultsV1 {
+  readonly version: typeof RUNTIME_DEFAULTS_VERSION;
+  readonly models: {
+    readonly providerId: string;
+    readonly aliases: readonly string[];
+    readonly roles: Readonly<Record<ModelRole, {
+      readonly alias: string;
+      readonly providerModelId: string;
+      readonly gatewayModelId: string;
+    }>>;
+  };
+  readonly memory: {
+    readonly contextWindowTokens: number;
+    readonly secondaryInputTokens: number;
+  };
+  readonly codeSdk: {
+    readonly activeModelId: string;
+    readonly observerModelId: string;
+    readonly reflectorModelId: string;
+    readonly observationThreshold: number;
+    readonly reflectionThreshold: number;
+  };
+  readonly factory: {
+    readonly observerModelId: string;
+    readonly reflectorModelId: string;
+    readonly observationThreshold: number;
+    readonly reflectionThreshold: number;
+  };
+  readonly gateway: {
+    readonly models: readonly string[];
+  };
+}
 
 export function loadModelProfile(path = DEFAULT_MODEL_PROFILE_PATH): ModelProfile {
   return Object.freeze(modelProfileSchema.parse(parse(readFileSync(path, "utf8"))));
@@ -71,13 +107,49 @@ export function resolveProxyGatewayModelId(profile: ModelProfile, alias: string)
   return `proxy/${resolveAliasModelId(profile, alias)}`;
 }
 
+export function resolveRuntimeDefaultsV1(profile: ModelProfile): RuntimeDefaultsV1 {
+  const aliases = Object.freeze([...profile.aliases]);
+  const roles = Object.freeze(Object.fromEntries(
+    Object.entries(profile.roles).map(([role, alias]) => [role, Object.freeze({
+      alias,
+      providerModelId: resolveAliasModelId(profile, alias),
+      gatewayModelId: resolveProxyGatewayModelId(profile, alias),
+    })]),
+  ) as RuntimeDefaultsV1["models"]["roles"]);
+  const observationThreshold = profile.memory.contextBudgetTokens;
+  const reflectionThreshold = profile.memory.contextBudgetTokens - profile.memory.observationThresholdTokens;
+  const observerModelId = roles.observer.providerModelId;
+  const reflectorModelId = roles.reflector.providerModelId;
+  const memoryDefaults = Object.freeze({
+    observerModelId,
+    reflectorModelId,
+    observationThreshold,
+    reflectionThreshold,
+  });
+
+  return Object.freeze({
+    version: RUNTIME_DEFAULTS_VERSION,
+    models: Object.freeze({ providerId: profile.provider.id, aliases, roles }),
+    memory: Object.freeze({
+      contextWindowTokens: profile.memory.contextBudgetTokens,
+      secondaryInputTokens: profile.memory.observationThresholdTokens,
+    }),
+    codeSdk: Object.freeze({
+      activeModelId: resolveAliasModelId(profile, profile.roles[profile.code.defaultAgent]),
+      ...memoryDefaults,
+    }),
+    factory: memoryDefaults,
+    gateway: Object.freeze({ models: aliases }),
+  });
+}
+
 export function resolveObservationalMemoryThresholds(profile: ModelProfile): Readonly<{
   observationThreshold: number;
   reflectionThreshold: number;
 }> {
-  const observationThreshold = profile.memory.observationThresholdTokens;
-  return {
-    observationThreshold,
-    reflectionThreshold: profile.memory.contextBudgetTokens - observationThreshold,
-  };
+  const defaults = resolveRuntimeDefaultsV1(profile);
+  return Object.freeze({
+    observationThreshold: defaults.codeSdk.observationThreshold,
+    reflectionThreshold: defaults.codeSdk.reflectionThreshold,
+  });
 }

@@ -4,21 +4,22 @@ import {
   createToolkitFactory,
   loadFactoryConfig,
 } from "@rlabs/factory-integration";
-import { loadModelProfile, ProxyGateway } from "@rlabs/runtime-config";
+import { loadModelProfile, ProxyGateway, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 
 const profile = loadModelProfile();
+const runtimeDefaults = resolveRuntimeDefaultsV1(profile);
 export const config = loadFactoryConfig(process.env, process.cwd(), profile);
 const recipe = createFactoryMcodeRecipe({
   profile,
   browser: false,
 });
-export const factory = await createToolkitFactory(config, recipe);
+export const factory = await createToolkitFactory(config, recipe, runtimeDefaults);
 const prepared = await factory.prepare();
 export const mastra = new Mastra({
   ...prepared,
   gateways: {
     ...(prepared.gateways ?? {}),
-    proxy: new ProxyGateway({ ...config.runtime.proxy, models: profile.aliases }),
+    proxy: new ProxyGateway({ ...config.runtime.proxy, models: runtimeDefaults.gateway.models }),
   },
   backgroundTasks: {
     enabled: true,

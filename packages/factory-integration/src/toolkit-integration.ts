@@ -18,6 +18,7 @@ import {
   createSandboxCommandRunTool,
   type SandboxCommandRunAuthorizationContext,
 } from "@rlabs/sandbox";
+import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { z } from "zod";
 import { createFactoryProjectWorkflowTool } from "./project-workflow.js";
 
@@ -44,7 +45,10 @@ const delegationOutputSchema = z.object({
 export class ToolkitFactoryIntegration implements FactoryIntegration {
   readonly id = "mastra-toolkit";
 
-  constructor(private readonly recipe: FactoryMcodeRecipe) {
+  constructor(
+    private readonly recipe: FactoryMcodeRecipe,
+    private readonly runtimeDefaults: RuntimeDefaultsV1,
+  ) {
     if (recipe[FACTORY_MCODE_RECIPE] !== true) {
       throw new Error("Factory MCode recipes must be created with createFactoryMcodeRecipe");
     }
@@ -70,6 +74,18 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       configured: true,
       agents: ["cortex", "flux", "zen"],
       recursionGuarded: true,
+      runtimeDefaults: {
+        source: "@rlabs/runtime-config/models.yaml",
+        version: this.runtimeDefaults.version,
+        factoryMemory: this.runtimeDefaults.factory,
+        persistedPrecedence: "memory-settings-over-startup-defaults",
+        fillPolicy: "null-fields-only",
+        thresholdFillAtomicity: "unsupported-upstream",
+        sessionDisplayConvergence: {
+          status: "upstream-blocked",
+          issue: "#129",
+        },
+      },
       mcode: factoryMcodeDiagnostics(capability),
     };
   }

@@ -38,10 +38,6 @@ export interface McodeCapabilityDescriptorV1 {
     readonly aliases: readonly string[];
     readonly modeDefaults: Readonly<Record<string, string>>;
     readonly subagentDefaults: Readonly<Record<string, string>>;
-    readonly memory: {
-      readonly contextBudgetTokens: number;
-      readonly observationThresholdTokens: number;
-    };
   };
   readonly defaults: {
     readonly mode: "cortex/build";
@@ -69,9 +65,6 @@ export interface McodeRecipeV1 {
     readonly command_run: McodeRecipeOptions["commandRun"];
   };
   readonly controller: McodeControllerIngredientsV1;
-  readonly settings: {
-    readonly profile: ModelProfile;
-  };
   readonly capability: McodeCapabilityDescriptorV1;
 }
 
@@ -84,7 +77,6 @@ export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV1 {
     agents,
     tools: { command_run: options.commandRun },
     controller: { modes, subagents },
-    settings: { profile: options.profile },
     capability: createMcodeCapabilityDescriptor(options.profile, modes, subagents),
   };
 }
@@ -114,7 +106,6 @@ export function createMcodeCapabilityDescriptor(
         typeof mode.defaultModelId === "string" ? [[mode.id, mode.defaultModelId]] : [])),
       subagentDefaults: Object.fromEntries(subagents.flatMap(subagent =>
         typeof subagent.defaultModelId === "string" ? [[subagent.id, subagent.defaultModelId]] : [])),
-      memory: profile.memory,
     },
     defaults: {
       mode: "cortex/build",

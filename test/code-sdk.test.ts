@@ -3,16 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CODE_MODE_IDS, createA1MastraCodeGateway, getA1CodeModelId, prepareCodeSdkSettings } from "@rlabs/mcode";
-import { loadModelProfile } from "@rlabs/runtime-config";
+import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 
 describe("Factory Code SDK configuration", () => {
   test("seeds A1 model defaults without persisting the proxy key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-"));
     const profile = loadModelProfile();
+    const defaults = resolveRuntimeDefaultsV1(profile);
     await prepareCodeSdkSettings({
       dataDirectory: directory,
-      profile,
-      provider: { baseUrl: "https://proxy.example.test/v1", models: profile.aliases },
+      defaults,
+      provider: { baseUrl: "https://proxy.example.test/v1", models: defaults.gateway.models },
     });
     const settings = await readFile(join(directory, "settings.json"), "utf8");
     const parsed = JSON.parse(settings);
@@ -27,7 +28,7 @@ describe("Factory Code SDK configuration", () => {
       flux: "proxy/a1-proxy/code-frontier-high",
       zen: "proxy/a1-proxy/code-frontier-high",
     });
-    expect(parsed.models.omObservationThreshold).toBe(60_000);
+    expect(parsed.models.omObservationThreshold).toBe(120_000);
     expect(parsed.models.omReflectionThreshold).toBe(60_000);
     expect(parsed.customProviders).toEqual([{
       name: "A1 Proxy",
@@ -75,7 +76,10 @@ describe("Factory Code SDK configuration", () => {
       preferences: { yolo: true, thinkingLevel: "xhigh" },
     }));
 
-    await prepareCodeSdkSettings({ dataDirectory: directory, profile: loadModelProfile() });
+    await prepareCodeSdkSettings({
+      dataDirectory: directory,
+      defaults: resolveRuntimeDefaultsV1(loadModelProfile()),
+    });
     const settings = JSON.parse(await readFile(join(directory, "settings.json"), "utf8"));
 
     expect(settings.models.modeDefaults["cortex/build"]).toBe("a1-proxy/code-frontier-max");
@@ -90,13 +94,35 @@ describe("Factory Code SDK configuration", () => {
     expect(settings.preferences).toMatchObject({ yolo: true, thinkingLevel: "xhigh" });
   });
 
+  test("projects distinct memory roles and budgets from a caller-supplied profile", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-memory-profile-"));
+    const profile = structuredClone(loadModelProfile());
+    profile.roles.observer = "fast-high";
+    profile.roles.reflector = "fast-low";
+    profile.memory.contextBudgetTokens = 150_000;
+    profile.memory.observationThresholdTokens = 40_000;
+
+    await prepareCodeSdkSettings({ dataDirectory: directory, defaults: resolveRuntimeDefaultsV1(profile) });
+    const settings = JSON.parse(await readFile(join(directory, "settings.json"), "utf8"));
+
+    expect(settings.models).toMatchObject({
+      observerModelOverride: "a1-proxy/fast-high",
+      reflectorModelOverride: "a1-proxy/fast-low",
+      omObservationThreshold: 150_000,
+      omReflectionThreshold: 110_000,
+    });
+  });
+
   test("rejects persisted raw upstream model IDs", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-raw-model-"));
     await writeFile(join(directory, "settings.json"), JSON.stringify({
       models: { modeDefaults: { "cortex/build": "openai/gpt-5.6-sol" } },
     }));
 
-    await expect(prepareCodeSdkSettings({ dataDirectory: directory, profile: loadModelProfile() }))
+    await expect(prepareCodeSdkSettings({
+      dataDirectory: directory,
+      defaults: resolveRuntimeDefaultsV1(loadModelProfile()),
+    }))
       .rejects.toThrow(/stable a1 model alias/i);
   });
 });

@@ -7,6 +7,7 @@ import {
   DEFAULT_ACTIVE_ALIAS,
   DEFAULT_OBSERVER_ALIAS,
   loadModelProfile,
+  resolveRuntimeDefaultsV1,
   resolveAliasModelId,
   resolveObservationalMemoryThresholds,
   resolveProxyGatewayModelId,
@@ -69,8 +70,116 @@ describe("model profile", () => {
 
   test("projects observation and reflection thresholds from one budget", () => {
     expect(resolveObservationalMemoryThresholds(loadModelProfile())).toEqual({
-      observationThreshold: 60_000,
+      observationThreshold: 120_000,
       reflectionThreshold: 60_000,
     });
   });
+
+  test("projects one immutable, secret-free runtime-default contract for every host", () => {
+    const profile = loadModelProfile();
+    const defaults = resolveRuntimeDefaultsV1(profile);
+
+    expect(defaults).toMatchObject({
+      version: 1,
+      models: {
+        providerId: "a1-proxy",
+        roles: {
+          cortex: {
+            alias: "code-frontier-high",
+            providerModelId: "a1-proxy/code-frontier-high",
+            gatewayModelId: "proxy/a1-proxy/code-frontier-high",
+          },
+          observer: {
+            alias: "code-workhorse-high",
+            providerModelId: "a1-proxy/code-workhorse-high",
+          },
+        },
+      },
+      memory: {
+        contextWindowTokens: 120_000,
+        secondaryInputTokens: 60_000,
+      },
+      codeSdk: {
+        activeModelId: "a1-proxy/code-frontier-high",
+        observerModelId: "a1-proxy/code-workhorse-high",
+        reflectorModelId: "a1-proxy/code-workhorse-high",
+        observationThreshold: 120_000,
+        reflectionThreshold: 60_000,
+      },
+      factory: {
+        observerModelId: "a1-proxy/code-workhorse-high",
+        reflectorModelId: "a1-proxy/code-workhorse-high",
+        observationThreshold: 120_000,
+        reflectionThreshold: 60_000,
+      },
+      gateway: { models: profile.aliases },
+    });
+    expect(Object.isFrozen(defaults)).toBe(true);
+    expect(Object.keys(defaults)).toEqual(["version", "models", "memory", "codeSdk", "factory", "gateway"]);
+    expect(Object.keys(defaults.models)).toEqual(["providerId", "aliases", "roles"]);
+    expect(Object.keys(defaults.models.roles)).toEqual([
+      "cortex",
+      "flux",
+      "zen",
+      "specialist",
+      "observer",
+      "reflector",
+    ]);
+    expect(Object.keys(defaults.models.roles.cortex)).toEqual([
+      "alias",
+      "providerModelId",
+      "gatewayModelId",
+    ]);
+    expect(Object.keys(defaults.memory)).toEqual(["contextWindowTokens", "secondaryInputTokens"]);
+    expect(Object.keys(defaults.codeSdk)).toEqual([
+      "activeModelId",
+      "observerModelId",
+      "reflectorModelId",
+      "observationThreshold",
+      "reflectionThreshold",
+    ]);
+    expect(Object.keys(defaults.factory)).toEqual([
+      "observerModelId",
+      "reflectorModelId",
+      "observationThreshold",
+      "reflectionThreshold",
+    ]);
+    expect(Object.keys(defaults.gateway)).toEqual(["models"]);
+    expectRecursivelyFrozen(defaults);
+    expect(JSON.stringify(defaults)).not.toMatch(/apiKey|secret|credential/i);
+  });
+
+  test("keeps the host-neutral secondary input distinct from derived host thresholds", () => {
+    const profile = structuredClone(loadModelProfile());
+    profile.memory.contextBudgetTokens = 150_000;
+    profile.memory.observationThresholdTokens = 40_000;
+
+    const defaults = resolveRuntimeDefaultsV1(profile);
+
+    expect(defaults.memory).toEqual({
+      contextWindowTokens: 150_000,
+      secondaryInputTokens: 40_000,
+    });
+    expect(defaults.codeSdk).toMatchObject({
+      observationThreshold: 150_000,
+      reflectionThreshold: 110_000,
+    });
+    expect(defaults.factory).toMatchObject({
+      observationThreshold: 150_000,
+      reflectionThreshold: 110_000,
+    });
+  });
+
+  test("derives the active Code SDK model from the profile's declared default agent", () => {
+    const profile = structuredClone(loadModelProfile());
+    profile.roles.cortex = "fast-high";
+
+    expect(resolveRuntimeDefaultsV1(profile).codeSdk.activeModelId).toBe("a1-proxy/fast-high");
+  });
 });
+
+function expectRecursivelyFrozen(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const nested of Object.values(value)) expectRecursivelyFrozen(nested);
+}

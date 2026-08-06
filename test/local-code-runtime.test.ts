@@ -43,7 +43,7 @@ describe("local Mastra Code runtime", () => {
     expect(runtime.controller.listModes().map(mode => mode.id)).toEqual(CODE_MODE_IDS);
     expect(runtime.session.mode.get()).toBe("cortex/build");
     expect(runtime.session.state.get()).toMatchObject({
-      observationThreshold: 60_000,
+      observationThreshold: 120_000,
       reflectionThreshold: 60_000,
     });
     expect(runtime.mastra.getAgent("cortex").id).toBe(runtime.agents.cortex.id);
