@@ -67,7 +67,7 @@ export async function createToolkitFactory(config: FactoryConfig, recipe: McodeR
     factoryStorage,
     config.workos ? undefined : provider,
     controlPlaneDirectory,
-    !config.workos,
+    config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
   );
 }
 
@@ -92,7 +92,7 @@ class ToolkitMastraFactory extends MastraFactory {
     private readonly factoryStorage: FactoryStorage,
     private readonly localA1Provider?: A1ProviderOptions,
     private readonly controlPlaneDirectory?: string,
-    private readonly loopbackOnly = false,
+    private readonly localServerHost?: string,
   ) {
     super(config);
   }
@@ -105,10 +105,14 @@ class ToolkitMastraFactory extends MastraFactory {
     if (this.localA1Provider) {
       await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
     }
-    return this.loopbackOnly
-      ? { ...prepared, server: { ...prepared.server, host: "127.0.0.1" } }
+    return this.localServerHost
+      ? { ...prepared, server: { ...prepared.server, host: this.localServerHost } }
       : prepared;
   }
+}
+
+function loopbackServerHost(publicUrl: string): string {
+  return new URL(publicUrl).hostname.replace(/^\[|\]$/g, "");
 }
 
 let workingDirectoryQueue: Promise<void> = Promise.resolve();

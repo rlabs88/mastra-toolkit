@@ -85,7 +85,7 @@ describe("single-project Factory composition", () => {
 
     try {
       const prepared = await factory.prepare();
-      expect(prepared.server?.host).toBe("127.0.0.1");
+      expect(prepared.server?.host).toBe("localhost");
       await expect(access(join(dataDirectory, "factory.db"))).resolves.toBeUndefined();
       const route = (prepared.server?.apiRoutes ?? []).find(
         (candidate): candidate is Extract<ApiRoute, { handler: unknown }> =>
