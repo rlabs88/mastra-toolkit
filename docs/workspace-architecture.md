@@ -21,7 +21,7 @@ mastra-toolkit/
 │   ├── mcode/                    # Code SDK/controller/TUI adapter
 │   └── factory-integration/      # Factory auth, storage, and integrations
 ├── deployment/
-│   ├── mcode-sandbox/            # target intent; build assets not yet added
+│   ├── mcode-sandbox/            # activated Factory runtime image source and probes
 │   └── studio-server/            # target intent; build assets not yet added
 ├── docs/
 └── test/                         # cross-package and application contracts
@@ -77,7 +77,7 @@ The local MCode path is serverless in the transport sense: the controller, workf
 
 ## Sandbox and deployment
 
-One checkout or worktree maps to one workspace root and one sandbox context. `packages/sandbox` is runtime code; `deployment/*` describes how concrete runtime targets will be built and operated. The current deployment targets intentionally contain only checkpoints because no toolkit-owned image or server recipe has yet been approved.
+One checkout or worktree maps to one workspace root and one sandbox context. `packages/sandbox` is runtime code; `deployment/*` describes how concrete runtime targets are built and operated. `deployment/mcode-sandbox` is activated for Factory repository execution and owns the two profile images plus their native validation probes. `deployment/studio-server` remains an inactive checkpoint.
 
 Ephemeral Factory environments receive short-lived task credentials. Persistent operations environments may receive scoped deployment credentials only at runtime with audit and rotation. Neither model YAML, sandbox specifications, images, nor repository settings may contain resolved secrets.
 

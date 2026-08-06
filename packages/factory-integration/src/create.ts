@@ -5,7 +5,11 @@ import { RedisStreamsPubSub } from "@mastra/redis-streams";
 import type { ToolkitAgents } from "@rlabs/agents-roles";
 import { prepareCodeSdkSettings, type A1ProviderOptions } from "@rlabs/mcode";
 import { loadModelProfile } from "@rlabs/runtime-config";
-import { createSandboxMachine } from "@rlabs/sandbox";
+import {
+  createSandboxMachine,
+  type CloneableSandboxMachine,
+  type SandboxMachineOptions,
+} from "@rlabs/sandbox";
 import { createFactoryAuth } from "./auth.js";
 import type { FactoryConfig } from "./config.js";
 import { prepareLocalA1Provider } from "./local-provider.js";
@@ -41,12 +45,7 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
     integrations: [new ToolkitFactoryIntegration(agents), ...(github ? [github] : [])],
     ...(config.sandbox ? {
       sandbox: {
-        machine: createSandboxMachine({
-          provider: config.sandbox.provider,
-          workspaceRoot: config.sandbox.workspaceRoot,
-          specification: config.sandbox.specification,
-          ...(config.sandbox.platform ? { platform: config.sandbox.platform } : {}),
-        }),
+        machine: createFactorySandboxMachine(config),
         workdir: config.sandbox.provider === "local"
           ? config.sandbox.workspaceRoot
           : config.sandbox.workdir,
@@ -62,6 +61,21 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
     factoryStorage,
     config.workos ? undefined : provider,
   );
+}
+
+export function createFactorySandboxMachine(
+  config: FactoryConfig,
+  machineFactory: (options: SandboxMachineOptions) => CloneableSandboxMachine = createSandboxMachine,
+): CloneableSandboxMachine {
+  if (!config.sandbox) throw new Error("Factory repository execution has no configured sandbox machine");
+  return machineFactory({
+    provider: config.sandbox.provider,
+    workspaceRoot: config.sandbox.workspaceRoot,
+    specification: config.sandbox.specification,
+    runtimeProfile: config.projectRuntime.profile,
+    ...(config.sandbox.runtimeImage ? { runtimeImage: config.sandbox.runtimeImage } : {}),
+    ...(config.sandbox.platform ? { platform: config.sandbox.platform } : {}),
+  });
 }
 
 class ToolkitMastraFactory extends MastraFactory {

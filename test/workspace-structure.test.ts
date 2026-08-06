@@ -74,11 +74,9 @@ describe("workspace ownership", () => {
     expect(source).not.toContain("...agents");
   });
 
-  test("keeps deployment targets documentation-only", async () => {
-    for (const target of ["mcode-sandbox", "studio-server"]) {
-      const entries = await readdir(join(root, "deployment", target));
-      expect(entries.sort()).toEqual(["AGENTS.md", "CONTEXT.md"]);
-    }
+  test("keeps inactive deployment targets documentation-only", async () => {
+    const entries = await readdir(join(root, "deployment", "studio-server"));
+    expect(entries.sort()).toEqual(["AGENTS.md", "CONTEXT.md"]);
   });
 
   test("does not retain legacy root boundaries", async () => {

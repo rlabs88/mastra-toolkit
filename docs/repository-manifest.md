@@ -14,7 +14,7 @@ This manifest is the routing table for changes. A package owns a reusable contra
 | `apps/mcode` | CLI process and exit lifecycle | `mcode` | command parsing or executable UX changes |
 | `apps/studio` | Studio/server composition | `mcode` prepared runtime | Studio transport or server lifecycle changes |
 | `apps/factory` | Factory composition root | `factory-integration`, roles | Factory process bootstrap changes |
-| `deployment/mcode-sandbox` | local/persistent MCode target intent | approved application artifacts | a concrete MCode image or runtime delivery is approved |
+| `deployment/mcode-sandbox` | ephemeral-development and persistent-operations image source, profile identity, runtime probes, native validation, rollback policy | immutable AES/OPS bases and canonical sandbox profiles | Factory workspace packaging or its deployment evidence changes |
 | `deployment/studio-server` | central Studio target intent | approved application artifacts | a concrete Studio server delivery is approved |
 
 ## Dependency rules

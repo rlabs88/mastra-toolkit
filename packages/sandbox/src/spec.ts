@@ -2,14 +2,10 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { immutableSandboxImageSchema } from "./image.js";
 
 export const DEFAULT_SANDBOX_SPEC_PATH = fileURLToPath(
   new URL("../config/sandbox.config.json", import.meta.url),
-);
-
-const immutableImageSchema = z.string().regex(
-  /^[a-z0-9.-]+(?::[0-9]+)?\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/,
-  "Docker image must use an immutable sha256 digest",
 );
 
 const sandboxSpecSchema = z.object({
@@ -28,7 +24,7 @@ const sandboxSpecSchema = z.object({
     workdir: z.string().startsWith("/"),
     entrypointProfile: z.object({
       id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-      image: immutableImageSchema,
+      image: immutableSandboxImageSchema,
       platform: z.literal("linux/arm64"),
       abi: z.literal("sandbox-entrypoint/v1"),
       command: z.tuple([z.literal("serve")]),

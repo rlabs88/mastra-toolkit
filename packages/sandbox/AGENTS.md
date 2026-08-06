@@ -18,6 +18,7 @@ applies_to: ["**/*"]
 - Keep Local, Docker, and Platform adapters substitutable through the cloneable sandbox-machine contract.
 - Keep provider selection explicit and fail when required provider identity is absent.
 - Keep checked-in sandbox configuration free of credentials, host user state, and mutable image tags.
+- Keep runtime profile names, lifecycle, package layers, and credential classes canonical in `config/runtime-profiles.json`; deployment targets must consume that manifest rather than copy it.
 
 ## Structure and extension
 

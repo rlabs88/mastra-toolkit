@@ -1,7 +1,48 @@
 import { describe, expect, test } from "vitest";
+import type { CloneableSandboxMachine, SandboxMachineOptions } from "@rlabs/sandbox";
 import { loadFactoryConfig } from "../src/config.js";
+import { createFactorySandboxMachine } from "../src/create.js";
 
 describe("loadFactoryConfig", () => {
+  test("fails closed when Docker repository execution has no profile runtime image", () => {
+    expect(() => loadFactoryConfig({
+      SANDBOX_PROVIDER: "docker",
+      CLI_PROXY_API_KEY: "test-only-key",
+    }, process.cwd())).toThrow(/Docker.*SANDBOX_RUNTIME_IMAGE/i);
+  });
+
+  test("projects the selected runtime image and profile into Factory's machine construction", () => {
+    const runtimeImage = "ghcr.io/rlabs88/toolkit/mcode-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const config = loadFactoryConfig({
+      SANDBOX_PROVIDER: "docker",
+      SANDBOX_RUNTIME_IMAGE: runtimeImage,
+      FACTORY_PROJECT_RUNTIME_PROFILE: "ephemeral-development",
+      CLI_PROXY_API_KEY: "test-only-key",
+    }, process.cwd());
+    if (!config.sandbox) throw new Error("expected configured sandbox");
+    let captured: SandboxMachineOptions | undefined;
+    let fixture: CloneableSandboxMachine;
+    fixture = {
+      id: "factory-fixture",
+      name: "FactoryFixture",
+      provider: "docker" as const,
+      status: "pending" as const,
+      clone: () => fixture,
+    };
+
+    const machine = createFactorySandboxMachine(
+      { ...config, sandbox: config.sandbox },
+      options => { captured = options; return fixture; },
+    );
+
+    expect(machine).toBe(fixture);
+    expect(captured).toMatchObject({
+      provider: "docker",
+      runtimeImage,
+      runtimeProfile: "ephemeral-development",
+    });
+  });
+
   test("composes host-neutral runtime and sandbox configuration", () => {
     const config = loadFactoryConfig({
       MASTRA_TOOLKIT_MODE: "factory",

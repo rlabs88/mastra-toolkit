@@ -1,9 +1,27 @@
 import { createDockerSandboxMachine } from "./docker.js";
 import { createLocalSandboxMachine } from "./local.js";
 import { createPlatformSandboxMachine } from "./platform.js";
+import { enforceSandboxRuntimeProfile } from "./profile-machine.js";
 import type { CloneableSandboxMachine, SandboxMachineOptions } from "./types.js";
 
-export function createSandboxMachine(options: SandboxMachineOptions): CloneableSandboxMachine {
+type SandboxProviderMachineFactory = (options: SandboxMachineOptions) => CloneableSandboxMachine;
+
+export function createSandboxMachine(
+  options: SandboxMachineOptions,
+): CloneableSandboxMachine {
+  return createSandboxMachineWithProvider(options, createProviderMachine);
+}
+
+export function createSandboxMachineWithProvider(
+  options: SandboxMachineOptions,
+  providerFactory: SandboxProviderMachineFactory,
+): CloneableSandboxMachine {
+  const machine = providerFactory(options);
+  if (options.provider === "local" || !options.runtimeProfile) return machine;
+  return enforceSandboxRuntimeProfile(machine, options.runtimeProfile, options.runtimeImage);
+}
+
+function createProviderMachine(options: SandboxMachineOptions): CloneableSandboxMachine {
   switch (options.provider) {
     case "local":
       return createLocalSandboxMachine(options);

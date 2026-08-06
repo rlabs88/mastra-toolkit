@@ -25,21 +25,34 @@ applies_to: ["**/*"]
 ```text
 deployment/mcode-sandbox/
 ├── AGENTS.md
-└── CONTEXT.md
+├── CONTEXT.md
+├── Dockerfile
+├── Dockerfile.dockerignore
+├── README.md
+├── build-validate.sh
+├── credential-guard.sh
+├── runtime/
+│   ├── package-lock.json
+│   └── package.json
+├── runtime-probe.sh
+└── verify-image.sh
 ```
 
-- Keep this checkpoint documentation-only until an approved activation issue names the Factory consumer and operator, entrypoint ABI, canonical-image decision, credential classes, publisher and build pipeline, rollout and health checks, rollback behavior, and required structural-test amendment.
-- When activated, add only the files required by that concrete delivery slice. Reference package and application contracts instead of copying their implementation or configuration.
+- Issue #119 activated this boundary for the Factory sandbox fleet. Keep its consumer, package layers, entrypoint ABI, credential classes, operator, health checks, and rollback contract synchronized with `README.md` and the issue record.
+- Add only files required by the activated delivery slice. Reference package and application contracts instead of copying their implementation or configuration.
 - Require immutable provenance, runtime-only secrets, least privilege, no Docker socket or host credentials, and rollback to a known-good release including persistent-state and in-flight-work handling.
 
 ## Change boundaries
 
-- Do not add deployment implementation until the activation contract above is complete.
 - Never bake credentials, host state, Docker socket access, or user configuration into an image.
+- Keep the AES and OPS bases immutable. Version changes must update their digest evidence and validate both final profiles.
+- Consume profile names, package layers, lifecycle, and credential policy from `packages/sandbox/config/runtime-profiles.json`; do not add another deployment-owned profile manifest.
+- Hosted CI may validate source contracts but must not publish these native ARM64 images. Publication and live reconciliation remain OPS-owned actions.
 
 ## Validation
 
-- Future changes must validate the sandbox ABI, image provenance, secret scan, and Factory consumer contract.
+- Validate the sandbox ABI, installed profile and selected image identity, clean-source provenance, secret scan, real Mastra workflow execution, and Factory consumer contract.
+- Run `./build-validate.sh` on a native ARM64 host with Docker before publishing either image.
 
 ## Handoff
 

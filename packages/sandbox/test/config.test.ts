@@ -3,6 +3,24 @@ import { describe, expect, test } from "vitest";
 import { DEFAULT_SANDBOX_SPEC_PATH, loadSandboxConfig } from "../src/index.js";
 
 describe("loadSandboxConfig", () => {
+  test("accepts an immutable runtime image selected by the deployment", () => {
+    const config = loadSandboxConfig({
+      SANDBOX_PROVIDER: "docker",
+      SANDBOX_RUNTIME_IMAGE: "ghcr.io/rlabs88/toolkit/mcode-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }, process.cwd());
+
+    expect(config.runtimeImage).toBe(
+      "ghcr.io/rlabs88/toolkit/mcode-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+  });
+
+  test("rejects a mutable deployment runtime image", () => {
+    expect(() => loadSandboxConfig({
+      SANDBOX_PROVIDER: "docker",
+      SANDBOX_RUNTIME_IMAGE: "ghcr.io/rlabs88/toolkit/mcode-sandbox:latest",
+    }, process.cwd())).toThrow(/immutable.*digest/i);
+  });
+
   test("projects package defaults into a narrow sandbox config", () => {
     const config = loadSandboxConfig({}, resolve("packages/sandbox/test"));
 
