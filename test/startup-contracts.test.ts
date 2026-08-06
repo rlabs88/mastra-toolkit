@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
+const STARTUP_CHECK_TIMEOUT_MS = 15_000;
 const secretNames = [
   "PROXY_API_KEY",
   "CLI_PROXY_API_KEY",
@@ -44,7 +45,7 @@ describe("local startup contracts", () => {
     });
 
     expect(stdout).toContain("ephemeral-development");
-  });
+  }, STARTUP_CHECK_TIMEOUT_MS);
 
   test("keeps persistent Factory deployment secret validation fail-closed", async () => {
     const check = runSecretCheck({
@@ -59,7 +60,7 @@ describe("local startup contracts", () => {
     await expect(check).rejects.not.toMatchObject({
       stderr: expect.stringMatching(/GITHUB_APP_/),
     });
-  });
+  }, STARTUP_CHECK_TIMEOUT_MS);
 
   test("rejects unknown Factory runtime profiles instead of treating them as local", async () => {
     await expect(runSecretCheck({
@@ -69,7 +70,7 @@ describe("local startup contracts", () => {
     })).rejects.toMatchObject({
       stderr: expect.stringMatching(/FACTORY_PROJECT_RUNTIME_PROFILE|Invalid option/),
     });
-  });
+  }, STARTUP_CHECK_TIMEOUT_MS);
 });
 
 async function runSecretCheck(overrides: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string }> {

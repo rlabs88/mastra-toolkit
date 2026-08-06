@@ -7,7 +7,6 @@ import { RedisStreamsPubSub } from "@mastra/redis-streams";
 import {
   prepareCodeSdkSettings,
   type A1ProviderOptions,
-  type McodeRecipeV1,
 } from "@rlabs/mcode";
 import {
   createSandboxMachine,
@@ -18,9 +17,9 @@ import { createFactoryAuth } from "./auth.js";
 import type { FactoryConfig } from "./config.js";
 import { prepareLocalA1Provider } from "./local-provider.js";
 import { createFactoryStorage } from "./storage.js";
-import { ToolkitFactoryIntegration } from "./toolkit-integration.js";
+import { ToolkitFactoryIntegration, type FactoryMcodeRecipe } from "./toolkit-integration.js";
 
-export async function createToolkitFactory(config: FactoryConfig, recipe: McodeRecipeV1): Promise<MastraFactory> {
+export async function createToolkitFactory(config: FactoryConfig, recipe: FactoryMcodeRecipe): Promise<MastraFactory> {
   const profile = recipe.settings.profile;
   const provider = {
     baseUrl: config.runtime.proxy.baseUrl,
@@ -65,6 +64,7 @@ export async function createToolkitFactory(config: FactoryConfig, recipe: McodeR
   return new ToolkitMastraFactory(
     factoryConfig,
     factoryStorage,
+    recipe.agents,
     config.workos ? undefined : provider,
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
@@ -90,6 +90,7 @@ class ToolkitMastraFactory extends MastraFactory {
   constructor(
     config: MastraFactoryConfig,
     private readonly factoryStorage: FactoryStorage,
+    private readonly toolkitAgents: FactoryMcodeRecipe["agents"],
     private readonly localA1Provider?: A1ProviderOptions,
     private readonly controlPlaneDirectory?: string,
     private readonly localServerHost?: string,
@@ -105,9 +106,13 @@ class ToolkitMastraFactory extends MastraFactory {
     if (this.localA1Provider) {
       await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
     }
-    return this.localServerHost
-      ? { ...prepared, server: { ...prepared.server, host: this.localServerHost } }
-      : prepared;
+    return {
+      ...prepared,
+      agents: { ...(prepared.agents ?? {}), ...this.toolkitAgents },
+      ...(this.localServerHost
+        ? { server: { ...prepared.server, host: this.localServerHost } }
+        : {}),
+    };
   }
 }
 

@@ -1,14 +1,15 @@
 import { Mastra } from "@mastra/core/mastra";
-import { createToolkitFactory, loadFactoryConfig } from "@rlabs/factory-integration";
-import { createMcodeRecipe } from "@rlabs/mcode";
+import {
+  createFactoryMcodeRecipe,
+  createToolkitFactory,
+  loadFactoryConfig,
+} from "@rlabs/factory-integration";
 import { loadModelProfile, ProxyGateway } from "@rlabs/runtime-config";
-import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 const profile = loadModelProfile();
 export const config = loadFactoryConfig(process.env, process.cwd(), profile);
-const recipe = createMcodeRecipe({
+const recipe = createFactoryMcodeRecipe({
   profile,
-  commandRun: createSandboxCommandRunTool(),
   browser: false,
 });
 export const factory = await createToolkitFactory(config, recipe);
@@ -17,7 +18,7 @@ export const mastra = new Mastra({
   ...prepared,
   gateways: {
     ...(prepared.gateways ?? {}),
-    proxy: new ProxyGateway(config.runtime.proxy),
+    proxy: new ProxyGateway({ ...config.runtime.proxy, models: profile.aliases }),
   },
   backgroundTasks: {
     enabled: true,
@@ -31,3 +32,11 @@ export const mastra = new Mastra({
 });
 
 await factory.finalize();
+
+const stopFactory = () => {
+  void factory.shutdown().catch(error => {
+    console.error("Factory shutdown failed", error);
+  });
+};
+process.once("SIGINT", stopFactory);
+process.once("SIGTERM", stopFactory);
