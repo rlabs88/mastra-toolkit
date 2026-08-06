@@ -2,7 +2,7 @@
 
 Research date: **2026-08-04** (America/Vancouver)
 
-Installed code inspected: **`@mastra/code-sdk@1.1.1`** with **`@mastra/core@1.55.0`**, pinned by this repository's `package.json` / `package-lock.json`. “Official docs” below means the current first-party [Mastra Code configuration](https://code.mastra.ai/configuration), [customization](https://code.mastra.ai/customization), and [API reference](https://code.mastra.ai/reference). “Installed code” means the exact published files under `node_modules/@mastra/code-sdk/dist` in this checkout.
+Historical research snapshot: the code inspected at capture time was **`@mastra/code-sdk@1.1.1`** with **`@mastra/core@1.55.0`**. The repository has since upgraded, so every version-sensitive statement below describes that inspected snapshot rather than the current lockfile. “Official docs” below means the first-party [Mastra Code configuration](https://code.mastra.ai/configuration), [customization](https://code.mastra.ai/customization), and [API reference](https://code.mastra.ai/reference) available during the research. “Installed code” means the exact published files inspected under `node_modules/@mastra/code-sdk/dist`.
 
 ## Short answer
 

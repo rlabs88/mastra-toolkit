@@ -4,7 +4,7 @@ import {
   A1_CODE_PROVIDER_NAME,
   getA1CodeModelId,
   type A1ProviderOptions,
-} from "@rlabs/mcode/settings";
+} from "@rlabs/mcode";
 
 const LOCAL_ORG_ID = "local-org";
 const LOCAL_USER_ID = "local-user";
@@ -96,6 +96,7 @@ async function migrateMemorySettings(storage: FactoryStorage): Promise<void> {
 async function migrateThreadMetadata(storage: FactoryStorage): Promise<void> {
   const domain = await storage.getMastraStorage().getStore("memory");
   if (!domain) return;
+  await domain.init();
   const { threads } = await domain.listThreads({ perPage: false });
   for (const thread of threads) {
     const metadata = normalizeModelReferences(thread.metadata ?? {});

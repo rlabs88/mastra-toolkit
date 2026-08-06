@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@mastra/core": "1.55.0",
+    "@mastra/core": "1.57.0",
     "@rlabs/factory-integration": "*",
     "@rlabs/mcode": "*",
     "@rlabs/runtime-config": "*",

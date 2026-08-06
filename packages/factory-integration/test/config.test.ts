@@ -89,6 +89,13 @@ describe("loadFactoryConfig", () => {
     expect(config.projectRuntime.profile).toBe("ephemeral-development");
   });
 
+  test("rejects a non-loopback public origin when local authentication is selected", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      FACTORY_PUBLIC_URL: "http://192.0.2.10:4111",
+    }, process.cwd())).toThrow(/local authentication.*loopback/i);
+  });
+
   test("rejects partial GitHub and WorkOS credentials", () => {
     expect(() => loadFactoryConfig({ GITHUB_APP_ID: "partial" }, process.cwd()))
       .toThrow(/GitHub App.*missing/i);

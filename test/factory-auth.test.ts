@@ -9,6 +9,17 @@ describe("createFactoryAuth", () => {
     expect(user).toMatchObject({ id: "local-user", organizationId: "local-org" });
   });
 
+  test("accepts the server-adapted request shape on loopback", async () => {
+    const auth = createFactoryAuth(undefined, "development");
+    const raw = new Request("http://localhost:4111/api/agent-controller/code/modes");
+
+    await expect(auth.authenticateToken("local", {
+      raw,
+      headers: raw.headers,
+      header: name => raw.headers.get(name) ?? undefined,
+    })).resolves.toMatchObject({ id: "local-user", organizationId: "local-org" });
+  });
+
   test("fails closed in production without WorkOS", () => {
     expect(() => createFactoryAuth(undefined, "production")).toThrow(/WorkOS/);
   });

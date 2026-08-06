@@ -1,12 +1,10 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { MastraModelGateway, type GatewayLanguageModel, type ProviderConfig } from "@mastra/core/llm";
-import { loadModelProfile } from "./profile.js";
-
-const STABLE_ALIASES = loadModelProfile().aliases;
 
 export interface ProxyGatewayConfig {
   readonly baseUrl: string;
   readonly apiKey?: string;
+  readonly models: readonly string[];
 }
 
 export class ProxyGateway extends MastraModelGateway {
@@ -60,21 +58,21 @@ export class ProxyGateway extends MastraModelGateway {
   }
 
   private async fetchModelIds(): Promise<string[]> {
-    if (!this.config.apiKey) return [...STABLE_ALIASES];
+    if (!this.config.apiKey) return [...this.config.models];
 
     try {
       const response = await fetch(`${this.config.baseUrl}/models`, {
         headers: { authorization: `Bearer ${this.config.apiKey}` },
       });
-      if (!response.ok) return [...STABLE_ALIASES];
+      if (!response.ok) return [...this.config.models];
 
       const body = await response.json() as { data?: Array<{ id?: unknown }> };
       const discovered = (body.data ?? []).flatMap(model => (
         typeof model.id === "string" ? [model.id] : []
       ));
-      return [...new Set([...STABLE_ALIASES, ...discovered])];
+      return [...new Set([...this.config.models, ...discovered])];
     } catch {
-      return [...STABLE_ALIASES];
+      return [...this.config.models];
     }
   }
 }

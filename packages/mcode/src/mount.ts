@@ -124,7 +124,7 @@ export async function prepareMcodeRuntime(
     agents: { ...(controllerMount.mastraArgs.agents ?? {}), ...agents },
     gateways: {
       ...(controllerMount.mastraArgs.gateways ?? {}),
-      proxy: new ProxyGateway(config.runtime.proxy),
+      proxy: new ProxyGateway({ ...config.runtime.proxy, models: profile.aliases }),
     },
     workspace,
     backgroundTasks: {

@@ -8,9 +8,11 @@ import {
 } from "@rlabs/sandbox";
 import { z } from "zod";
 
+const factoryProjectRuntimeProfileSchema = z.enum(["ephemeral-development", "persistent-operations"])
+  .default("ephemeral-development");
+
 const factoryEnvironmentSchema = z.object({
-  FACTORY_PROJECT_RUNTIME_PROFILE: z.enum(["ephemeral-development", "persistent-operations"])
-    .default("ephemeral-development"),
+  FACTORY_PROJECT_RUNTIME_PROFILE: factoryProjectRuntimeProfileSchema,
   FACTORY_REPOSITORY_EXECUTION: z.enum(["enabled", "disabled"]).default("enabled"),
   FACTORY_PUBLIC_URL: z.string().url().default("http://localhost:4111"),
   FACTORY_ALLOWED_ORIGINS: z.string().optional(),
@@ -34,6 +36,14 @@ const GITHUB_KEYS = [
   "GITHUB_APP_CLIENT_SECRET",
 ] as const;
 const WORKOS_KEYS = ["WORKOS_API_KEY", "WORKOS_CLIENT_ID", "WORKOS_COOKIE_PASSWORD"] as const;
+const PERSISTENT_FACTORY_SECRET_KEYS = [
+  ...WORKOS_KEYS,
+  "DATABASE_URL",
+  "REDIS_URL",
+  "MASTRA_ENVIRONMENT_ID",
+  "MASTRA_PROJECT_ID",
+  "MASTRA_PLATFORM_SECRET_KEY",
+] as const;
 
 export type FactoryProjectRuntimeProfile = SandboxRuntimeProfileName;
 export type FactoryProjectRuntimeConfig = SandboxRuntimeProfile;
@@ -63,6 +73,11 @@ export interface FactoryConfig {
   };
 }
 
+export function requiredFactorySecretNames(environment: NodeJS.ProcessEnv): readonly string[] {
+  const profile = factoryProjectRuntimeProfileSchema.parse(environment.FACTORY_PROJECT_RUNTIME_PROFILE);
+  return profile === "persistent-operations" ? PERSISTENT_FACTORY_SECRET_KEYS : [];
+}
+
 export function loadFactoryConfig(
   environment: NodeJS.ProcessEnv = process.env,
   startDirectory = process.cwd(),
@@ -76,6 +91,12 @@ export function loadFactoryConfig(
     : [publicUrl];
   assertCompleteGroup(parsed, GITHUB_KEYS, "GitHub App");
   assertCompleteGroup(parsed, WORKOS_KEYS, "WorkOS");
+  if (
+    !parsed.WORKOS_API_KEY
+    && (!isLoopbackOrigin(publicUrl) || allowedOrigins.some(origin => !isLoopbackOrigin(origin)))
+  ) {
+    throw new Error("Factory local authentication requires loopback-only public and allowed origins");
+  }
   if (
     environment.NODE_ENV === "production"
     && parsed.WORKOS_API_KEY
@@ -157,6 +178,11 @@ function normalizeOrigin(value: string, label: string): string {
     throw new Error(`${label} must be an origin without a path, query, credentials, or fragment`);
   }
   return url.origin;
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  const hostname = new URL(origin).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
 function assertCompleteGroup(
