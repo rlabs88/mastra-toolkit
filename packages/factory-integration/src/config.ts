@@ -1,11 +1,19 @@
 import { loadRuntimeConfig, type RuntimeConfig } from "@rlabs/runtime-config";
-import { loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
+import {
+  loadSandboxConfig,
+  resolveSandboxRuntimeProfile,
+  type SandboxConfig,
+  type SandboxRuntimeProfile,
+  type SandboxRuntimeProfileName,
+} from "@rlabs/sandbox";
 import { z } from "zod";
 
 const factoryEnvironmentSchema = z.object({
   FACTORY_PROJECT_RUNTIME_PROFILE: z.enum(["ephemeral-development", "persistent-operations"])
     .default("ephemeral-development"),
   FACTORY_REPOSITORY_EXECUTION: z.enum(["enabled", "disabled"]).default("enabled"),
+  FACTORY_PUBLIC_URL: z.string().url().default("http://localhost:4111"),
+  FACTORY_ALLOWED_ORIGINS: z.string().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
   GITHUB_APP_ID: z.string().min(1).optional(),
@@ -27,46 +35,17 @@ const GITHUB_KEYS = [
 ] as const;
 const WORKOS_KEYS = ["WORKOS_API_KEY", "WORKOS_CLIENT_ID", "WORKOS_COOKIE_PASSWORD"] as const;
 
-export type FactoryProjectRuntimeProfile = "ephemeral-development" | "persistent-operations";
-
-export interface FactoryProjectRuntimeConfig {
-  readonly profile: FactoryProjectRuntimeProfile;
-  readonly lifecycle: "ephemeral" | "persistent";
-  readonly packageLayers: readonly string[];
-  readonly credentials: "task-scoped" | "runtime-secret-provider";
-  readonly secretProvider?: {
-    readonly kind: "infisical";
-    readonly projectId: string;
-    readonly environment: "dev";
-    readonly path: string;
-  };
-}
-
-const PROJECT_RUNTIME_PROFILES = {
-  "ephemeral-development": {
-    profile: "ephemeral-development",
-    lifecycle: "ephemeral",
-    packageLayers: ["mcode-runtime", "project-development"],
-    credentials: "task-scoped",
-  },
-  "persistent-operations": {
-    profile: "persistent-operations",
-    lifecycle: "persistent",
-    packageLayers: ["mcode-runtime", "project-development", "operations"],
-    credentials: "runtime-secret-provider",
-    secretProvider: {
-      kind: "infisical",
-      projectId: "0b0f6354-029f-45a7-9c1c-b65968b5f46c",
-      environment: "dev",
-      path: "/mastra-toolkit",
-    },
-  },
-} as const satisfies Record<FactoryProjectRuntimeProfile, FactoryProjectRuntimeConfig>;
+export type FactoryProjectRuntimeProfile = SandboxRuntimeProfileName;
+export type FactoryProjectRuntimeConfig = SandboxRuntimeProfile;
 
 export interface FactoryConfig {
   readonly runtime: RuntimeConfig;
   readonly sandbox?: SandboxConfig;
   readonly projectRuntime: FactoryProjectRuntimeConfig;
+  readonly server: {
+    readonly publicUrl: string;
+    readonly allowedOrigins: readonly string[];
+  };
   readonly databaseUrl?: string;
   readonly redisUrl?: string;
   readonly github?: {
@@ -89,8 +68,20 @@ export function loadFactoryConfig(
   startDirectory = process.cwd(),
 ): FactoryConfig {
   const parsed = factoryEnvironmentSchema.parse(environment);
+  const publicUrl = normalizeOrigin(parsed.FACTORY_PUBLIC_URL, "FACTORY_PUBLIC_URL");
+  const allowedOrigins = parsed.FACTORY_ALLOWED_ORIGINS
+    ? parsed.FACTORY_ALLOWED_ORIGINS.split(",").map((value, index) =>
+      normalizeOrigin(value.trim(), `FACTORY_ALLOWED_ORIGINS entry ${index + 1}`))
+    : [publicUrl];
   assertCompleteGroup(parsed, GITHUB_KEYS, "GitHub App");
   assertCompleteGroup(parsed, WORKOS_KEYS, "WorkOS");
+  if (
+    environment.NODE_ENV === "production"
+    && parsed.WORKOS_API_KEY
+    && (!publicUrl.startsWith("https://") || allowedOrigins.some(origin => !origin.startsWith("https://")))
+  ) {
+    throw new Error("Production WorkOS authentication requires HTTPS Factory public and allowed origins");
+  }
   if (parsed.GITHUB_APP_ID && !parsed.GITHUB_APP_WEBHOOK_SECRET && !parsed.WORKOS_COOKIE_PASSWORD) {
     throw new Error("GitHub App configuration requires a replica-stable state secret from GITHUB_APP_WEBHOOK_SECRET or WorkOS");
   }
@@ -120,10 +111,17 @@ export function loadFactoryConfig(
     if (!parsed.WORKOS_API_KEY) {
       throw new Error("The persistent-operations project runtime requires WorkOS deployment authentication");
     }
+    if (!publicUrl.startsWith("https://") || allowedOrigins.some(origin => !origin.startsWith("https://"))) {
+      throw new Error("The persistent-operations project runtime requires HTTPS Factory public and allowed origins");
+    }
+    if (environment.NODE_ENV !== "production") {
+      throw new Error("The persistent-operations project runtime requires NODE_ENV=production for secure WorkOS cookies");
+    }
   }
   const base = {
     runtime: loadRuntimeConfig(environment),
-    projectRuntime: PROJECT_RUNTIME_PROFILES[parsed.FACTORY_PROJECT_RUNTIME_PROFILE],
+    projectRuntime: resolveSandboxRuntimeProfile(parsed.FACTORY_PROJECT_RUNTIME_PROFILE),
+    server: { publicUrl, allowedOrigins },
     ...(sandbox ? { sandbox } : {}),
     ...(parsed.DATABASE_URL ? { databaseUrl: parsed.DATABASE_URL } : {}),
     ...(parsed.REDIS_URL ? { redisUrl: parsed.REDIS_URL } : {}),
@@ -144,6 +142,17 @@ export function loadFactoryConfig(
     cookiePassword: parsed.WORKOS_COOKIE_PASSWORD!,
   } : undefined;
   return { ...base, ...(github ? { github } : {}), ...(workos ? { workos } : {}) };
+}
+
+function normalizeOrigin(value: string, label: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${label} must be an HTTP or HTTPS origin`);
+  }
+  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
+    throw new Error(`${label} must be an origin without a path, query, credentials, or fragment`);
+  }
+  return url.origin;
 }
 
 function assertCompleteGroup(

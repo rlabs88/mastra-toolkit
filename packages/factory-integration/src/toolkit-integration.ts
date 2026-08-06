@@ -9,6 +9,7 @@ import {
   type ToolkitAgents,
 } from "@rlabs/agents-roles";
 import { z } from "zod";
+import { createFactoryProjectWorkflowTool } from "./project-workflow.js";
 
 export class ToolkitFactoryIntegration implements FactoryIntegration {
   readonly id = "mastra-toolkit";
@@ -24,6 +25,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       delegate_cortex: delegationTool("delegate_cortex", this.agents.cortex),
       delegate_flux: delegationTool("delegate_flux", this.agents.flux),
       delegate_zen: delegationTool("delegate_zen", this.agents.zen),
+      project_workflow: createFactoryProjectWorkflowTool(),
     } as IntegrationTools;
   }
 

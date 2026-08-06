@@ -3,6 +3,7 @@ export * from "./generation.js";
 export * from "./manager.js";
 export * from "./mcp-config.js";
 export * from "./ports.js";
+export * from "./sandbox-workflows.js";
 export * from "./specialist-tool.js";
 export * from "./specialists.js";
 export * from "./watcher.js";

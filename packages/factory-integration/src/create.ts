@@ -31,7 +31,7 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
       ? { webhookSecret: config.github.GITHUB_APP_WEBHOOK_SECRET }
       : {}),
   }) : undefined;
-  const auth = createFactoryAuth(config.workos);
+  const auth = createFactoryAuth(config.workos, process.env.NODE_ENV, config.server);
   const stateSecret = config.github?.GITHUB_APP_WEBHOOK_SECRET ?? config.workos?.cookiePassword;
   const factoryConfig: MastraFactoryConfig = {
     auth,
@@ -53,8 +53,8 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
         maxSandboxes: config.sandbox.maxSandboxes,
       },
     } : {}),
-    publicUrl: "http://localhost:4111",
-    allowedOrigins: ["http://localhost:4111"],
+    publicUrl: config.server.publicUrl,
+    allowedOrigins: [...config.server.allowedOrigins],
     ...(stateSecret ? { stateSecret } : {}),
   };
   return new ToolkitMastraFactory(

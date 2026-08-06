@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTool } from "@mastra/core/tools";
+import { RequestContext } from "@mastra/core/request-context";
 import { z } from "zod";
 import { describe, expect, test } from "vitest";
 import {
@@ -90,6 +91,30 @@ describe("ProjectMountingManager", () => {
     expect(mcp.rollbackCount).toBe(1);
     expect(manager.diagnostics().at(-1)?.phase).toBe("prepare");
   });
+
+  test("returns the value produced by Standard Schema output transformation", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(
+      join(projectRoot, ".mastracode", "workflow", "transform.ts"),
+      transformingWorkflow(),
+    );
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: { snapshot: () => ({}) },
+      host: new RecordingHost(),
+    });
+    const workflowTool = manager.snapshot().workflows.get("transform")?.tool;
+
+    await expect(workflowTool?.execute?.({ value: "raw" }, {
+      requestContext: new RequestContext(),
+    } as never)).resolves.toEqual({
+      runId: "transform-run",
+      status: "success",
+      output: { value: "TRANSFORMED" },
+    });
+  });
 });
 
 class RecordingHost implements StagedHostRegistrationPort {
@@ -168,5 +193,32 @@ export default createWorkflow({
   outputSchema: z.object({ value: z.string() }),
 }).commit();
 ${published ? `export const agentTool = { description: "Run ${id}" };` : ""}
+`;
+}
+
+function transformingWorkflow(): string {
+  return `const inputSchema = {
+  "~standard": { version: 1, vendor: "fixture", validate: async value => ({ value }) },
+};
+const outputSchema = {
+  "~standard": {
+    version: 1,
+    vendor: "fixture",
+    validate: async () => ({ value: { value: "TRANSFORMED" } }),
+  },
+};
+export const agentTool = { description: "Transform output" };
+export default {
+  component: "WORKFLOW",
+  committed: true,
+  id: "transform",
+  inputSchema,
+  outputSchema,
+  createRun: async () => ({
+    runId: "transform-run",
+    cancel: async () => undefined,
+    start: async () => ({ status: "success", result: { value: "raw" } }),
+  }),
+};
 `;
 }
