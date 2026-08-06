@@ -13,7 +13,7 @@ Sandbox parsing and provider construction originally lived under the root applic
 
 ## Present
 
-This package owns the validated sandbox specification, its checked-in schema and default configuration, environment projection, the cloneable machine contract, narrow provider credentials, and the three provider adapters. Applications may select a workspace root and supply runtime-only Platform credentials.
+This package owns the validated sandbox specification, its checked-in schema and default configuration, the canonical runtime-profile manifest, environment projection, the cloneable machine contract, remote runtime admission, narrow provider credentials, and the three provider adapters. Applications may select a workspace root and supply runtime-only Platform credentials.
 
 ## Future
 

@@ -94,6 +94,9 @@ export function loadFactoryConfig(
   const sandbox = parsed.FACTORY_REPOSITORY_EXECUTION === "enabled"
     ? loadSandboxConfig(environment, startDirectory)
     : undefined;
+  if (sandbox?.provider === "docker" && !sandbox.runtimeImage) {
+    throw new Error("Docker Factory repository execution requires SANDBOX_RUNTIME_IMAGE at an immutable digest");
+  }
   if (parsed.FACTORY_PROJECT_RUNTIME_PROFILE === "persistent-operations" && sandbox?.provider !== "platform") {
     throw new Error("The persistent-operations project runtime requires the Platform sandbox provider");
   }

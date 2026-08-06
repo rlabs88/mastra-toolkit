@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { parse } from "yaml";
 import { z } from "zod";
 
 export const DEFAULT_ACTIVE_ALIAS = "code-frontier-high";
 export const DEFAULT_OBSERVER_ALIAS = "code-workhorse-high";
-export const DEFAULT_MODEL_PROFILE_PATH = fileURLToPath(new URL("../config/models.yaml", import.meta.url));
+export const DEFAULT_MODEL_PROFILE_PATH = createRequire(import.meta.url).resolve("@rlabs/runtime-config/models.yaml");
 
 const modelProfileSchema = z.object({
   version: z.literal(1),

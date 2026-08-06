@@ -7,6 +7,7 @@ import {
   type SandboxProvider,
   type SandboxSpec,
 } from "./spec.js";
+import { immutableSandboxImageSchema } from "./image.js";
 import type { PlatformSandboxCredentials } from "./types.js";
 
 const PLATFORM_CREDENTIAL_KEYS = [
@@ -18,6 +19,7 @@ const PLATFORM_CREDENTIAL_KEYS = [
 const sandboxEnvironmentSchema = z.object({
   SANDBOX_PROVIDER: z.enum(["local", "docker", "platform"]).optional(),
   SANDBOX_SPEC_PATH: z.string().min(1).optional(),
+  SANDBOX_RUNTIME_IMAGE: immutableSandboxImageSchema.optional(),
   WORKSPACE_ROOT: z.string().min(1).optional(),
   MASTRA_ENVIRONMENT_ID: z.string().min(1).optional(),
   MASTRA_PROJECT_ID: z.string().min(1).optional(),
@@ -30,6 +32,7 @@ export interface SandboxConfig {
   readonly workdir: string;
   readonly maxSandboxes: number;
   readonly commandTimeoutMs: number;
+  readonly runtimeImage?: string;
   readonly specification: SandboxSpec;
   readonly platform?: PlatformSandboxCredentials;
 }
@@ -52,6 +55,7 @@ export function loadSandboxConfig(
     maxSandboxes: specification.spec.maxSandboxes,
     commandTimeoutMs: specification.spec.commandTimeoutMs,
     specification,
+    ...(parsed.SANDBOX_RUNTIME_IMAGE ? { runtimeImage: parsed.SANDBOX_RUNTIME_IMAGE } : {}),
   };
   return platform ? { ...config, platform } : config;
 }

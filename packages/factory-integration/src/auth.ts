@@ -33,6 +33,7 @@ export function createFactoryAuth(
     publicUrl: "http://localhost:4111",
     allowedOrigins: ["http://localhost:4111"],
   },
+  mastraDevelopment = process.env.MASTRA_DEV === "true" || process.env.MASTRA_FACTORY_DEV === "true",
 ): MastraAuthWorkos | LocalFactoryAuth {
   if (workos) {
     const secure = server.publicUrl.startsWith("https://");
@@ -48,7 +49,7 @@ export function createFactoryAuth(
       },
     });
   }
-  if (nodeEnvironment === "production") {
+  if (nodeEnvironment === "production" && !mastraDevelopment) {
     throw new Error("WorkOS credentials are required for Factory in production");
   }
   return new LocalFactoryAuth();

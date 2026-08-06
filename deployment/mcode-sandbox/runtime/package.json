@@ -1,0 +1,12 @@
+{
+  "name": "@rlabs/mcode-sandbox-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mastra/core": "1.55.0",
+    "esbuild": "0.28.1",
+    "tsx": "4.20.6",
+    "zod": "4.4.3"
+  }
+}

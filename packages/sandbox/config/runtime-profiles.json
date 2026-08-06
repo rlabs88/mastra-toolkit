@@ -1,0 +1,20 @@
+{
+  "ephemeral-development": {
+    "profile": "ephemeral-development",
+    "lifecycle": "ephemeral",
+    "packageLayers": ["mcode-runtime", "project-development"],
+    "credentials": "task-scoped"
+  },
+  "persistent-operations": {
+    "profile": "persistent-operations",
+    "lifecycle": "persistent",
+    "packageLayers": ["mcode-runtime", "project-development", "operations"],
+    "credentials": "runtime-secret-provider",
+    "secretProvider": {
+      "kind": "infisical",
+      "projectId": "0b0f6354-029f-45a7-9c1c-b65968b5f46c",
+      "environment": "dev",
+      "path": "/mastra-toolkit"
+    }
+  }
+}

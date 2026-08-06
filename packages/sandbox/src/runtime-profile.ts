@@ -1,3 +1,6 @@
+import { z } from "zod";
+import runtimeProfiles from "../config/runtime-profiles.json" with { type: "json" };
+
 export type SandboxRuntimeProfileName = "ephemeral-development" | "persistent-operations";
 
 export interface SandboxRuntimeProfile {
@@ -13,26 +16,29 @@ export interface SandboxRuntimeProfile {
   };
 }
 
-const SANDBOX_RUNTIME_PROFILES = {
-  "ephemeral-development": {
-    profile: "ephemeral-development",
-    lifecycle: "ephemeral",
-    packageLayers: ["mcode-runtime", "project-development"],
-    credentials: "task-scoped",
-  },
-  "persistent-operations": {
-    profile: "persistent-operations",
-    lifecycle: "persistent",
-    packageLayers: ["mcode-runtime", "project-development", "operations"],
-    credentials: "runtime-secret-provider",
-    secretProvider: {
-      kind: "infisical",
-      projectId: "0b0f6354-029f-45a7-9c1c-b65968b5f46c",
-      environment: "dev",
-      path: "/mastra-toolkit",
-    },
-  },
-} as const satisfies Record<SandboxRuntimeProfileName, SandboxRuntimeProfile>;
+const packageLayersSchema = z.array(z.string().min(1)).min(1);
+const secretProviderSchema = z.object({
+  kind: z.literal("infisical"),
+  projectId: z.string().uuid(),
+  environment: z.literal("dev"),
+  path: z.string().startsWith("/"),
+});
+
+const SANDBOX_RUNTIME_PROFILES = z.object({
+  "ephemeral-development": z.object({
+    profile: z.literal("ephemeral-development"),
+    lifecycle: z.literal("ephemeral"),
+    packageLayers: packageLayersSchema,
+    credentials: z.literal("task-scoped"),
+  }),
+  "persistent-operations": z.object({
+    profile: z.literal("persistent-operations"),
+    lifecycle: z.literal("persistent"),
+    packageLayers: packageLayersSchema,
+    credentials: z.literal("runtime-secret-provider"),
+    secretProvider: secretProviderSchema,
+  }),
+}).parse(runtimeProfiles) satisfies Record<SandboxRuntimeProfileName, SandboxRuntimeProfile>;
 
 export function resolveSandboxRuntimeProfile(profile: SandboxRuntimeProfileName): SandboxRuntimeProfile {
   return SANDBOX_RUNTIME_PROFILES[profile];

@@ -13,6 +13,13 @@ describe("createFactoryAuth", () => {
     expect(() => createFactoryAuth(undefined, "production")).toThrow(/WorkOS/);
   });
 
+  test("provides local auth when the production bundle is explicitly running under Factory dev", async () => {
+    const auth = createFactoryAuth(undefined, "production", undefined, true);
+    const user = await auth.authenticateToken("", new Request("http://localhost:4111/web/factory/projects"));
+
+    expect(user).toMatchObject({ id: "local-user", organizationId: "local-org" });
+  });
+
   test("uses the deployed Factory origin and emits secure cross-site WorkOS cookies in production", async () => {
     const previousNodeEnvironment = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";
