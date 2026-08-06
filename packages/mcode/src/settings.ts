@@ -3,14 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
 import { ONBOARDING_VERSION } from "@mastra/code-sdk/onboarding/index";
-import {
-  DEFAULT_ACTIVE_ALIAS,
-  DEFAULT_OBSERVER_ALIAS,
-  resolveAliasModelId,
-  resolveObservationalMemoryThresholds,
-  resolveProxyGatewayModelId,
-  type ModelProfile,
-} from "@rlabs/runtime-config";
+import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { CANONICAL_AGENT_IDS, CODE_MODE_IDS } from "./modes/index.js";
 
 export const A1_CODE_PROVIDER_ID = "a1-proxy";
@@ -43,7 +36,7 @@ export function getA1CodeModelId(model: string): string {
 
 export async function prepareCodeSdkSettings(options: {
   readonly dataDirectory?: string;
-  readonly profile: ModelProfile;
+  readonly defaults: RuntimeDefaultsV1;
   readonly provider?: Omit<A1ProviderOptions, "apiKey">;
 }): Promise<string> {
   const directory = options.dataDirectory
@@ -53,9 +46,7 @@ export async function prepareCodeSdkSettings(options: {
   await mkdir(directory, { recursive: true });
   const settingsPath = join(directory, "settings.json");
   const existing = await readSettings(settingsPath);
-  const activeModelId = resolveAliasModelId(options.profile, DEFAULT_ACTIVE_ALIAS);
-  const observerModelId = resolveAliasModelId(options.profile, DEFAULT_OBSERVER_ALIAS);
-  const memoryThresholds = resolveObservationalMemoryThresholds(options.profile);
+  const defaults = options.defaults.codeSdk;
   const existingModels = existing.models ?? {};
   const existingPreferences = existing.preferences ?? {};
   const settings: SettingsDocument = {
@@ -70,16 +61,16 @@ export async function prepareCodeSdkSettings(options: {
       ...existingModels,
       modeDefaults: Object.fromEntries(CODE_MODE_IDS.map(id => [
         id,
-        resolvePersistedModelId(existingModels.modeDefaults?.[id], options.profile) ?? activeModelId,
+        resolvePersistedModelId(existingModels.modeDefaults?.[id], options.defaults) ?? defaults.activeModelId,
       ])),
       subagentModels: Object.fromEntries(CANONICAL_AGENT_IDS.map(id => [
         id,
-        resolveProxyGatewayModelId(options.profile, options.profile.roles[id]),
+        options.defaults.models.roles[id].gatewayModelId,
       ])),
-      observerModelOverride: resolvePersistedModelId(existingModels.observerModelOverride, options.profile) ?? observerModelId,
-      reflectorModelOverride: resolvePersistedModelId(existingModels.reflectorModelOverride, options.profile) ?? observerModelId,
-      omObservationThreshold: existingModels.omObservationThreshold ?? memoryThresholds.observationThreshold,
-      omReflectionThreshold: existingModels.omReflectionThreshold ?? memoryThresholds.reflectionThreshold,
+      observerModelOverride: resolvePersistedModelId(existingModels.observerModelOverride, options.defaults) ?? defaults.observerModelId,
+      reflectorModelOverride: resolvePersistedModelId(existingModels.reflectorModelOverride, options.defaults) ?? defaults.reflectorModelId,
+      omObservationThreshold: existingModels.omObservationThreshold ?? defaults.observationThreshold,
+      omReflectionThreshold: existingModels.omReflectionThreshold ?? defaults.reflectionThreshold,
     },
     preferences: {
       ...existingPreferences,
@@ -122,14 +113,17 @@ export function createA1MastraCodeGateway(options: A1ProviderOptions) {
 
 function resolvePersistedModelId(
   modelId: string | null | undefined,
-  profile: ModelProfile,
+  defaults: RuntimeDefaultsV1,
 ): string | undefined {
   if (!modelId) return undefined;
   const prefix = `${A1_CODE_PROVIDER_ID}/`;
   if (!modelId.startsWith(prefix)) {
     throw new Error(`Persisted model must use a stable A1 model alias: ${modelId}`);
   }
-  resolveAliasModelId(profile, modelId.slice(prefix.length));
+  const alias = modelId.slice(prefix.length);
+  if (!defaults.models.aliases.includes(alias)) {
+    throw new Error(`Persisted model must use a stable A1 model alias: ${modelId}`);
+  }
   return modelId;
 }
 

@@ -5,7 +5,7 @@ import type { ApiRoute } from "@mastra/core/server";
 import { RequestContext } from "@mastra/core/request-context";
 import { Mastra } from "@mastra/core/mastra";
 import { createMcodeRecipe } from "@rlabs/mcode/recipe";
-import { loadModelProfile } from "@rlabs/runtime-config";
+import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import { Hono } from "hono";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -30,7 +30,10 @@ describe("single-project Factory composition", () => {
     const profile = loadModelProfile();
     const recipe = createMcodeRecipe({ profile, commandRun: createSandboxCommandRunTool(), browser: false });
 
-    expect(() => new ToolkitFactoryIntegration(recipe as never)).toThrow(/createFactoryMcodeRecipe/);
+    expect(() => new ToolkitFactoryIntegration(
+      recipe as never,
+      resolveRuntimeDefaultsV1(profile),
+    )).toThrow(/createFactoryMcodeRecipe/);
   });
 
   test("boots without a sandbox and fails GitHub project preparation closed", async () => {
@@ -53,10 +56,25 @@ describe("single-project Factory composition", () => {
       profile,
       browser: false,
     });
-    expect(recipe.settings.profile).toBe(profile);
-    expect(recipe.settings.profile.aliases).toEqual(loadModelProfile().aliases);
-    const diagnostics = new ToolkitFactoryIntegration(recipe).diagnostics();
+    const defaults = resolveRuntimeDefaultsV1(profile);
+    expect(recipe).not.toHaveProperty("settings");
+    const diagnostics = new ToolkitFactoryIntegration(recipe, defaults).diagnostics();
     expect(diagnostics).toMatchObject({
+      runtimeDefaults: {
+        source: "@rlabs/runtime-config/models.yaml",
+        version: 1,
+        factoryMemory: {
+          observationThreshold: 120_000,
+          reflectionThreshold: 60_000,
+        },
+        persistedPrecedence: "memory-settings-over-startup-defaults",
+        fillPolicy: "null-fields-only",
+        thresholdFillAtomicity: "unsupported-upstream",
+        sessionDisplayConvergence: {
+          status: "upstream-blocked",
+          issue: "#129",
+        },
+      },
       mcode: {
         digest: recipe.capability.digest,
         controllerConstruction: "unsupported-upstream",
@@ -67,8 +85,8 @@ describe("single-project Factory composition", () => {
         },
       },
     });
-    await expect(new ToolkitFactoryIntegration(recipe).agentTools()).resolves.toHaveProperty("command_run");
-    const tools = await new ToolkitFactoryIntegration(recipe).agentTools();
+    await expect(new ToolkitFactoryIntegration(recipe, defaults).agentTools()).resolves.toHaveProperty("command_run");
+    const tools = await new ToolkitFactoryIntegration(recipe, defaults).agentTools();
     const commandRun = tools.command_run as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -105,7 +123,7 @@ describe("single-project Factory composition", () => {
       }, unboundContext)).rejects.toThrow(/persisted Factory project session/i);
     }
     expect(sandboxInvoked).toBe(false);
-    const factory = await createToolkitFactory(config, recipe);
+    const factory = await createToolkitFactory(config, recipe, defaults);
 
     try {
       const prepared = await factory.prepare();
@@ -165,7 +183,7 @@ describe("single-project Factory composition", () => {
         CLI_PROXY_API_KEY: "test-only-key",
       }, hostTrapDirectory, profile);
       const recipe = createFactoryMcodeRecipe({ profile, browser: false });
-      factory = await createToolkitFactory(config, recipe);
+      factory = await createToolkitFactory(config, recipe, resolveRuntimeDefaultsV1(profile));
       await factory.prepare();
       expect(process.env.FACTORY_HOST_TRAP).toBeUndefined();
       expect(process.cwd()).toBe(canonicalHostTrapDirectory);
@@ -207,7 +225,10 @@ describe("single-project Factory composition", () => {
         }],
       }],
     } as never);
-    const delegate = (await new ToolkitFactoryIntegration(recipe).agentTools()).delegate_cortex as {
+    const delegate = (await new ToolkitFactoryIntegration(
+      recipe,
+      resolveRuntimeDefaultsV1(profile),
+    ).agentTools()).delegate_cortex as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
     const requestContext = new RequestContext();

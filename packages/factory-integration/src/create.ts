@@ -8,6 +8,7 @@ import {
   prepareCodeSdkSettings,
   type A1ProviderOptions,
 } from "@rlabs/mcode";
+import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -19,14 +20,17 @@ import { prepareLocalA1Provider } from "./local-provider.js";
 import { createFactoryStorage } from "./storage.js";
 import { ToolkitFactoryIntegration, type FactoryMcodeRecipe } from "./toolkit-integration.js";
 
-export async function createToolkitFactory(config: FactoryConfig, recipe: FactoryMcodeRecipe): Promise<MastraFactory> {
-  const profile = recipe.settings.profile;
+export async function createToolkitFactory(
+  config: FactoryConfig,
+  recipe: FactoryMcodeRecipe,
+  defaults: RuntimeDefaultsV1,
+): Promise<MastraFactory> {
   const provider = {
     baseUrl: config.runtime.proxy.baseUrl,
-    models: profile.aliases,
+    models: defaults.gateway.models,
     ...(config.runtime.proxy.apiKey ? { apiKey: config.runtime.proxy.apiKey } : {}),
   } satisfies A1ProviderOptions;
-  const dataDirectory = await prepareCodeSdkSettings({ profile });
+  const dataDirectory = await prepareCodeSdkSettings({ defaults });
   const controlPlaneDirectory = join(dataDirectory, "factory-control-plane");
   await mkdir(controlPlaneDirectory, { recursive: true, mode: 0o700 });
   const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl);
@@ -47,7 +51,7 @@ export async function createToolkitFactory(config: FactoryConfig, recipe: Factor
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
-    integrations: [new ToolkitFactoryIntegration(recipe), ...(github ? [github] : [])],
+    integrations: [new ToolkitFactoryIntegration(recipe, defaults), ...(github ? [github] : [])],
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -65,7 +69,7 @@ export async function createToolkitFactory(config: FactoryConfig, recipe: Factor
     factoryConfig,
     factoryStorage,
     recipe.agents,
-    config.workos ? undefined : provider,
+    config.workos ? undefined : { provider, defaults },
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
   );
@@ -91,7 +95,7 @@ class ToolkitMastraFactory extends MastraFactory {
     config: MastraFactoryConfig,
     private readonly factoryStorage: FactoryStorage,
     private readonly toolkitAgents: FactoryMcodeRecipe["agents"],
-    private readonly localA1Provider?: A1ProviderOptions,
+    private readonly localA1?: { provider: A1ProviderOptions; defaults: RuntimeDefaultsV1 },
     private readonly controlPlaneDirectory?: string,
     private readonly localServerHost?: string,
   ) {
@@ -103,8 +107,8 @@ class ToolkitMastraFactory extends MastraFactory {
       this.controlPlaneDirectory ?? process.cwd(),
       () => super.prepare(),
     );
-    if (this.localA1Provider) {
-      await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
+    if (this.localA1) {
+      await prepareLocalA1Provider(this.factoryStorage, this.localA1.provider, this.localA1.defaults);
     }
     return {
       ...prepared,
