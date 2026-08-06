@@ -4,6 +4,7 @@ export * from "./mcp-adapter.js";
 export * from "./modes/index.js";
 export * from "./mount.js";
 export * from "./project-adapters.js";
+export * from "./recipe.js";
 export * from "./settings.js";
 export * from "./subagents.js";
 export * from "./workspace.js";

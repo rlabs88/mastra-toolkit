@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
@@ -70,8 +71,9 @@ describe("workspace ownership", () => {
   test("keeps canonical Factory agents behind the sandbox-bound integration", async () => {
     const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
 
-    expect(source).toContain("createToolkitFactory(config, agents)");
-    expect(source).not.toContain("...agents");
+    expect(source).toContain("createMcodeRecipe");
+    expect(source).toContain("createToolkitFactory(config, recipe)");
+    expect(source).not.toContain("createToolkitAgents");
   });
 
   test("keeps inactive deployment targets documentation-only", async () => {
@@ -101,27 +103,50 @@ describe("workspace ownership", () => {
     expect(shim).toContain("tsx/esm/api");
     expect(shim).toContain("../src/cli.ts");
 
+    const dataDirectory = await mkdtemp(join(tmpdir(), "mcode-shim-test-"));
+    try {
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+            import { register } from "tsx/esm/api";
+            register();
+            const { createLocalMcodeRuntime } = await import("@rlabs/mcode");
+            const runtime = await createLocalMcodeRuntime({
+              browser: false,
+              watch: false,
+              environment: { ...process.env, CLI_PROXY_API_KEY: "test-only-key" },
+            });
+            await runtime.close();
+            console.log("mcode-load-ok");
+          `,
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, MASTRA_APP_DATA_DIR: dataDirectory },
+          timeout: 60_000,
+        },
+      );
+      expect(stdout).toContain("mcode-load-ok");
+    } finally {
+      await rm(dataDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("packs every canonical MCode recipe source", async () => {
     const { stdout } = await execFileAsync(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `
-          import { register } from "tsx/esm/api";
-          register();
-          const { createLocalMcodeRuntime } = await import("@rlabs/mcode");
-          const runtime = await createLocalMcodeRuntime({
-            browser: false,
-            watch: false,
-            environment: { ...process.env, CLI_PROXY_API_KEY: "test-only-key" },
-          });
-          await runtime.close();
-          console.log("mcode-load-ok");
-        `,
-      ],
+      "npm",
+      ["pack", "--workspace", "@rlabs/mcode", "--dry-run", "--json"],
       { cwd: root, env: process.env, timeout: 60_000 },
     );
-    expect(stdout).toContain("mcode-load-ok");
+    const artifacts = JSON.parse(stdout) as Array<{ files: Array<{ path: string }> }>;
+    const paths = artifacts[0]?.files.map(file => file.path) ?? [];
+
+    expect(paths).toContain("src/recipe.ts");
+    expect(paths).toContain("src/modes/scope/prompt.ts");
+    expect(paths).toContain("src/modes/build/prompt.ts");
   }, 60_000);
 });
 

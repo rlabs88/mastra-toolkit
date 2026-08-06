@@ -12,7 +12,12 @@ describe("local project runtime", () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-local-data-"));
     const workflowRoot = join(projectRoot, ".mastracode", "workflow");
     await mkdir(workflowRoot, { recursive: true });
+    await mkdir(join(projectRoot, ".github", "agents"), { recursive: true });
     await writeFile(join(workflowRoot, "smoke.ts"), workflowSource());
+    await writeFile(
+      join(projectRoot, ".github", "agents", "review.md"),
+      "---\ndescription: Review the checkout\ntools: []\n---\n\nReview the checkout.",
+    );
     const runtime = await mountMcodeRuntime({
       cwd: projectRoot,
       dataDirectory,
@@ -33,15 +38,16 @@ describe("local project runtime", () => {
       expect(runtime.mastra.getAgent("cortex").id).toBe(runtime.agents.cortex.id);
       expect(runtime.mastra.getGateway("proxy").id).toBe("proxy");
       const controllerConfig = (runtime.controller as unknown as {
-        config: { subagents?: Array<{ id: string; defaultModelId?: string }> };
+        config: { subagents?: Array<{ id: string; defaultModelId?: string; tools?: Record<string, unknown> }> };
       }).config;
       expect(controllerConfig.subagents?.map(subagent => ({
         id: subagent.id,
         defaultModelId: subagent.defaultModelId,
+        tools: Object.keys(subagent.tools ?? {}),
       }))).toEqual([
-        { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
-        { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
-        { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high" },
+        { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
+        { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
+        { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
       ]);
 
       const first = await runtime.controller.createSession({ id: "first", ownerId: "test", scope: "first" });
@@ -76,8 +82,13 @@ describe("local project runtime", () => {
       expect(() => subagentTool.inputSchema.parse({ agentType: "unknown", task: "Inspect" })).toThrow();
       const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
       expect(Object.keys(agentTools)).toContain("project_specialist");
+      expect(Object.keys(agentTools)).toContain("command_run");
       expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
       expect(Object.keys(agentTools)).toContain("request_access");
+      const specialistTools = await runtime.resources.snapshot().specialistAgents
+        .get("review")!
+        .listTools({ requestContext: context });
+      expect(Object.keys(specialistTools)).toContain("command_run");
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {
         await first.mode.switch({ modeId: `${agentId}/scope` });

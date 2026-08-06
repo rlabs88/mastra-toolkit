@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { createCommandRunTool } from "@rlabs/agent-tools";
 import { createToolkitAgents } from "@rlabs/agents-roles";
+import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 describe("Mastra agents", () => {
   test("registers Cortex, Flux, and Zen with bounded delegation", async () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
+    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
     expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
@@ -13,7 +13,7 @@ describe("Mastra agents", () => {
   });
 
   test("configures visible Chrome when browser support is enabled", () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: true });
+    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: true });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
@@ -23,7 +23,7 @@ describe("Mastra agents", () => {
 
 describe("command_run Mastra tool", () => {
   test("requests approval only when a batch contains a mutation", async () => {
-    const tool = createCommandRunTool({ workspaceRoot: process.cwd() });
+    const tool = createSandboxCommandRunTool();
     const approval = tool.requireApproval;
     if (typeof approval !== "function") throw new Error("dynamic approval is not configured");
 

@@ -3,8 +3,8 @@ import type { AgentControllerMode } from "@mastra/core/agent-controller";
 import type { ToolkitAgents } from "@rlabs/agents-roles";
 import {
   DEFAULT_ACTIVE_ALIAS,
-  loadModelProfile,
   resolveAliasModelId,
+  type ModelProfile,
 } from "@rlabs/runtime-config";
 import { buildModePrompt } from "./build/prompt.js";
 import { scopeModePrompt } from "./scope/prompt.js";
@@ -28,9 +28,9 @@ const modePrompts = { scope: scopeModePrompt, build: buildModePrompt } as const;
 
 export function createCodeModes(
   agents: ToolkitAgents,
+  profile: ModelProfile,
   additionalTools?: ToolsInput,
 ): AgentControllerMode[] {
-  const profile = loadModelProfile();
   const defaultModelId = resolveAliasModelId(profile, DEFAULT_ACTIVE_ALIAS);
   return CODE_MODE_IDS.map(id => {
     const selection = decodeAgentMode(id);

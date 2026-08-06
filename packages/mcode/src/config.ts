@@ -1,4 +1,4 @@
-import { loadRuntimeConfig, type RuntimeConfig } from "@rlabs/runtime-config";
+import { loadRuntimeConfig, type ModelProfile, type RuntimeConfig } from "@rlabs/runtime-config";
 import { loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
 import { z } from "zod";
 
@@ -19,10 +19,11 @@ export interface McodeConfig {
 export function loadMcodeConfig(
   environment: NodeJS.ProcessEnv = process.env,
   startDirectory = process.cwd(),
+  profile?: ModelProfile,
 ): McodeConfig {
   const browser = browserEnvironmentSchema.parse(environment);
   return {
-    runtime: loadRuntimeConfig(environment),
+    runtime: loadRuntimeConfig(environment, profile),
     sandbox: loadSandboxConfig(environment, startDirectory),
     browser: {
       ...(browser.BROWSER_EXECUTABLE_PATH ? { executablePath: browser.BROWSER_EXECUTABLE_PATH } : {}),

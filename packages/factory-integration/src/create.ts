@@ -1,10 +1,11 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
-import type { ToolkitAgents } from "@rlabs/agents-roles";
-import { prepareCodeSdkSettings, type A1ProviderOptions } from "@rlabs/mcode";
-import { loadModelProfile } from "@rlabs/runtime-config";
+import type { McodeRecipeV1 } from "@rlabs/mcode/recipe";
+import { prepareCodeSdkSettings, type A1ProviderOptions } from "@rlabs/mcode/settings";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -16,14 +17,16 @@ import { prepareLocalA1Provider } from "./local-provider.js";
 import { createFactoryStorage } from "./storage.js";
 import { ToolkitFactoryIntegration } from "./toolkit-integration.js";
 
-export async function createToolkitFactory(config: FactoryConfig, agents: ToolkitAgents): Promise<MastraFactory> {
-  const profile = loadModelProfile();
+export async function createToolkitFactory(config: FactoryConfig, recipe: McodeRecipeV1): Promise<MastraFactory> {
+  const profile = recipe.settings.profile;
   const provider = {
     baseUrl: config.runtime.proxy.baseUrl,
     models: profile.aliases,
     ...(config.runtime.proxy.apiKey ? { apiKey: config.runtime.proxy.apiKey } : {}),
   } satisfies A1ProviderOptions;
-  await prepareCodeSdkSettings({ profile });
+  const dataDirectory = await prepareCodeSdkSettings({ profile });
+  const controlPlaneDirectory = join(dataDirectory, "factory-control-plane");
+  await mkdir(controlPlaneDirectory, { recursive: true, mode: 0o700 });
   const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl);
   const github = config.github ? new GithubIntegration({
     appId: config.github.GITHUB_APP_ID,
@@ -42,7 +45,7 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
-    integrations: [new ToolkitFactoryIntegration(agents), ...(github ? [github] : [])],
+    integrations: [new ToolkitFactoryIntegration(recipe), ...(github ? [github] : [])],
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -60,6 +63,7 @@ export async function createToolkitFactory(config: FactoryConfig, agents: Toolki
     factoryConfig,
     factoryStorage,
     config.workos ? undefined : provider,
+    controlPlaneDirectory,
   );
 }
 
@@ -83,15 +87,35 @@ class ToolkitMastraFactory extends MastraFactory {
     config: MastraFactoryConfig,
     private readonly factoryStorage: FactoryStorage,
     private readonly localA1Provider?: A1ProviderOptions,
+    private readonly controlPlaneDirectory?: string,
   ) {
     super(config);
   }
 
   override async prepare(): Promise<MastraArgs> {
-    const prepared = await super.prepare();
+    const prepared = await withWorkingDirectory(
+      this.controlPlaneDirectory ?? process.cwd(),
+      () => super.prepare(),
+    );
     if (this.localA1Provider) {
       await prepareLocalA1Provider(this.factoryStorage, this.localA1Provider);
     }
     return prepared;
   }
+}
+
+let workingDirectoryQueue: Promise<void> = Promise.resolve();
+
+function withWorkingDirectory<T>(directory: string, operation: () => Promise<T>): Promise<T> {
+  const result = workingDirectoryQueue.then(async () => {
+    const previous = process.cwd();
+    process.chdir(directory);
+    try {
+      return await operation();
+    } finally {
+      process.chdir(previous);
+    }
+  });
+  workingDirectoryQueue = result.then(() => undefined, () => undefined);
+  return result;
 }

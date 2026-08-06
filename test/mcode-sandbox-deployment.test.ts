@@ -84,6 +84,8 @@ describe("MCode sandbox deployment source", () => {
     const probe = await readFile(resolve(deploymentRoot, "runtime-probe.sh"), "utf8");
 
     expect(probe).toContain("profile.packageLayers");
+    expect(probe).toContain("command -v rg");
+    expect(probe).toContain("globSync");
     expect(probe).toContain("@mastra/core/workflows");
   });
 

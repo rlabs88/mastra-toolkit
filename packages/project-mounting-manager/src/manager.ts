@@ -36,6 +36,7 @@ export interface ProjectMountingManagerOptions {
   readonly host: StagedHostRegistrationPort;
   readonly workspace?: Workspace;
   readonly specialistMaxSteps?: number;
+  readonly requiredSpecialistTools?: readonly string[];
   readonly onDiagnostic?: ProjectMountingDiagnosticListener;
 }
 
@@ -157,6 +158,7 @@ export class ProjectMountingManager {
       generationId: id,
       specialists,
       tools: publishedTools,
+      requiredTools: this.#options.requiredSpecialistTools ?? [],
       ...(this.#options.workspace ? { workspace: this.#options.workspace } : {}),
       maxSteps: this.#options.specialistMaxSteps ?? 48,
     });
@@ -187,6 +189,7 @@ interface CreateSpecialistAgentsOptions {
   readonly generationId: number;
   readonly specialists: ReadonlyMap<string, ProjectSpecialist>;
   readonly tools: ToolsInput;
+  readonly requiredTools: readonly string[];
   readonly workspace?: Workspace;
   readonly maxSteps: number;
 }
@@ -194,7 +197,7 @@ interface CreateSpecialistAgentsOptions {
 function createSpecialistAgents(options: CreateSpecialistAgentsOptions): ReadonlyMap<string, Agent> {
   const agents = new Map<string, Agent>();
   for (const specialist of options.specialists.values()) {
-    const tools = selectSpecialistTools(specialist, options.tools);
+    const tools = selectSpecialistTools(specialist, options.tools, options.requiredTools);
     agents.set(specialist.id, new Agent({
       id: `project-specialist-${specialist.id}-${options.generationId}`,
       name: specialist.name,
@@ -209,10 +212,14 @@ function createSpecialistAgents(options: CreateSpecialistAgentsOptions): Readonl
   return agents;
 }
 
-function selectSpecialistTools(specialist: ProjectSpecialist, available: ToolsInput): ToolsInput {
+function selectSpecialistTools(
+  specialist: ProjectSpecialist,
+  available: ToolsInput,
+  required: readonly string[],
+): ToolsInput {
   if (!specialist.tools) return { ...available };
   const selected: ToolsInput = {};
-  for (const toolName of specialist.tools) {
+  for (const toolName of new Set([...specialist.tools, ...required])) {
     if (!Object.hasOwn(available, toolName)) {
       throw new Error(`Unknown tool for specialist ${specialist.id}: ${toolName}`);
     }

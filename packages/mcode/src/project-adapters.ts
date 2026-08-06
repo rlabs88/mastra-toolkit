@@ -1,3 +1,4 @@
+import type { ToolsInput } from "@mastra/core/agent";
 import type { Mastra } from "@mastra/core/mastra";
 import type {
   CurrentToolSnapshotPort,
@@ -23,9 +24,11 @@ export class ProfileModelAliasResolver implements ModelAliasResolverPort {
   }
 }
 
-export class EmptyToolSnapshot implements CurrentToolSnapshotPort {
-  snapshot(): Record<string, never> {
-    return {};
+export class StaticToolSnapshot implements CurrentToolSnapshotPort {
+  constructor(private readonly tools: Readonly<ToolsInput>) {}
+
+  snapshot(): Readonly<ToolsInput> {
+    return this.tools;
   }
 }
 

@@ -9,6 +9,7 @@ import {
   createLocalMcodeRuntime,
   type LocalMcodeRuntime,
 } from "@rlabs/mcode";
+import { loadModelProfile } from "@rlabs/runtime-config";
 
 const execFileAsync = promisify(execFile);
 const openRuntimes: LocalMcodeRuntime[] = [];
@@ -50,5 +51,29 @@ describe("local Mastra Code runtime", () => {
     expect(runtime.mastra.getAgent("zen").id).toBe(runtime.agents.zen.id);
     expect(runtime.controller.getCurrentAgent(runtime.session)).toBe(runtime.agents.cortex);
     expect(runtime.resources.snapshot().id).toBe(1);
+  });
+
+  test("uses one caller-supplied profile for CLI configuration and mounting", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "mastra-code-profile-project-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-code-profile-data-"));
+    await execFileAsync("git", ["init", "--quiet", projectRoot]);
+    const profile = structuredClone(loadModelProfile());
+    profile.aliases.push("startup-only");
+
+    const runtime = await createLocalMcodeRuntime({
+      cwd: projectRoot,
+      dataDirectory,
+      profile,
+      browser: false,
+      watch: false,
+      environment: {
+        ...process.env,
+        PROXY_MODEL: "startup-only",
+        CLI_PROXY_API_KEY: "test-only-key",
+      },
+    });
+    openRuntimes.push(runtime);
+
+    expect(runtime.config.runtime.proxy.model).toBe("startup-only");
   });
 });

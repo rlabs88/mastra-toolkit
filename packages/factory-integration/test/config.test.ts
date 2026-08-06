@@ -1,9 +1,20 @@
 import { describe, expect, test } from "vitest";
+import { loadModelProfile } from "@rlabs/runtime-config";
 import type { CloneableSandboxMachine, SandboxMachineOptions } from "@rlabs/sandbox";
 import { loadFactoryConfig } from "../src/config.js";
 import { createFactorySandboxMachine } from "../src/create.js";
 
 describe("loadFactoryConfig", () => {
+  test("uses the startup-resolved model profile", () => {
+    const profile = structuredClone(loadModelProfile());
+    profile.aliases.push("startup-only");
+
+    expect(loadFactoryConfig({
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      PROXY_MODEL: "startup-only",
+    }, process.cwd(), profile).runtime.proxy.model).toBe("startup-only");
+  });
+
   test("fails closed when Docker repository execution has no profile runtime image", () => {
     expect(() => loadFactoryConfig({
       SANDBOX_PROVIDER: "docker",

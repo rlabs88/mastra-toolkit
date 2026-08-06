@@ -7,7 +7,6 @@ import type { StagehandBrowser } from "@mastra/stagehand";
 import {
   browserActionRequiresApproval,
   createAdhdTool,
-  createCommandRunTool,
   createToolAuditHooks,
   createVisibleBrowser,
 } from "@rlabs/agent-tools";
@@ -26,8 +25,8 @@ export const TOOLKIT_WORKSPACE_CONTEXT_KEY = "mastraToolkitWorkspace";
 export const TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY = "mastraToolkitFactoryDelegation";
 
 export interface ToolkitAgentsOptions {
-  readonly workspaceRoot: string;
   readonly browser: boolean;
+  readonly commandRun: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
   readonly additionalTools?: ToolkitAdditionalTools;
@@ -48,7 +47,7 @@ export interface ToolkitAgents {
 
 export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgents {
   const profile = options.profile ?? loadModelProfile();
-  const commandRun = createCommandRunTool({ workspaceRoot: options.workspaceRoot });
+  const commandRun = options.commandRun;
   let flux!: Agent<"flux">;
   const adhdRun = createAdhdTool(() => flux);
   const cortex = createAgent(
@@ -82,7 +81,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
 function createAgent<TId extends RoleDefinition["id"]>(
   role: RoleDefinition<TId>,
   profile: ModelProfile,
-  tools: Record<string, ReturnType<typeof createCommandRunTool> | ReturnType<typeof createAdhdTool>>,
+  tools: ToolsInput,
   additionalTools?: ToolkitAdditionalTools,
   agentBrowser?: StagehandBrowser,
   additionalHooks?: ToolHooks,
@@ -99,12 +98,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      const combinedTools = { ...resolvedAdditionalTools, ...tools } as ToolsInput;
-      if (!(requestContext.get(TOOLKIT_FACTORY_DELEGATION_CONTEXT_KEY) as boolean | undefined)) {
-        return combinedTools;
-      }
-      const { command_run: _hostCommandRun, ...sandboxSafeTools } = combinedTools;
-      return sandboxSafeTools as ToolsInput;
+      return { ...resolvedAdditionalTools, ...tools } as ToolsInput;
     },
     workspace: ({ requestContext, mastra }) =>
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),

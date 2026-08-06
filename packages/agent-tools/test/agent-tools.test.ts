@@ -5,7 +5,6 @@ import { describe, expect, test, vi } from "vitest";
 import {
   browserActionRequiresApproval,
   createAdhdTool,
-  createCommandRunTool,
   createToolAuditHooks,
 } from "../src/index.js";
 
@@ -32,35 +31,41 @@ describe("agent tool policies", () => {
     ]);
   });
 
-  test("requests approval when a command batch contains a mutation", async () => {
-    const tool = createCommandRunTool({ workspaceRoot: process.cwd() });
-    const approval = tool.requireApproval;
-    if (typeof approval !== "function") throw new Error("dynamic approval is not configured");
-
-    const readOnly = await approval({ description: "read", commands: [{ command_type: "read", command_line: '{"path":"README.md"}', step: 1 }] }, {} as never);
-    const mutating = await approval({ description: "shell", commands: [{ command_type: "shell", command_line: "true", step: 1 }] }, {} as never);
-
-    expect(readOnly).toBe(false);
-    expect(mutating).toBe(true);
-  });
-
-  test("runs isolated Flux perspectives and preserves the workspace root", async () => {
+  test("runs isolated Flux perspectives and preserves the parent request context", async () => {
     const generate = vi.fn(async (_prompt: string, options: { requestContext: RequestContext }) => ({
-      text: String(options.requestContext.get("workspaceRoot")),
+      text: JSON.stringify({
+        workspaceRoot: options.requestContext.get("workspaceRoot"),
+        factoryDelegation: options.requestContext.get("mastraToolkitFactoryDelegation"),
+        workspace: options.requestContext.get("mastraToolkitWorkspace"),
+        depth: options.requestContext.get("adhdDepth"),
+      }),
     }));
     const tool = createAdhdTool(() => ({ generate }) as never);
+    const workspace = { id: "sandbox-workspace" };
 
     const result = await tool.execute?.(
       { problem: "Choose an API", perspectives: ["maintainer", "caller"] },
-      { requestContext: new RequestContext([["workspaceRoot", "/workspace"]]) } as never,
+      {
+        requestContext: new RequestContext([
+          ["workspaceRoot", "/workspace"],
+          ["mastraToolkitFactoryDelegation", true],
+          ["mastraToolkitWorkspace", workspace],
+        ]),
+      } as never,
     );
 
     expect(generate).toHaveBeenCalledTimes(2);
+    const context = JSON.stringify({
+      workspaceRoot: "/workspace",
+      factoryDelegation: true,
+      workspace,
+      depth: 1,
+    });
     expect(result).toEqual({
       problem: "Choose an API",
       candidates: [
-        { perspective: "maintainer", text: "/workspace" },
-        { perspective: "caller", text: "/workspace" },
+        { perspective: "maintainer", text: context },
+        { perspective: "caller", text: context },
       ],
     });
   });

@@ -48,7 +48,7 @@ runtime-config ─┬──────────────┬────�
   apps/mcode      apps/studio       apps/factory
 ```
 
-`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Each role owns a folder containing `prompt.ts`, `role.ts`, and `index.ts`. `agent-tools` owns reusable execution and browser capabilities. Hosts project these packages; they do not copy them.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Each role owns a folder containing `prompt.ts`, `role.ts`, and `index.ts`. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
 
 `runtime-config` owns the secret-free YAML catalog and resolves the credential named by `apiKeyEnv` at process start. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 
@@ -68,10 +68,10 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 
 ## Host boundaries
 
-- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. It owns modes, native leaf subagents, Code settings, provider adaptation, project mounting, sessions, and reusable TUI construction.
+- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its versioned recipe is the single construction seam for canonical agents, modes, native leaf subagents, settings input, and a secret-free capability digest. It also owns provider adaptation, local project mounting, sessions, and reusable TUI construction.
 - `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
 - `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
-- `packages/factory-integration` owns Factory authentication, persistence, delegation integration, sandbox provisioning, and local provider migration. `apps/factory` is its composition root.
+- `packages/factory-integration` owns Factory authentication, persistence, recipe-based delegation integration, sandbox provisioning, compatibility diagnostics, and local provider migration. `apps/factory` is its composition root. The current upstream Factory package cannot mount the recipe's modes and native subagents; that unsupported surface is explicit and remains blocked until an official upstream construction API exists.
 
 The local MCode path is serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process and require no central HTTP server. Studio and Factory are server hosts of shared package contracts.
 
@@ -83,7 +83,7 @@ Ephemeral Factory environments receive short-lived task credentials. Persistent 
 
 ## Fork policy
 
-No upstream fork is required for the implemented baseline. MCode is an extension/composition package, not a source fork. If a demonstrated extension-point gap requires source changes, one pinned RLabs fork of the `mastra-ai/mastra` monorepo will cover Mastra framework and Mastra Code/TUI deltas. A separate `mastra-code-ui` fork is only appropriate for actual desktop work.
+No upstream fork is used for the implemented baseline. MCode is an extension/composition package, not a source fork. Issue #125 does not permit an upstream fork, dependency patch, or copied controller implementation; its Factory construction gap remains open until an official upstream release exposes the required narrow input. Any future fork proposal is a separate architectural decision and is not authorized by this baseline.
 
 Fork checkouts are external trust boundaries and are not npm workspace members. Each must record an RLabs `origin`, authoritative `upstream`, pinned commit, reason for divergence, and consumer validation.
 

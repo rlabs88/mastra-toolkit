@@ -13,8 +13,8 @@ Factory construction, authentication, provider preparation, storage, canonical a
 
 ## Present
 
-This package adapts canonical RLabs runtime packages to Mastra Factory. It owns Factory-specific lifecycle and persistence while applications and deployment targets remain separate boundaries. The control plane can omit repository execution; enabled repository execution consumes the shared sandbox machine as a fleet template and persists project/user/session bindings. Ephemeral development and persistent operations are explicit, fail-closed runtime profiles.
+This package adapts the versioned MCode recipe to Mastra Factory. It owns Factory-specific lifecycle and persistence while applications and deployment targets remain separate boundaries. The control plane can omit repository execution; enabled repository execution consumes the shared sandbox machine as a fleet template and persists project/user/session bindings. Ephemeral development and persistent operations are explicit, fail-closed runtime profiles. Until upstream Factory accepts controller-construction ingredients, diagnostics explicitly report canonical mode/native-subagent mounting as unsupported.
 
 ## Future
 
-Factory must next execute the checkout's canonical project workflow definitions through the bound sandbox without adding a second project format or workflow registry. Only after that single-project contract is proven may it scale across isolated projects. Cross-project control-plane behavior will not redefine agents, workflows, project formats, or sandbox contracts.
+Factory must consume the recipe's canonical modes and native subagents once an official upstream construction seam exists, then add request-aware sandbox adapters for the explicitly unsupported repository configuration surfaces. No Mastra fork, dependency patch, second controller, or host-checkout fallback is part of that path. Only after the single-project contract is proven may it scale across isolated projects.

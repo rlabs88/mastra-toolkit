@@ -1,6 +1,7 @@
 export {
   DEFAULT_SANDBOX_SPEC_PATH,
   findSandboxSpecPath,
+  loadDefaultSandboxSpec,
   loadSandboxSpec,
   parseSandboxSpec,
   type SandboxProvider,
@@ -21,6 +22,11 @@ export {
 } from "./platform.js";
 export { createSandboxMachine } from "./machine.js";
 export { enforceSandboxRuntimeProfile } from "./profile-machine.js";
+export {
+  createSandboxCommandRunTool,
+  type SandboxCommandRunAuthorizationContext,
+  type SandboxCommandRunToolOptions,
+} from "./command-run.js";
 export {
   resolveSandboxRuntimeProfile,
   type SandboxRuntimeProfile,

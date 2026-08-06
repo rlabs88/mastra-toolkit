@@ -4,7 +4,7 @@ import {
   A1_CODE_PROVIDER_NAME,
   getA1CodeModelId,
   type A1ProviderOptions,
-} from "@rlabs/mcode";
+} from "@rlabs/mcode/settings";
 
 const LOCAL_ORG_ID = "local-org";
 const LOCAL_USER_ID = "local-user";

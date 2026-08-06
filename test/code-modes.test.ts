@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createToolkitAgents } from "@rlabs/agents-roles";
+import { loadModelProfile } from "@rlabs/runtime-config";
+import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import {
   CODE_MODE_IDS,
   createCodeModes,
@@ -11,8 +13,8 @@ import {
 
 describe("Mastra Code canonical modes", () => {
   test("projects three canonical agents into exactly six scope/build modes", () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
-    const modes = createCodeModes(agents);
+    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: false });
+    const modes = createCodeModes(agents, loadModelProfile());
 
     expect(modes.map(mode => mode.id)).toEqual(CODE_MODE_IDS);
     expect(modes.find(mode => mode.metadata?.default)?.id).toBe("cortex/build");
@@ -31,8 +33,8 @@ describe("Mastra Code canonical modes", () => {
   });
 
   test("uses shared prompt overlays without changing tools or permissions", () => {
-    const agents = createToolkitAgents({ workspaceRoot: process.cwd(), browser: false });
-    const modes = createCodeModes(agents);
+    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: false });
+    const modes = createCodeModes(agents, loadModelProfile());
     const cortexScope = modes.find(mode => mode.id === "cortex/scope");
     const cortexBuild = modes.find(mode => mode.id === "cortex/build");
 
