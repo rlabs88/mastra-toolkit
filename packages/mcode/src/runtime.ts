@@ -12,7 +12,7 @@ import type { AgentControllerConfig, Session } from "@mastra/core/agent-controll
 import { Mastra } from "@mastra/core/mastra";
 import type { ToolkitAdditionalTools, ToolkitAgents } from "@rlabs/agents-roles";
 import { type McpLifecyclePort, type PreparedMcpGeneration, type ProjectMountingDiagnostic, ProjectMountingManager } from "@rlabs/project-mounting-manager";
-import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
+import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, HOST_BACKGROUND_TASK_POLICY, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool, loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
 import { MastraTUI } from "mastracode/tui";
 import { createHash } from "node:crypto";
@@ -111,7 +111,8 @@ export async function prepareCodeSdkSettings(options: {
       ])),
       subagentModels: Object.fromEntries(CANONICAL_AGENT_IDS.map(id => [
         id,
-        options.defaults.models.roles[id].gatewayModelId,
+        preserveExplicitModelId(existingModels.subagentModels?.[id])
+          ?? options.defaults.models.roles[id].gatewayModelId,
       ])),
       observerModelOverride: resolvePersistedModelId(existingModels.observerModelOverride, options.defaults) ?? defaults.observerModelId,
       reflectorModelOverride: resolvePersistedModelId(existingModels.reflectorModelOverride, options.defaults) ?? defaults.reflectorModelId,
@@ -136,6 +137,10 @@ export async function prepareCodeSdkSettings(options: {
   };
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
   return directory;
+}
+
+function preserveExplicitModelId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 export function createA1CodeProvider(options: A1ProviderOptions): MastraCodeCustomProvider {
@@ -208,6 +213,7 @@ export interface PreparedMcodeRuntime {
   readonly config: McodeConfig;
   readonly agents: ToolkitAgents;
   readonly mastraArgs: NonNullable<ConstructorParameters<typeof Mastra>[0]>;
+  abort(): Promise<void>;
   finalize(mastra: Mastra): Promise<MountedMcodeRuntime>;
 }
 
@@ -290,23 +296,26 @@ export async function prepareMcodeRuntime(
       proxy: new ProxyGateway({ ...config.runtime.proxy, models: runtimeDefaults.gateway.models }),
     },
     workspace,
-    backgroundTasks: {
-      enabled: true,
-      mode: "full",
-      globalConcurrency: 10,
-      perAgentConcurrency: 4,
-      backpressure: "queue",
-      defaultTimeoutMs: 300_000,
-      waitTimeoutMs: 30_000,
-    },
+    backgroundTasks: HOST_BACKGROUND_TASK_POLICY,
   };
+  let claimed = false;
 
   return {
     project,
     config,
     agents,
     mastraArgs,
+    async abort(): Promise<void> {
+      if (claimed) return;
+      claimed = true;
+      const failures = await cleanupPreparedMcodeStartup(controllerMount.base);
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "Prepared MCode runtime cleanup failed");
+      }
+    },
     async finalize(mastra: Mastra): Promise<MountedMcodeRuntime> {
+      if (claimed) throw new Error("Prepared MCode runtime has already been consumed");
+      claimed = true;
       const mcp = options.mcp
         ?? (options.disableMcp ? new EmptyMcpLifecycle() : createCodeMcpAdapter(project.rootPath));
       try {
@@ -323,16 +332,14 @@ export async function prepareMcodeRuntime(
         await controllerMount.finalize();
         if (options.watch ?? true) resources.startWatching();
       } catch (error) {
-        let cleanupError: unknown;
-        try {
-          if (resources) await resources.close();
-          else await mcp.close();
-        } catch (caught) {
-          cleanupError = caught;
-        }
-        setCustomProvidersSource(undefined);
-        if (cleanupError !== undefined) {
-          throw new AggregateError([error, cleanupError], "MCode runtime initialization and cleanup failed");
+        const cleanupFailures = await cleanupFailedMcodeStartup(
+          mastra,
+          resources,
+          mcp,
+          controllerMount.base,
+        );
+        if (cleanupFailures.length > 0) {
+          throw new AggregateError([error, ...cleanupFailures], "MCode runtime initialization and cleanup failed");
         }
         throw error;
       }
@@ -361,7 +368,44 @@ export async function prepareMcodeRuntime(
 
 export async function mountMcodeRuntime(options: McodeRuntimeOptions = {}): Promise<MountedMcodeRuntime> {
   const prepared = await prepareMcodeRuntime(options);
-  return prepared.finalize(new Mastra(prepared.mastraArgs));
+  let mastra: Mastra;
+  try {
+    mastra = new Mastra(prepared.mastraArgs);
+  } catch (error) {
+    try {
+      await prepared.abort();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "MCode construction and cleanup failed");
+    }
+    throw error;
+  }
+  return prepared.finalize(mastra);
+}
+
+async function cleanupPreparedMcodeStartup(code: MastraCodeAgentController): Promise<unknown[]> {
+  const results = await Promise.allSettled([
+    code.controller.stopIntervals(),
+    closePubSub(code.signalsPubSub),
+  ]);
+  setCustomProvidersSource(undefined);
+  return results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+}
+
+async function cleanupFailedMcodeStartup(
+  mastra: Mastra,
+  resources: ProjectMountingManager | undefined,
+  mcp: McpLifecyclePort,
+  code: MastraCodeAgentController,
+): Promise<unknown[]> {
+  const tasks = [
+    resources ? resources.close() : mcp.close(),
+    code.controller.stopIntervals(),
+    closePubSub(code.signalsPubSub),
+    mastra.shutdown(),
+  ];
+  const results = await Promise.allSettled(tasks);
+  setCustomProvidersSource(undefined);
+  return results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
 }
 
 class EmptyMcpLifecycle implements McpLifecyclePort {
@@ -417,17 +461,35 @@ export async function createLocalMcodeRuntime(
     profile,
   );
   const mounted = await mountMcodeRuntime({ ...options, cwd, profile, config });
-  const session = await mounted.controller.createSession({
-    id: localSessionId(mounted.project.rootPath),
-    ownerId: mounted.code.ownerId,
-    resourceId: mounted.project.resourceId,
-    scope: mounted.project.rootPath,
-    tags: { projectPath: mounted.project.rootPath },
-  });
-  await wireSessionConcerns(mounted.code, session);
+  let session: Session<MastraCodeState>;
+  try {
+    session = await mounted.controller.createSession({
+      id: localSessionId(mounted.project.rootPath),
+      ownerId: mounted.code.ownerId,
+      resourceId: mounted.project.resourceId,
+      scope: mounted.project.rootPath,
+      tags: { projectPath: mounted.project.rootPath },
+    });
+    await wireSessionConcerns(mounted.code, session);
+  } catch (error) {
+    try {
+      await mounted.close();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "MCode session startup and cleanup failed");
+    }
+    throw error;
+  }
 
   let tui: MastraTUI | undefined;
-  let closed = false;
+  let localClosePromise: Promise<void> | undefined;
+  const closeRuntime = async () => {
+    localClosePromise ??= (async () => {
+      tui?.stop();
+      releaseAllThreadLocks();
+      await mounted.close();
+    })();
+    await localClosePromise;
+  };
   return {
     ...mounted,
     session,
@@ -444,14 +506,30 @@ export async function createLocalMcodeRuntime(
         appName: "RLabs MCode",
         inlineQuestions: true,
       });
-      await tui.run();
+      const originalExit = process.exit;
+      let exitStarted = false;
+      const interceptedExit = ((code?: string | number | null) => {
+        if (!exitStarted) {
+          exitStarted = true;
+          void closeRuntime().then(
+            () => originalExit.call(process, code),
+            error => {
+              console.error(error);
+              originalExit.call(process, 1);
+            },
+          );
+        }
+        return undefined as never;
+      }) as typeof process.exit;
+      process.exit = interceptedExit;
+      try {
+        await tui.run();
+      } finally {
+        if (process.exit === interceptedExit) process.exit = originalExit;
+      }
     },
     async close(): Promise<void> {
-      if (closed) return;
-      closed = true;
-      tui?.stop();
-      releaseAllThreadLocks();
-      await mounted.close();
+      await closeRuntime();
     },
   };
 }

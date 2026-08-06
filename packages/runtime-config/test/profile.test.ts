@@ -6,6 +6,8 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_ACTIVE_ALIAS,
   DEFAULT_OBSERVER_ALIAS,
+  AGENT_BACKGROUND_TASK_POLICY,
+  HOST_BACKGROUND_TASK_POLICY,
   loadModelProfile,
   resolveRuntimeDefaultsV1,
   resolveAliasModelId,
@@ -16,6 +18,23 @@ import {
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 
 describe("model profile", () => {
+  test("exports one bounded background-task policy for every host and agent", () => {
+    expect(HOST_BACKGROUND_TASK_POLICY).toEqual({
+      enabled: true,
+      mode: "full",
+      globalConcurrency: 4,
+      perAgentConcurrency: 1,
+      backpressure: "reject",
+      defaultTimeoutMs: 180_000,
+      waitTimeoutMs: 5_000,
+    });
+    expect(AGENT_BACKGROUND_TASK_POLICY).toEqual({
+      tools: "all",
+      concurrency: 1,
+      waitTimeoutMs: 5_000,
+    });
+  });
+
   test("loads the package-local A1 catalog and role defaults", () => {
     const profile = loadModelProfile();
 

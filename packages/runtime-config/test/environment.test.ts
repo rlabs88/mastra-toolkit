@@ -9,16 +9,8 @@ import {
 } from "../src/index.js";
 
 describe("loadRuntimeConfig", () => {
-  test("uses standalone A1 proxy defaults without resolving a secret", () => {
-    const config = loadRuntimeConfig({});
-
-    expect(config).toEqual({
-      mode: "standalone",
-      proxy: {
-        baseUrl: "https://aa.renaissancelab.org/v1",
-        model: "code-frontier-high",
-      },
-    });
+  test("fails closed before startup when the selected provider credential is missing", () => {
+    expect(() => loadRuntimeConfig({})).toThrow(/CLI_PROXY_API_KEY/);
   });
 
   test("normalizes explicit host settings and prefers PROXY_API_KEY", () => {
@@ -78,8 +70,25 @@ describe("host data", () => {
     const prepared = await prepareHostDataDirectory("factory", {}, home);
     await expect(readFile(prepared.databasePath, "utf8")).resolves.toBe("database");
     await expect(readFile(`${prepared.databasePath}-wal`, "utf8")).resolves.toBe("wal");
+    await expect(prepareHostDataDirectory("factory", {}, home)).resolves.toEqual(prepared);
 
+    await mkdir(legacy, { recursive: true });
     await writeFile(join(legacy, "factory.db"), "conflict");
     await expect(prepareHostDataDirectory("factory", {}, home)).rejects.toThrow(/both contain local data/i);
+  });
+
+  test("atomically migrates the complete legacy MCode store", async () => {
+    const home = await mkdtemp(join(tmpdir(), "mastra-toolkit-mcode-data-"));
+    const legacy = join(home, ".mastra-toolkit", "code-sdk");
+    await mkdir(join(legacy, "locks"), { recursive: true });
+    await writeFile(join(legacy, "settings.json"), "{}");
+    await writeFile(join(legacy, "mastra.db"), "database");
+    await writeFile(join(legacy, "mastra-vectors.db"), "vectors");
+    await writeFile(join(legacy, "locks", "active.lock"), "lock");
+
+    const prepared = await prepareHostDataDirectory("mcode", {}, home);
+    await expect(readFile(prepared.settingsPath!, "utf8")).resolves.toBe("{}");
+    await expect(readFile(prepared.vectorDatabasePath!, "utf8")).resolves.toBe("vectors");
+    await expect(readFile(join(prepared.directory, "locks", "active.lock"), "utf8")).resolves.toBe("lock");
   });
 });

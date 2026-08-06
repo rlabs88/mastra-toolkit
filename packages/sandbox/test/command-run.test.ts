@@ -88,7 +88,7 @@ describe("sandbox command_run", () => {
         resolveSandbox: async () => ({
           executeCommand: async () => ({
             exitCode: 0,
-            stdout: "x".repeat(25_000),
+            stdout: `BEGIN-${"x".repeat(24_990)}-END`,
             stderr: "",
             stdoutTruncated: false,
           }),
@@ -98,9 +98,12 @@ describe("sandbox command_run", () => {
     if (!result || !("results" in result)) throw new Error("command_run returned no output");
 
     expect(result.results[0]?.output).toHaveLength(20_000);
-    expect(result.results[0]?.output).toMatch(/output truncated$/);
+    expect(result.results[0]?.output).toMatch(/^BEGIN-/);
+    expect(result.results[0]?.output).toContain("output truncated");
+    expect(result.results[0]?.output).toMatch(/-END$/);
     const trace = result.commandRun as { records?: Array<Record<string, unknown>> } | undefined;
     expect(trace?.records?.[0]).toMatchObject({ stdoutChars: 25_000, stdoutTruncated: true });
+    expect(String(trace?.records?.[0]?.resultPreview).length).toBeLessThanOrEqual(120);
   });
 
   test("rejects background shell execution before invoking the sandbox", async () => {

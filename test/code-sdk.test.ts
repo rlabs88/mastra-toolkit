@@ -85,7 +85,7 @@ describe("Factory Code SDK configuration", () => {
     expect(settings.models.modeDefaults["cortex/build"]).toBe("a1-proxy/code-frontier-max");
     expect(settings.models.observerModelOverride).toBe("a1-proxy/fast-high");
     expect(settings.models.subagentModels).toEqual({
-      cortex: "proxy/a1-proxy/code-frontier-high",
+      cortex: "openai/gpt-5.4-mini",
       flux: "proxy/a1-proxy/code-frontier-high",
       zen: "proxy/a1-proxy/code-frontier-high",
     });

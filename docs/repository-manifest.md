@@ -12,7 +12,7 @@ This manifest is the routing table for changes. A package owns a reusable contra
 | `packages/mcode` | versioned recipe, Code modes/subagents/settings, controller mount, MCP and host adapters, session/TUI runtime | roles, config, sandbox, mounting manager, published Code APIs | RLabs extends Mastra Code without changing upstream source |
 | `packages/factory-integration` | Factory auth, storage, direct canonical-agent composition, compatibility diagnostics, sandbox provisioning, future control-plane composition | roles, config, sandbox | behavior exists only because the host is Mastra Factory |
 | `apps/mcode` | CLI process and exit lifecycle | `mcode` | command parsing or executable UX changes |
-| `apps/studio` | Studio/server composition | `mcode` prepared runtime | Studio transport or server lifecycle changes |
+| `apps/studio` | deployer-required top-level Mastra construction and server exports | `mcode` prepared host facade | Studio transport or server lifecycle changes |
 | `apps/factory` | Factory composition root and process lifecycle | `factory-integration` | Factory process bootstrap changes |
 | `deployment/mcode-sandbox` | ephemeral-development and persistent-operations image source, profile identity, runtime probes, native validation, rollback policy | immutable AES/OPS bases and canonical sandbox profiles | Factory workspace packaging or its deployment evidence changes |
 | `deployment/studio-server` | central Studio target intent | approved application artifacts | a concrete Studio server delivery is approved |

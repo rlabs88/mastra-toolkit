@@ -67,9 +67,9 @@ describe("canonical agent roles", () => {
     ]));
 
     expect(hashes).toEqual({
-      cortex: "f05aec141f93cced6678ecfe7c9903466fbca23cb287ffd762d4aa734c91ad28",
-      flux: "70786ecab733deda373afa7389ce3dc0e726e07f6126f6cc375c5ecbfc895bfe",
-      zen: "2aa2d561ea2660f96735775bac80d5a2338a92ae762cdf953bbdd74c87fe3dfd",
+      cortex: "f3c8a1dc79c0feed6c5842fa6b36d2133b4f6c3aaca9be4e6f36abf4e4d81538",
+      flux: "001ead187814b9efeffe5c200f2a1f78e18ca8f5edfdafb4de53e6e731757e20",
+      zen: "d4b43b960ed6a9323d9094c9cde46c2c673c56a4a9994c3cff5fdb0457490253",
     });
   });
 

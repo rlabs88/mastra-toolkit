@@ -17,6 +17,15 @@ describe("command_run", () => {
     expect(() => parseCommands([{ command_type: "read", command_line: "{}", step: 1, timeout_ms: 99 }])).toThrow(/100/);
   });
 
+  test("explains the structured command contract when JSON input is malformed", async () => {
+    const [command] = parseCommands([
+      { command_type: "read", command_line: "cat README.md", step: 1 },
+    ]);
+
+    await expect(executeAdapter(command!, process.cwd(), new AbortController().signal))
+      .rejects.toThrow(/JSON object.*path, offset, limit/i);
+  });
+
   test("runs reads concurrently and mutations serially", async () => {
     const commands = parseCommands([
       { command_type: "read", command_line: '{"path":"a"}', step: 1 },

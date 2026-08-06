@@ -7,10 +7,12 @@ import type { StagehandBrowser } from "@mastra/stagehand";
 import {
   browserActionRequiresApproval,
   createAdhdTool,
+  createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
 } from "@rlabs/agent-tools";
 import {
+  AGENT_BACKGROUND_TASK_POLICY,
   loadModelProfile,
   resolveProxyGatewayModelId,
   type ModelProfile,
@@ -101,7 +103,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),
     hooks,
     durable: true,
-    backgroundTasks: { tools: "all", concurrency: 4, waitTimeoutMs: 30_000 },
+    backgroundTasks: AGENT_BACKGROUND_TASK_POLICY,
     defaultOptions: {
       maxSteps: role.model.steps,
       modelSettings: { temperature: role.model.temperature },
@@ -114,10 +116,12 @@ function createAgent<TId extends RoleDefinition["id"]>(
 
 function composeToolHooks(additionalHooks?: ToolHooks): ToolHooks {
   const auditHooks = createToolAuditHooks();
+  const budgetHooks = createRunBudgetHooks();
   return {
     beforeToolCall: async context => {
       let result: Awaited<ReturnType<NonNullable<ToolHooks["beforeToolCall"]>>>;
       try {
+        await budgetHooks.beforeToolCall?.(context);
         result = await additionalHooks?.beforeToolCall?.(context);
       } finally {
         await auditHooks.beforeToolCall?.(context);
@@ -126,6 +130,7 @@ function composeToolHooks(additionalHooks?: ToolHooks): ToolHooks {
     },
     afterToolCall: async context => {
       try {
+        await budgetHooks.afterToolCall?.(context);
         await additionalHooks?.afterToolCall?.(context);
       } finally {
         await auditHooks.afterToolCall?.(context);

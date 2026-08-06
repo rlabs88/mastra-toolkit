@@ -163,6 +163,17 @@ describe("workspace ownership", () => {
     expect(source).toContain("runtime.close()");
   });
 
+  test("keeps Studio policy behind MCode while preserving the deployer-required constructor seam", async () => {
+    const manifest = JSON.parse(await readFile(join(root, "apps/studio/package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    const source = await readFile(join(root, "apps/studio/src/index.ts"), "utf8");
+
+    expect(manifest.dependencies).toEqual({ "@mastra/core": "1.57.0", "@rlabs/mcode": "*" });
+    expect(source).toContain("prepareMcodeRuntime");
+    expect(source).toContain("export const mastra = new Mastra(localProject.mastraArgs)");
+  });
+
   test("keeps inactive deployment targets documentation-only", async () => {
     const entries = await readdir(join(root, "deployment", "studio-server"));
     expect(entries.sort()).toEqual(["AGENTS.md", "CONTEXT.md"]);

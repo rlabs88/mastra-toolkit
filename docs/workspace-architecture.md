@@ -86,7 +86,7 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 
 ## Host boundaries
 
-- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its versioned recipe is the single construction seam for canonical agents, modes, native leaf subagents, settings input, and a secret-free capability digest. It also owns provider adaptation, local project mounting, sessions, and reusable TUI construction.
+- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its versioned recipe is the single construction seam for canonical agents, modes, native leaf subagents, settings input, and a secret-free capability digest. It also owns provider adaptation, local project mounting, sessions, and reusable TUI construction. Studio consumes its prepared constructor arguments and finalize lifecycle; the top-level `new Mastra(...)` in the Studio entrypoint is the one deployer-required exception to host-facade-only construction. Programmatic hosts use the prepared runtime's abort path if construction fails before finalize.
 - `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
 - `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
 - `packages/factory-integration` owns Factory authentication, persistence, direct construction of canonical agents, sandbox provisioning, compatibility diagnostics, and local provider migration. It does not import MCode. `apps/factory` is its thin composition root.
@@ -94,6 +94,12 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 - Agent-facing project or RLabs API access enters through narrow tool ports injected at host composition time. Raw SDK clients, tokens, webhook verification, persistence, and control-plane scheduling cannot cross into `agents-roles`.
 
 The local MCode path is serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process and require no central HTTP server. Studio and Factory are server hosts of shared package contracts.
+
+## Run containment and local artifacts
+
+Every top-level run consumes the same bounded orchestration policy: at most eight delegated scopes, one active task per agent, four host-wide background tasks, 64 aggregate tool calls, 256,000 retained tool-output characters, and 20 minutes wall clock. Identical in-flight or completed delegation scopes are rejected. A failed external issue, pull-request, or project write is treated as an uncertain outcome and cannot be retried unchanged until the caller reconciles remote state. Command traces retain a compact preview while bounded results preserve both their beginning and end.
+
+Normal close, cancellation, and startup failure stop controller intervals, close project resources and MCP, drain the host runtime, and release MCode thread locks. Project-local `.mastracode/tmp/` is transient scratch owned by the project or user; `.mastracode/audits/` is durable evidence. Runtime shutdown never deletes either path implicitly. A workflow that creates scratch data must remove only the files it owns after successful publication; audit deletion always requires an explicit user operation.
 
 ## Sandbox and deployment
 

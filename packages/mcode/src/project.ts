@@ -1,5 +1,5 @@
 import { createMcpManager, type McpManager, type McpServerConfig } from "@mastra/code-sdk/mcp/index";
-import type { ToolsInput } from "@mastra/core/agent";
+import type { Agent, ToolsInput } from "@mastra/core/agent";
 import type { Mastra } from "@mastra/core/mastra";
 import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import type { CurrentToolSnapshotPort, HostGenerationRegistration, McpLifecyclePort, ModelAliasResolverPort, PreparedHostRegistration, PreparedMcpGeneration, StagedHostRegistrationPort } from "@rlabs/project-mounting-manager";
@@ -10,7 +10,6 @@ import { join, resolve } from "node:path";
 
 export class CodeMcpAdapter implements McpLifecyclePort {
   readonly #createCandidate: () => McpManager;
-  readonly #retired: McpManager[] = [];
   #current: McpManager | undefined;
 
   constructor(createCandidate: () => McpManager) {
@@ -31,21 +30,19 @@ export class CodeMcpAdapter implements McpLifecyclePort {
       snapshot: () => candidate.getTools(),
       commit: async () => {
         if (committed || rolledBack) return;
-        committed = true;
-        if (previous) this.#retired.push(previous);
         this.#current = candidate;
+        committed = true;
       },
       rollback: async () => {
         if (rolledBack) return;
         rolledBack = true;
         if (committed) {
           this.#current = previous;
-          if (previous) {
-            const index = this.#retired.indexOf(previous);
-            if (index >= 0) this.#retired.splice(index, 1);
-          }
         }
         await candidate.disconnect();
+      },
+      retirePrevious: async () => {
+        if (committed && !rolledBack && previous) await previous.disconnect();
       },
     };
   }
@@ -55,8 +52,7 @@ export class CodeMcpAdapter implements McpLifecyclePort {
   }
 
   async close(): Promise<void> {
-    const managers = [...this.#retired, ...(this.#current ? [this.#current] : [])];
-    this.#retired.length = 0;
+    const managers = this.#current ? [this.#current] : [];
     this.#current = undefined;
     await Promise.all(managers.map(manager => manager.disconnect()));
   }
@@ -91,6 +87,8 @@ export class StaticToolSnapshot implements CurrentToolSnapshotPort {
 
 export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
   readonly #mastra: Mastra;
+  #agents = new Map<string, Agent>();
+  #workflowGenerations = new Map<string, string>();
 
   constructor(mastra: Mastra) {
     this.#mastra = mastra;
@@ -100,28 +98,50 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
     const agentKeys = [...registration.generation.specialistAgents].map(([id]) =>
       `project-specialist-${id}@${registration.generation.id}`
     );
+    const candidateAgents = new Map<string, Agent>();
+    for (const [[, agent], key] of zip(registration.generation.specialistAgents, agentKeys)) {
+      candidateAgents.set(key, agent);
+    }
+    const previousAgents = new Map(this.#agents);
+    const candidateWorkflows = new Map([...registration.generation.workflows].map(
+      ([id, workflow]) => [id, workflow.generation],
+    ));
+    if (this.#workflowGenerations.size > 0 && !sameEntries(this.#workflowGenerations, candidateWorkflows)) {
+      throw new Error("Project workflow hot reload requires an upstream Mastra workflow removal API");
+    }
+    const addedAgentKeys: string[] = [];
     let committed = false;
     return {
       commit: async () => {
         if (committed) return;
-        for (const workflow of registration.generation.workflows.values()) {
-          this.#mastra.addWorkflow(workflow.workflow, `${workflow.id}@${workflow.generation}`);
-        }
-        for (const [[, agent], key] of zip(
-          registration.generation.specialistAgents,
-          agentKeys,
-        )) {
+        for (const [key, agent] of candidateAgents) {
           this.#mastra.addAgent(agent, key);
+          addedAgentKeys.push(key);
         }
+        if (this.#workflowGenerations.size === 0) {
+          for (const workflow of registration.generation.workflows.values()) {
+            this.#mastra.addWorkflow(workflow.workflow, `project-workflow-${workflow.id}`);
+          }
+        }
+        for (const key of this.#agents.keys()) this.#mastra.removeAgent(key);
+        this.#agents = candidateAgents;
+        this.#workflowGenerations = candidateWorkflows;
         committed = true;
       },
       rollback: async () => {
-        if (!committed) return;
-        for (const key of agentKeys) this.#mastra.removeAgent(key);
-        committed = false;
+        for (const key of addedAgentKeys) this.#mastra.removeAgent(key);
+        if (committed) {
+          for (const [key, agent] of previousAgents) this.#mastra.addAgent(agent, key);
+          this.#agents = previousAgents;
+        }
       },
     };
   }
+}
+
+function sameEntries(left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>): boolean {
+  if (left.size !== right.size) return false;
+  return [...left].every(([key, value]) => right.get(key) === value);
 }
 
 function zip<T, U>(left: Iterable<T>, right: Iterable<U>): Array<[T, U]> {

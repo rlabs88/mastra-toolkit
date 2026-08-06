@@ -3,7 +3,7 @@ import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
-import { loadModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import { HOST_BACKGROUND_TASK_POLICY, loadModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -23,13 +23,14 @@ export async function createToolkitFactory(
   config: FactoryConfig,
   bundle: FactoryAgentBundle,
   defaults: RuntimeDefaultsV1,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<MastraFactory> {
   const provider = {
     baseUrl: config.runtime.proxy.baseUrl,
     models: defaults.gateway.models,
     ...(config.runtime.proxy.apiKey ? { apiKey: config.runtime.proxy.apiKey } : {}),
   } satisfies A1ProviderOptions;
-  const hostData = await prepareHostDataDirectory("factory");
+  const hostData = await prepareHostDataDirectory("factory", environment);
   const controlPlaneDirectory = hostData.controlPlaneDirectory!;
   await mkdir(controlPlaneDirectory, { recursive: true, mode: 0o700 });
   const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl, hostData.databasePath);
@@ -43,7 +44,7 @@ export async function createToolkitFactory(
       ? { webhookSecret: config.github.GITHUB_APP_WEBHOOK_SECRET }
       : {}),
   }) : undefined;
-  const auth = createFactoryAuth(config.workos, process.env.NODE_ENV, config.server);
+  const auth = createFactoryAuth(config.workos, environment.NODE_ENV, config.server);
   const stateSecret = config.github?.GITHUB_APP_WEBHOOK_SECRET ?? config.workos?.cookiePassword;
   const factoryConfig: MastraFactoryConfig = {
     auth,
@@ -155,25 +156,26 @@ export async function createFactoryRuntime(
   const defaults = resolveRuntimeDefaultsV1(profile);
   const config = loadFactoryConfig(environment, startDirectory, profile);
   const bundle = createFactoryAgentBundle({ profile, browser: false });
-  const factory = await createToolkitFactory(config, bundle, defaults);
-  const prepared = await factory.prepare();
-  const mastra = new Mastra({
-    ...prepared,
-    gateways: {
-      ...(prepared.gateways ?? {}),
-      proxy: new ProxyGateway({ ...config.runtime.proxy, models: defaults.gateway.models }),
-    },
-    backgroundTasks: {
-      enabled: true,
-      mode: "full",
-      globalConcurrency: 10,
-      perAgentConcurrency: 4,
-      backpressure: "queue",
-      defaultTimeoutMs: 300_000,
-      waitTimeoutMs: 30_000,
-    },
-  });
-  await factory.finalize();
+  const factory = await createToolkitFactory(config, bundle, defaults, environment);
+  let mastra: Mastra | undefined;
+  try {
+    const prepared = await factory.prepare();
+    mastra = new Mastra({
+      ...prepared,
+      gateways: {
+        ...(prepared.gateways ?? {}),
+        proxy: new ProxyGateway({ ...config.runtime.proxy, models: defaults.gateway.models }),
+      },
+      backgroundTasks: HOST_BACKGROUND_TASK_POLICY,
+    });
+    await factory.finalize();
+  } catch (error) {
+    const cleanup = await settleFactoryRuntime(factory, mastra);
+    if (cleanup.length > 0) {
+      throw new AggregateError([error, ...cleanup], "Factory startup and cleanup failed");
+    }
+    throw error;
+  }
 
   let closing: Promise<void> | undefined;
   const close = async () => {
@@ -184,9 +186,23 @@ export async function createFactoryRuntime(
 }
 
 async function closeFactoryRuntime(factory: MastraFactory, mastra: Mastra): Promise<void> {
-  const results = await Promise.allSettled([factory.shutdown(), mastra.shutdown()]);
-  const failures = results
-    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-    .map(result => result.reason);
+  const failures = await settleFactoryRuntime(factory, mastra);
   if (failures.length > 0) throw new AggregateError(failures, "Factory shutdown failed");
+}
+
+async function settleFactoryRuntime(factory: MastraFactory, mastra?: Mastra): Promise<unknown[]> {
+  const failures: unknown[] = [];
+  try {
+    await factory.shutdown();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (mastra) {
+    try {
+      await mastra.shutdown();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
 }
