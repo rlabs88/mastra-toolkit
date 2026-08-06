@@ -12,6 +12,7 @@ import {
   type SandboxMachineBaseOptions,
 } from "../src/index.js";
 import type { CloneableSandboxMachine } from "../src/index.js";
+import { createSandboxMachineWithProvider } from "../src/machine.js";
 
 const specification = loadSandboxSpec(DEFAULT_SANDBOX_SPEC_PATH);
 
@@ -114,7 +115,7 @@ describe("sandbox machine adapters", () => {
     const commands: Array<{ command: string; args: string[] }> = [];
     const runtimeImage = "ghcr.io/rlabs88/toolkit/mcode-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const fixture = runtimeProbeFixture(commands, 0);
-    const machine = createSandboxMachine({
+    const machine = createSandboxMachineWithProvider({
       provider: "platform",
       workspaceRoot: process.cwd(),
       specification,

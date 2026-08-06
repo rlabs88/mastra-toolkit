@@ -19,7 +19,7 @@ export {
   createPlatformSandboxMachine,
   type PlatformSandboxMachineOptions,
 } from "./platform.js";
-export { createSandboxMachine, type SandboxProviderMachineFactory } from "./machine.js";
+export { createSandboxMachine } from "./machine.js";
 export { enforceSandboxRuntimeProfile } from "./profile-machine.js";
 export {
   resolveSandboxRuntimeProfile,

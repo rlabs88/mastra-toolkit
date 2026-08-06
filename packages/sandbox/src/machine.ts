@@ -4,11 +4,17 @@ import { createPlatformSandboxMachine } from "./platform.js";
 import { enforceSandboxRuntimeProfile } from "./profile-machine.js";
 import type { CloneableSandboxMachine, SandboxMachineOptions } from "./types.js";
 
-export type SandboxProviderMachineFactory = (options: SandboxMachineOptions) => CloneableSandboxMachine;
+type SandboxProviderMachineFactory = (options: SandboxMachineOptions) => CloneableSandboxMachine;
 
 export function createSandboxMachine(
   options: SandboxMachineOptions,
-  providerFactory: SandboxProviderMachineFactory = createProviderMachine,
+): CloneableSandboxMachine {
+  return createSandboxMachineWithProvider(options, createProviderMachine);
+}
+
+export function createSandboxMachineWithProvider(
+  options: SandboxMachineOptions,
+  providerFactory: SandboxProviderMachineFactory,
 ): CloneableSandboxMachine {
   const machine = providerFactory(options);
   if (options.provider === "local" || !options.runtimeProfile) return machine;
