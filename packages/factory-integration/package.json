@@ -26,6 +26,7 @@
     "check": "npm run typecheck && npm test"
   },
   "devDependencies": {
+    "@mastra/code-sdk": "1.1.1",
     "hono": "4.12.15"
   }
 }

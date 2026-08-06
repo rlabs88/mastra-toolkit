@@ -102,8 +102,8 @@ function createWorkflowTool(workflow: AnyWorkflow, description: string): ReturnT
           ...(context.writer ? { outputWriter: chunk => context.writer!.write(chunk) } : {}),
         });
         if (result.status === "success") {
-          await validateStandardSchema(schemas.outputSchema, result.result, `${workflow.id} output`);
-          return { runId: run.runId, status: result.status, output: result.result };
+          const output = await validateStandardSchema(schemas.outputSchema, result.result, `${workflow.id} output`);
+          return { runId: run.runId, status: result.status, output };
         }
         if (result.status === "failed") {
           return { runId: run.runId, status: result.status, error: result.error.message };
@@ -162,11 +162,12 @@ function workflowSchemas(workflow: AnyWorkflow): { inputSchema: object; outputSc
   return workflow as unknown as { inputSchema: object; outputSchema: object };
 }
 
-async function validateStandardSchema(schema: object, value: unknown, label: string): Promise<void> {
+async function validateStandardSchema(schema: object, value: unknown, label: string): Promise<unknown> {
   const standard = (schema as { "~standard"?: { validate(input: unknown): unknown } })["~standard"];
   if (!standard) throw new Error(`${label} does not implement Standard Schema`);
   const result = await standard.validate(value) as { issues?: readonly unknown[] };
   if (result.issues?.length) throw new Error(`${label} failed schema validation`);
+  return "value" in result ? result.value : value;
 }
 
 function assertStandardSchema(schema: object, label: string): void {

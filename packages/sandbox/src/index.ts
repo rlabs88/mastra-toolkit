@@ -20,3 +20,8 @@ export {
   type PlatformSandboxMachineOptions,
 } from "./platform.js";
 export { createSandboxMachine } from "./machine.js";
+export {
+  resolveSandboxRuntimeProfile,
+  type SandboxRuntimeProfile,
+  type SandboxRuntimeProfileName,
+} from "./runtime-profile.js";

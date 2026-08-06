@@ -29,13 +29,23 @@ class LocalFactoryAuth extends SimpleAuth<LocalFactoryUser> {
 export function createFactoryAuth(
   workos: FactoryConfig["workos"],
   nodeEnvironment = process.env.NODE_ENV,
+  server: FactoryConfig["server"] = {
+    publicUrl: "http://localhost:4111",
+    allowedOrigins: ["http://localhost:4111"],
+  },
 ): MastraAuthWorkos | LocalFactoryAuth {
   if (workos) {
+    const secure = server.publicUrl.startsWith("https://");
+    const crossSite = server.allowedOrigins.some(origin => origin !== server.publicUrl);
     return new MastraAuthWorkos({
       apiKey: workos.apiKey,
       clientId: workos.clientId,
-      redirectUri: "http://localhost:4111/auth/callback",
-      session: { cookiePassword: workos.cookiePassword, secure: false, sameSite: "Lax" },
+      redirectUri: `${server.publicUrl}/auth/callback`,
+      session: {
+        cookiePassword: workos.cookiePassword,
+        secure,
+        sameSite: crossSite ? "None" : "Lax",
+      },
     });
   }
   if (nodeEnvironment === "production") {

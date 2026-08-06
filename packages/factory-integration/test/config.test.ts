@@ -12,6 +12,10 @@ describe("loadFactoryConfig", () => {
 
     expect(config.runtime.mode).toBe("factory");
     expect(config.runtime.proxy.apiKey).toBe("test-only-key");
+    expect(config.server).toEqual({
+      publicUrl: "http://localhost:4111",
+      allowedOrigins: ["http://localhost:4111"],
+    });
     expect(config.sandbox?.provider).toBe("local");
     expect(config.projectRuntime).toEqual({
       profile: "ephemeral-development",
@@ -66,6 +70,7 @@ describe("loadFactoryConfig", () => {
   test("rejects a persistent operations runtime without durable Factory state", () => {
     expect(() => loadFactoryConfig({
       FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      NODE_ENV: "production",
       SANDBOX_PROVIDER: "platform",
       MASTRA_ENVIRONMENT_ID: "environment",
       MASTRA_PROJECT_ID: "project",
@@ -100,6 +105,7 @@ describe("loadFactoryConfig", () => {
   test("selects the hardened persistent operations profile with an approved runtime secret provider", () => {
     const config = loadFactoryConfig({
       FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      NODE_ENV: "production",
       SANDBOX_PROVIDER: "platform",
       MASTRA_ENVIRONMENT_ID: "environment",
       MASTRA_PROJECT_ID: "project",
@@ -109,6 +115,8 @@ describe("loadFactoryConfig", () => {
       WORKOS_API_KEY: "workos-key",
       WORKOS_CLIENT_ID: "workos-client",
       WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+      FACTORY_PUBLIC_URL: "https://factory.example.com",
+      FACTORY_ALLOWED_ORIGINS: "https://factory.example.com,https://app.example.com",
     }, process.cwd());
 
     expect(config.projectRuntime).toEqual({
@@ -123,5 +131,71 @@ describe("loadFactoryConfig", () => {
         path: "/mastra-toolkit",
       },
     });
+    expect(config.server).toEqual({
+      publicUrl: "https://factory.example.com",
+      allowedOrigins: ["https://factory.example.com", "https://app.example.com"],
+    });
+  });
+
+  test("rejects persistent operations without an HTTPS public origin", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      SANDBOX_PROVIDER: "platform",
+      MASTRA_ENVIRONMENT_ID: "environment",
+      MASTRA_PROJECT_ID: "project",
+      MASTRA_PLATFORM_SECRET_KEY: "secret",
+      DATABASE_URL: "postgres://factory",
+      REDIS_URL: "redis://factory",
+      WORKOS_API_KEY: "workos-key",
+      WORKOS_CLIENT_ID: "workos-client",
+      WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+      FACTORY_PUBLIC_URL: "http://factory.example.com",
+    }, process.cwd())).toThrow(/persistent-operations.*HTTPS/i);
+  });
+
+  test("rejects persistent operations outside the production cookie policy", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
+      NODE_ENV: "development",
+      SANDBOX_PROVIDER: "platform",
+      MASTRA_ENVIRONMENT_ID: "environment",
+      MASTRA_PROJECT_ID: "project",
+      MASTRA_PLATFORM_SECRET_KEY: "secret",
+      DATABASE_URL: "postgres://factory",
+      REDIS_URL: "redis://factory",
+      WORKOS_API_KEY: "workos-key",
+      WORKOS_CLIENT_ID: "workos-client",
+      WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+      FACTORY_PUBLIC_URL: "https://factory.example.com",
+    }, process.cwd())).toThrow(/persistent-operations.*NODE_ENV=production/i);
+  });
+
+  test("rejects non-web and path-bearing Factory origins", () => {
+    expect(() => loadFactoryConfig({
+      FACTORY_PUBLIC_URL: "ftp://factory.example.com",
+    }, process.cwd())).toThrow(/HTTP.*origin/i);
+    expect(() => loadFactoryConfig({
+      FACTORY_ALLOWED_ORIGINS: "http://localhost:4111/application",
+    }, process.cwd())).toThrow(/origin without a path/i);
+  });
+
+  test("rejects production WorkOS over HTTP independently of the sandbox profile", () => {
+    expect(() => loadFactoryConfig({
+      NODE_ENV: "production",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      FACTORY_PUBLIC_URL: "http://factory.example.com",
+      WORKOS_API_KEY: "workos-key",
+      WORKOS_CLIENT_ID: "workos-client",
+      WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+    }, process.cwd())).toThrow(/production WorkOS.*HTTPS/i);
+    expect(() => loadFactoryConfig({
+      NODE_ENV: "production",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      FACTORY_PUBLIC_URL: "https://factory.example.com",
+      FACTORY_ALLOWED_ORIGINS: "http://app.example.com",
+      WORKOS_API_KEY: "workos-key",
+      WORKOS_CLIENT_ID: "workos-client",
+      WORKOS_COOKIE_PASSWORD: "x".repeat(32),
+    }, process.cwd())).toThrow(/production WorkOS.*HTTPS/i);
   });
 });
