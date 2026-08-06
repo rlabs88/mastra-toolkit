@@ -19,7 +19,8 @@ mastra-toolkit/
 │   ├── sandbox/                  # Local/Docker/Platform machine contract
 │   ├── project-mounting-manager/ # hot-loaded project generations
 │   ├── mcode/                    # Code SDK/controller/TUI adapter
-│   └── factory-integration/      # Factory auth, storage, and integrations
+│   ├── factory-integration/      # Factory host and control-plane composition
+│   └── factory-github-projects/  # future, issue #127; not created yet
 ├── deployment/
 │   ├── mcode-sandbox/            # activated Factory runtime image source and probes
 │   └── studio-server/            # target intent; build assets not yet added
@@ -32,25 +33,25 @@ Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications shar
 ## Canonical runtime projection
 
 ```text
-runtime-config ─┬──────────────┬───────────────────────┐
-               ▼              ▼                       ▼
-          agents-roles ◄── agent-tools             sandbox
-               │                                      │
-               ├─────────────┐                        │
-               ▼             ▼                        ▼
-             mcode   factory-integration ◄────────────┘
-               │             │
-               ▼             ▼
-     project-mounting-manager
+runtime-config ───────────┬──────────────┐
+                         ▼              ▼
+agent-tools ───────► agents-roles     sandbox
+                         │              │
+               ┌─────────┴───────┐      │
+               ▼                 ▼      ▼
+             mcode       factory-integration
+               │                 ▲
+               ▼                 │ optional, future
+project-mounting-manager  factory-github-projects
                │
-        ┌──────┴───────┐
-        ▼              ▼
-  apps/mcode      apps/studio       apps/factory
+        ┌──────┴───────┐          │
+        ▼              ▼           ▼
+  apps/mcode      apps/studio  apps/factory
 ```
 
 `agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Each role owns a folder containing `prompt.ts`, `role.ts`, and `index.ts`. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
 
-`runtime-config` owns the secret-free YAML catalog and resolves the credential named by `apiKeyEnv` at process start. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
+`runtime-config` owns the secret-free YAML catalog, startup environment resolution, and host data paths. MCode, Studio, and Factory persist local state beneath `~/.mastra-toolkit/{mcode,studio,factory}` unless `MASTRA_APP_DATA_DIR` explicitly selects another host directory. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 
 ## Project mounting
 
@@ -71,7 +72,9 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 - `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its versioned recipe is the single construction seam for canonical agents, modes, native leaf subagents, settings input, and a secret-free capability digest. It also owns provider adaptation, local project mounting, sessions, and reusable TUI construction.
 - `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
 - `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
-- `packages/factory-integration` owns Factory authentication, persistence, recipe-based delegation integration, sandbox provisioning, compatibility diagnostics, and local provider migration. `apps/factory` is its composition root. The current upstream Factory package cannot mount the recipe's modes and native subagents; that unsupported surface is explicit and remains blocked until an official upstream construction API exists.
+- `packages/factory-integration` owns Factory authentication, persistence, direct construction of canonical agents, sandbox provisioning, compatibility diagnostics, and local provider migration. It does not import MCode. `apps/factory` is its thin composition root.
+- A future `packages/factory-github-projects` belongs between the GitHub Projects V2 API and `factory-integration`. It may own project-item bindings, leases, reconciliation, and scheduling, but never agent definitions, agent tools, sessions, sandboxes, project mounting, or credentials. Its creation is deferred until issue #127 needs executable code.
+- Agent-facing project or RLabs API access enters through narrow tool ports injected at host composition time. Raw SDK clients, tokens, webhook verification, persistence, and control-plane scheduling cannot cross into `agents-roles`.
 
 The local MCode path is serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process and require no central HTTP server. Studio and Factory are server hosts of shared package contracts.
 
@@ -95,11 +98,14 @@ Fork checkouts are external trust boundaries and are not npm workspace members. 
 4. User-selected valid models and Code preferences are preserved; proxy keys are never persisted.
 5. Provider failure is explicit and cannot silently weaken sandbox or model policy.
 6. Applications remain thin and consume package public exports only.
+7. Host adapters are siblings: Factory does not consume MCode, and canonical packages do not depend on either host.
+8. Process shutdown awaits host resources and the shared Mastra runtime exactly once.
 
 ## Validation gates
 
 - Root: `npm run typecheck`, `npm test`, and `npm run build`.
 - Package: the owning package's `npm run check`.
-- MCode: local project boot, six modes, native subagent targets, project workflow tools, and TUI CVUA evidence when UI behavior changes.
-- Factory: auth, storage migration, delegation, sandbox, and external integration gates appropriate to the change.
+- MCode: local project boot, six modes, native subagent targets, project workflow tools, and PTY/CUA evidence when UI behavior changes.
+- Factory: auth, storage migration, delegation, sandbox, an `agent-browser` browser pass, and CUA evidence for visible workflows.
+- Studio: browser validation when the Studio host or shared mounted runtime changes.
 - Repository: `git diff --check`, checkpoint verification, secret scan, and generated-state inspection.

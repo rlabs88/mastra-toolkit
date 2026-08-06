@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ApiRoute } from "@mastra/core/server";
 import { RequestContext } from "@mastra/core/request-context";
 import { Mastra } from "@mastra/core/mastra";
-import { createMcodeRecipe } from "@rlabs/mcode/recipe";
+import { createToolkitAgents } from "@rlabs/agents-roles";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import { Hono } from "hono";
@@ -12,7 +12,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { loadFactoryConfig } from "../src/config.js";
 import { createToolkitFactory } from "../src/create.js";
 import {
-  createFactoryMcodeRecipe,
+  createFactoryAgentBundle,
   ToolkitFactoryIntegration,
 } from "../src/toolkit-integration.js";
 
@@ -26,14 +26,16 @@ afterEach(async () => {
 });
 
 describe("single-project Factory composition", () => {
-  test("rejects an MCode recipe without the Factory session authorization boundary", () => {
+  test("rejects an unbranded agent bundle without the Factory session authorization boundary", () => {
     const profile = loadModelProfile();
-    const recipe = createMcodeRecipe({ profile, commandRun: createSandboxCommandRunTool(), browser: false });
+    const bundle = {
+      agents: createToolkitAgents({ profile, commandRun: createSandboxCommandRunTool(), browser: false }),
+    };
 
     expect(() => new ToolkitFactoryIntegration(
-      recipe as never,
+      bundle as never,
       resolveRuntimeDefaultsV1(profile),
-    )).toThrow(/createFactoryMcodeRecipe/);
+    )).toThrow(/createFactoryAgentBundle/);
   });
 
   test("boots without a sandbox and fails GitHub project preparation closed", async () => {
@@ -52,13 +54,13 @@ describe("single-project Factory composition", () => {
       FACTORY_PUBLIC_URL: "http://127.0.0.1:4111",
       FACTORY_ALLOWED_ORIGINS: "http://127.0.0.1:4111",
     }, process.cwd(), profile);
-    const recipe = createFactoryMcodeRecipe({
+    const bundle = createFactoryAgentBundle({
       profile,
       browser: false,
     });
     const defaults = resolveRuntimeDefaultsV1(profile);
-    expect(recipe).not.toHaveProperty("settings");
-    const diagnostics = new ToolkitFactoryIntegration(recipe, defaults).diagnostics();
+    expect(bundle).not.toHaveProperty("settings");
+    const diagnostics = new ToolkitFactoryIntegration(bundle, defaults).diagnostics();
     expect(diagnostics).toMatchObject({
       runtimeDefaults: {
         source: "@rlabs/runtime-config/models.yaml",
@@ -75,8 +77,8 @@ describe("single-project Factory composition", () => {
           issue: "#129",
         },
       },
-      mcode: {
-        digest: recipe.capability.digest,
+      agentBoundary: {
+        source: "@rlabs/agents-roles",
         controllerConstruction: "unsupported-upstream",
         repositoryConfiguration: {
           verified: ["published-workflows"],
@@ -85,8 +87,8 @@ describe("single-project Factory composition", () => {
         },
       },
     });
-    await expect(new ToolkitFactoryIntegration(recipe, defaults).agentTools()).resolves.toHaveProperty("command_run");
-    const tools = await new ToolkitFactoryIntegration(recipe, defaults).agentTools();
+    await expect(new ToolkitFactoryIntegration(bundle, defaults).agentTools()).resolves.toHaveProperty("command_run");
+    const tools = await new ToolkitFactoryIntegration(bundle, defaults).agentTools();
     const commandRun = tools.command_run as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -113,7 +115,7 @@ describe("single-project Factory composition", () => {
     }, unboundContext)).rejects.toThrow(/persisted Factory project session/i);
     await expect(delegateCortex.execute?.({ task: "must not delegate on the Factory host", maxSteps: 1 }, unboundContext))
       .rejects.toThrow(/persisted Factory project session/i);
-    for (const agent of Object.values(recipe.agents)) {
+    for (const agent of Object.values(bundle.agents)) {
       const directCommandRun = (await agent.listTools()).command_run as {
         execute?: (input: unknown, context: unknown) => Promise<unknown>;
       };
@@ -123,14 +125,14 @@ describe("single-project Factory composition", () => {
       }, unboundContext)).rejects.toThrow(/persisted Factory project session/i);
     }
     expect(sandboxInvoked).toBe(false);
-    const factory = await createToolkitFactory(config, recipe, defaults);
+    const factory = await createToolkitFactory(config, bundle, defaults);
 
     try {
       const prepared = await factory.prepare();
       expect(prepared.agents).toMatchObject({
-        cortex: recipe.agents.cortex,
-        flux: recipe.agents.flux,
-        zen: recipe.agents.zen,
+        cortex: bundle.agents.cortex,
+        flux: bundle.agents.flux,
+        zen: bundle.agents.zen,
       });
       const composed = new Mastra(prepared);
       for (const id of ["cortex", "flux", "zen"] as const) {
@@ -182,8 +184,8 @@ describe("single-project Factory composition", () => {
         FACTORY_REPOSITORY_EXECUTION: "disabled",
         CLI_PROXY_API_KEY: "test-only-key",
       }, hostTrapDirectory, profile);
-      const recipe = createFactoryMcodeRecipe({ profile, browser: false });
-      factory = await createToolkitFactory(config, recipe, resolveRuntimeDefaultsV1(profile));
+      const bundle = createFactoryAgentBundle({ profile, browser: false });
+      factory = await createToolkitFactory(config, bundle, resolveRuntimeDefaultsV1(profile));
       await factory.prepare();
       expect(process.env.FACTORY_HOST_TRAP).toBeUndefined();
       expect(process.cwd()).toBe(canonicalHostTrapDirectory);
@@ -196,7 +198,7 @@ describe("single-project Factory composition", () => {
 
   test("returns delegated command results when a canonical agent ends on a tool step", async () => {
     const profile = loadModelProfile();
-    const recipe = createFactoryMcodeRecipe({ profile, browser: false });
+    const bundle = createFactoryAgentBundle({ profile, browser: false });
     const commandResult = {
       version: 1,
       description: "show the bound checkout",
@@ -204,7 +206,7 @@ describe("single-project Factory composition", () => {
       attachments: [],
     };
     const oversizedResult = { output: "x".repeat(5_000) };
-    const generate = vi.spyOn(recipe.agents.cortex, "generate").mockResolvedValue({
+    const generate = vi.spyOn(bundle.agents.cortex, "generate").mockResolvedValue({
       text: "",
       runId: "delegated-run-1",
       steps: [{
@@ -226,7 +228,7 @@ describe("single-project Factory composition", () => {
       }],
     } as never);
     const delegate = (await new ToolkitFactoryIntegration(
-      recipe,
+      bundle,
       resolveRuntimeDefaultsV1(profile),
     ).agentTools()).delegate_cortex as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;

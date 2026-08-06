@@ -1,11 +1,16 @@
 import type { FactoryStorage } from "@mastra/core/storage";
 import {
-  A1_CODE_PROVIDER_ID,
-  A1_CODE_PROVIDER_NAME,
-  getA1CodeModelId,
-  type A1ProviderOptions,
-} from "@rlabs/mcode";
-import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+  A1_PROXY_PROVIDER_ID,
+  A1_PROXY_PROVIDER_NAME,
+  getA1ProxyModelId,
+  type RuntimeDefaultsV1,
+} from "@rlabs/runtime-config";
+
+interface A1ProviderOptions {
+  readonly baseUrl: string;
+  readonly apiKey?: string;
+  readonly models: readonly string[];
+}
 
 const LOCAL_ORG_ID = "local-org";
 const LOCAL_USER_ID = "local-user";
@@ -76,8 +81,8 @@ async function seedProvider(storage: FactoryStorage, provider: A1ProviderOptions
     orgId: LOCAL_ORG_ID,
     userId: LOCAL_USER_ID,
     input: {
-      providerId: A1_CODE_PROVIDER_ID,
-      name: A1_CODE_PROVIDER_NAME,
+      providerId: A1_PROXY_PROVIDER_ID,
+      name: A1_PROXY_PROVIDER_NAME,
       url: provider.baseUrl,
       ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
       models: [...provider.models],
@@ -170,7 +175,7 @@ function normalizeMemorySettings(memory: ModelMemorySettings): ModelMemorySettin
 export function normalizeStoredModelId(modelId: string | null | undefined): string | undefined {
   if (!modelId) return undefined;
   if (/^(?:mastracode\/)?a1-proxy\/gpt-5\.6-luna$/.test(modelId) || modelId === "mastracode/gpt-5.6-luna") {
-    return getA1CodeModelId("code-workhorse-high");
+    return getA1ProxyModelId("code-workhorse-high");
   }
   if (modelId.startsWith("mastracode/a1-proxy/")) return modelId.slice("mastracode/".length);
   return modelId;

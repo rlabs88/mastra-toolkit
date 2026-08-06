@@ -4,6 +4,8 @@ import { parse } from "yaml";
 import { z } from "zod";
 
 export const DEFAULT_ACTIVE_ALIAS = "code-frontier-high";
+export const A1_PROXY_PROVIDER_ID = "a1-proxy";
+export const A1_PROXY_PROVIDER_NAME = "A1 Proxy";
 export const DEFAULT_OBSERVER_ALIAS = "code-workhorse-high";
 export const DEFAULT_MODEL_PROFILE_PATH = createRequire(import.meta.url).resolve("@rlabs/runtime-config/models.yaml");
 
@@ -105,6 +107,10 @@ export function resolveAliasModelId(profile: ModelProfile, alias: string): strin
 
 export function resolveProxyGatewayModelId(profile: ModelProfile, alias: string): string {
   return `proxy/${resolveAliasModelId(profile, alias)}`;
+}
+
+export function getA1ProxyModelId(model: string): string {
+  return `${A1_PROXY_PROVIDER_ID}/${model.replace(/^a1-proxy\//, "")}`;
 }
 
 export function resolveRuntimeDefaultsV1(profile: ModelProfile): RuntimeDefaultsV1 {

@@ -19,6 +19,8 @@ applies_to: ["**/*"]
 - Keep Cortex, Flux, and Zen in separate `prompt.ts`, `role.ts`, and `index.ts` module folders.
 - Consume role-independent tools from `@rlabs/agent-tools` and model profiles from `@rlabs/runtime-config`.
 - Preserve public role IDs and the exact six-section prompt order.
+- Do not import Factory, MCode, GitHub, storage, scheduler, project-binding, credential, or API-client packages. Agent definitions may receive host-neutral tools, but never the clients or authority behind them.
+- Treat request workspace and tool availability as injected capability ceilings. Prompts and model-authored identifiers cannot select another project, repository, or API authority.
 
 ## Structure and extension
 

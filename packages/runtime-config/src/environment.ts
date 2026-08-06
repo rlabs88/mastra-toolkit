@@ -1,3 +1,6 @@
+import { mkdir, readdir, rename } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_ACTIVE_ALIAS, loadModelProfile, resolveAliasModelId, type ModelProfile } from "./profile.js";
 
@@ -22,6 +25,18 @@ export interface RuntimeConfig {
   readonly proxy: ModelHostConfig;
 }
 
+export type ToolkitHostId = "mcode" | "studio" | "factory";
+
+export interface HostDataPaths {
+  readonly rootDirectory: string;
+  readonly directory: string;
+  readonly databasePath: string;
+  readonly settingsPath?: string;
+  readonly vectorDatabasePath?: string;
+  readonly observabilityDatabasePath?: string;
+  readonly controlPlaneDirectory?: string;
+}
+
 export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
   profile: ModelProfile = loadModelProfile(),
@@ -39,6 +54,86 @@ export function loadRuntimeConfig(
     mode: parsed.MASTRA_TOOLKIT_MODE,
     proxy: apiKey ? { ...modelHost, apiKey } : modelHost,
   };
+}
+
+export function resolveHostDataPaths(
+  host: ToolkitHostId,
+  environment: NodeJS.ProcessEnv = process.env,
+  userHome: string = homedir(),
+): HostDataPaths {
+  const rootDirectory = resolve(userHome, ".mastra-toolkit");
+  const directory = resolve(environment.MASTRA_APP_DATA_DIR ?? join(rootDirectory, host));
+  if (host === "factory") {
+    return {
+      rootDirectory,
+      directory,
+      databasePath: join(directory, "factory.db"),
+      controlPlaneDirectory: join(directory, "control-plane"),
+    };
+  }
+  return {
+    rootDirectory,
+    directory,
+    databasePath: join(directory, "mastra.db"),
+    settingsPath: join(directory, "settings.json"),
+    vectorDatabasePath: join(directory, "mastra-vectors.db"),
+    observabilityDatabasePath: join(directory, "observability.duckdb"),
+  };
+}
+
+export async function prepareHostDataDirectory(
+  host: ToolkitHostId,
+  environment: NodeJS.ProcessEnv = process.env,
+  userHome: string = homedir(),
+): Promise<HostDataPaths> {
+  const paths = resolveHostDataPaths(host, environment, userHome);
+  if (!environment.MASTRA_APP_DATA_DIR) await migrateLegacyHostData(host, paths);
+  await mkdir(paths.directory, { recursive: true, mode: 0o700 });
+  return paths;
+}
+
+async function migrateLegacyHostData(host: ToolkitHostId, paths: HostDataPaths): Promise<void> {
+  const legacyDirectory = host === "mcode"
+    ? join(paths.rootDirectory, "code-sdk")
+    : host === "factory"
+      ? join(paths.rootDirectory, "data")
+      : undefined;
+  if (!legacyDirectory) return;
+
+  const names = host === "factory"
+    ? ["factory.db", "factory.db-wal", "factory.db-shm"]
+    : [
+        "settings.json",
+        "mastra.db",
+        "mastra.db-wal",
+        "mastra.db-shm",
+        "mastra-vectors.db",
+        "mastra-vectors.db-wal",
+        "mastra-vectors.db-shm",
+        "observability.duckdb",
+      ];
+  const legacyEntries = await directoryEntries(legacyDirectory);
+  const destinationEntries = await directoryEntries(paths.directory);
+  const legacyData = names.filter(name => legacyEntries.has(name));
+  const destinationData = names.filter(name => destinationEntries.has(name));
+  if (legacyData.length === 0) return;
+  if (destinationData.length > 0) {
+    throw new Error(`Legacy and destination directories both contain local data for ${host}`);
+  }
+
+  await mkdir(paths.directory, { recursive: true, mode: 0o700 });
+  for (const name of legacyData) {
+    await rename(join(legacyDirectory, name), join(paths.directory, name));
+  }
+}
+
+async function directoryEntries(directory: string): Promise<Set<string>> {
+  try {
+    return new Set(await readdir(directory));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return new Set();
+    throw error;
+  }
 }
 
 function parseProfileApiKey(value: string | undefined): string | undefined {

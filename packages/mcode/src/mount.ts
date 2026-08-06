@@ -37,6 +37,7 @@ export interface McodeRuntimeOptions {
   readonly config?: McodeConfig;
   readonly profile?: ModelProfile;
   readonly dataDirectory?: string;
+  readonly host?: "mcode" | "studio";
   readonly browser?: boolean;
   readonly watch?: boolean;
   readonly mcp?: McpLifecyclePort;
@@ -96,6 +97,8 @@ export async function prepareMcodeRuntime(
   const agents = recipe.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
+    host: options.host ?? "mcode",
+    environment,
     defaults: runtimeDefaults,
     provider: { baseUrl: config.runtime.proxy.baseUrl, models: runtimeDefaults.gateway.models },
   });
@@ -166,12 +169,21 @@ export async function prepareMcodeRuntime(
         await controllerMount.finalize();
         if (options.watch ?? true) resources.startWatching();
       } catch (error) {
-        await resources?.close().catch(() => undefined);
-        if (!resources) await mcp.close().catch(() => undefined);
+        let cleanupError: unknown;
+        try {
+          if (resources) await resources.close();
+          else await mcp.close();
+        } catch (caught) {
+          cleanupError = caught;
+        }
         setCustomProvidersSource(undefined);
+        if (cleanupError !== undefined) {
+          throw new AggregateError([error, cleanupError], "MCode runtime initialization and cleanup failed");
+        }
         throw error;
       }
 
+      let closePromise: Promise<void> | undefined;
       return {
         project,
         config,
@@ -181,12 +193,12 @@ export async function prepareMcodeRuntime(
         code: controllerMount.base,
         resources,
         async close(): Promise<void> {
-          await resources!.close();
-          await controllerMount.base.controller.getMastra()?.stopWorkers();
-          await controllerMount.base.controller.stopIntervals();
-          await closePubSub(controllerMount.base.signalsPubSub);
-          await controllerMount.base.storageMaintenance.closeStorage?.();
-          setCustomProvidersSource(undefined);
+          closePromise ??= closeMountedRuntime(
+            mastra,
+            resources!,
+            controllerMount.base,
+          );
+          await closePromise;
         },
       };
     },
@@ -209,4 +221,27 @@ class EmptyMcpLifecycle implements McpLifecyclePort {
 async function closePubSub(pubsub: MastraCodeAgentController["signalsPubSub"]): Promise<void> {
   const close = (pubsub as { close?: () => void | Promise<void> } | undefined)?.close;
   await close?.call(pubsub);
+}
+
+async function closeMountedRuntime(
+  mastra: Mastra,
+  resources: ProjectMountingManager,
+  code: MastraCodeAgentController,
+): Promise<void> {
+  const failures: unknown[] = [];
+  try {
+    await resources.close();
+  } catch (error) {
+    failures.push(error);
+  }
+  const results = await Promise.allSettled([
+    code.controller.stopIntervals(),
+    closePubSub(code.signalsPubSub),
+    mastra.shutdown(),
+  ]);
+  setCustomProvidersSource(undefined);
+  for (const result of results) {
+    if (result.status === "rejected") failures.push(result.reason);
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "MCode runtime shutdown failed");
 }

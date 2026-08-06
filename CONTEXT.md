@@ -15,7 +15,7 @@ The repository initially had an instruction file without the matching narrative 
 
 ## Present
 
-The repository is an npm workspace with thin `mcode`, Studio, and Factory applications. Canonical roles, tools, model configuration, sandbox behavior, project mounting, Code adaptation, and Factory adaptation have explicit package owners. `mcode` mounts the published Mastra Code controller and TUI in-process, while `project-mounting-manager` hot-loads project specialists, workflows, and MCP as validated generations. Package-local checkpoint pairs record the purpose and rules of every ownership boundary. No upstream fork is currently required.
+The repository is an npm workspace with thin `mcode`, Studio, and Factory applications. Canonical roles, tools, model configuration, sandbox behavior, project mounting, Code adaptation, and Factory adaptation have explicit package owners. Factory consumes canonical agents directly rather than importing the MCode host. `mcode` mounts the published Mastra Code controller and TUI in-process, while `project-mounting-manager` hot-loads project specialists, workflows, and MCP as validated generations. Package-local checkpoint pairs record the purpose and rules of every ownership boundary. No upstream fork is currently required.
 
 Mastra Code itself is developed inside the upstream `mastra-ai/mastra` monorepo. The existing private `rlabs88/mastra-code` repository is a public-API wrapper around the published `mastracode` package, not a fork of the upstream source. This distinction shapes the target layout: wrappers belong with applications, while framework and TUI source deltas belong in one pinned Mastra monorepo fork.
 
@@ -26,5 +26,7 @@ The accepted [executive direction](docs/executive-direction.md) treats Mastra as
 The product monorepo continues toward one project runtime per checkout, then a single-project Factory deployment, and finally an isolated multi-project control plane. Mastra Code conventions remain authoritative for instructions, skills, hooks, commands, and plugins; the project mounting manager adds only the currently missing specialist, workflow, and transactional MCP generation contract. A typed, secret-free YAML model profile remains the input to every host adapter.
 
 Sandbox builds become a separate top-level boundary with reusable package layers and explicit ephemeral and persistent environment compositions. Persistent environments gain stronger operational controls and runtime secret delivery without turning images or repository configuration into credential stores.
+
+GitHub Projects V2 becomes an optional Factory control-plane integration only when issue #127 activates a real binding, lease, reconciliation, and scheduling lifecycle. It schedules governed Factory work but never owns agents, sessions, workspaces, sandboxes, GitHub credentials, or webhook verification. Agent-facing API capabilities remain request-scoped tools backed by injected ports; control-plane APIs do not become agent tools.
 
 Upstream source remains exceptional. One Mastra monorepo fork covers both framework and Mastra Code TUI changes. A separate desktop `mastra-code-ui` fork remains an option only if desktop interface work begins. Published packages and public extension APIs remain the ordinary integration path.
