@@ -137,6 +137,7 @@ describe("MCode sandbox deployment source", () => {
     expect(verifier).toContain("trap cleanup EXIT");
     expect(verifier).toContain("mastra-toolkit-runtime-probe");
     expect(verifier).toContain("createWorkflow");
+    expect(verifier).toContain("void (async () =>");
     expect(verifier).toContain("linux/arm64");
     expect(verifier).toContain('"$image" probe');
     expect(verifier).toContain('"$image" serve');

@@ -59,6 +59,7 @@ run_bounded 180 docker run --rm --name "$probe_container" \
 
 workflow_smoke='import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+void (async () => {
 const step = createStep({
   id: "runtime-smoke-step",
   inputSchema: z.object({ value: z.string() }),
@@ -72,7 +73,8 @@ const workflow = createWorkflow({
 }).then(step).commit();
 const run = await workflow.createRun();
 const result = await run.start({ inputData: { value: "mcode" } });
-if (result.status !== "success" || result.result.value !== "mcode-verified") process.exit(1);'
+if (result.status !== "success" || result.result.value !== "mcode-verified") process.exit(1);
+})();'
 run_bounded 180 docker run --rm --name "$workflow_container" \
   --workdir /opt/mastra-toolkit/mcode-runtime --entrypoint tsx \
   "$image" --eval "$workflow_smoke" >/dev/null
