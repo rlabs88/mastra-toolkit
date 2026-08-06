@@ -126,6 +126,7 @@ describe("canonical MCode recipe", () => {
     profile.aliases.push("startup-only");
 
     expect(loadMcodeConfig({
+      CLI_PROXY_API_KEY: "test-only-key",
       PROXY_MODEL: "startup-only",
       SANDBOX_PROVIDER: "local",
       WORKSPACE_ROOT: process.cwd(),

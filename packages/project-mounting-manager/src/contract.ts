@@ -86,6 +86,7 @@ export interface CurrentToolSnapshotPort {
 export interface PreparedMcpGeneration extends CurrentToolSnapshotPort {
   commit(): Promise<void>;
   rollback(): Promise<void>;
+  retirePrevious?(): Promise<void>;
 }
 
 export interface McpLifecyclePort {

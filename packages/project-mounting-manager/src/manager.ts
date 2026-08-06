@@ -117,7 +117,13 @@ export class ProjectMountingManager {
       await hostStage.commit();
 
       this.#nextGeneration += 1;
-      return this.#store.activate(generation);
+      const activated = this.#store.activate(generation);
+      try {
+        await mcpStage.retirePrevious?.();
+      } catch (error) {
+        this.#diagnostics.record("close", error);
+      }
+      return activated;
     } catch (error) {
       await this.rollback(hostStage, mcpStage);
       this.#diagnostics.record(phase, error);

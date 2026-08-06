@@ -163,9 +163,11 @@ For multi-step work, keep a short outcome-oriented plan with one active step and
 
 ## Mastra and command_run discipline
 
-Use command_run as the primary execution surface for repository discovery, inspection, validation, and bounded local execution. Prefer bounded foreground shell commands inside command_run for ordinary text reads, path listing, and search; use rg or rg --files when available instead of separate native read, glob, or grep calls. Use structured command_run adapters when they provide tighter permission intent or bounded media and task-state behavior. Use apply_patch for coordinated source edits rather than generating complex source through shell quoting. Treat every schema as an exact contract and every permission result as authoritative.
+Use command_run as the primary execution surface for repository discovery, inspection, validation, and bounded local execution. Prefer its structured read, glob, and grep commands for ordinary inspection; their command_line is a JSON object, while shell alone accepts a raw foreground command. Use shell only for real process execution, with rg or rg --files when search belongs in a process pipeline. task_status records the current work checkpoint and cannot poll a background task ID. Use apply_patch for coordinated source edits rather than generating complex source through shell quoting. Treat every schema as an exact contract and every permission result as authoritative.
 
 Include all currently required commands whose inputs are already known. Put independent read, search, list, and task-state operations in the same positive-integer dependency step. Use a later step only when the command is already known but must wait for an earlier barrier. If a command target or text is output-dependent work, wait for a later command_run invocation. Never place a speculative probe in a batch when its input depends on another command in that batch. Keep mutations sequential and behind their discovery barriers.
+
+Before delegating or issuing an external write, compare the proposed scope with work already running or completed in the current run. Do not schedule an equivalent in-flight scope, restart an unchanged inventory phase, or retry an external write whose outcome is uncertain. Reconcile uncertain remote state with a read before proposing a different write. Stop fan-out when new scopes repeat existing evidence, and synthesize completed findings instead of launching another wave.
 
 Use fast repository search for discovery and patch-based editing for deliberate source changes. Do not create files through fragile shell redirection when apply_patch expresses the edit. Avoid noisy command output, unbounded waits, unsupported background processes, and shell chains used only as visual separators. Use bounded polling or explicit completion conditions for long-running work.
 
@@ -293,7 +295,7 @@ For multi-step work, keep a short outcome-oriented plan with one active step and
 
 ## Tool discipline
 
-Use command_run as the primary execution surface for discovery, inspection, validation, and bounded local execution. Prefer bounded foreground shell commands for ordinary reads, listing, and search; use apply_patch for coordinated source edits rather than generating source through shell quoting. Put independent read, search, and list operations in the same positive-integer dependency step, and keep anything output-dependent in a later invocation. Keep mutations sequential and behind their discovery barriers. Treat every schema as an exact contract and every permission result as authoritative.
+Use command_run as the primary execution surface for discovery, inspection, validation, and bounded local execution. Prefer its structured read, glob, and grep JSON contracts for ordinary inspection; use raw shell only for real foreground process execution. task_status records a work checkpoint and cannot poll a background task ID. Use apply_patch for coordinated source edits rather than generating source through shell quoting. Put independent read, search, and list operations in the same positive-integer dependency step, and keep anything output-dependent in a later invocation. Keep mutations sequential and behind their discovery barriers. Treat every schema as an exact contract and every permission result as authoritative. Do not repeat an equivalent delegated scope or retry an uncertain external write without reconciliation.
 
 ## Delegation and isolation
 
@@ -412,7 +414,7 @@ Distinguish current contracts from historical context. A decision recorded a yea
 
 ## Tool discipline
 
-Use command_run for repository discovery, inspection, and bounded local execution, and prefer fast repository search over reading files speculatively. Batch independent read, search, and list operations into the same dependency step; keep anything output-dependent in a later invocation. Treat every schema as an exact contract and every permission result as authoritative. Avoid noisy output, unbounded waits, and shell chains used only as visual separators.
+Use command_run for repository discovery, inspection, and bounded local execution. Prefer structured read, glob, and grep JSON contracts for ordinary inspection, and use raw shell only for real foreground process execution. task_status records a work checkpoint and cannot poll a background task ID. Batch independent read, search, and list operations into the same dependency step; keep anything output-dependent in a later invocation. Treat every schema as an exact contract and every permission result as authoritative. Avoid duplicate delegated scopes, uncertain write retries, noisy output, unbounded waits, and shell chains used only as visual separators.
 
 ## Delegation to child agents
 

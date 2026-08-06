@@ -39,10 +39,10 @@ describe("single-project Factory composition", () => {
 
   test("boots without a sandbox and fails GitHub project preparation closed", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "rlabs-factory-control-plane-"));
-    process.env.MASTRA_APP_DATA_DIR = dataDirectory;
     const profile = loadModelProfile();
-    const config = loadFactoryConfig({
+    const environment = {
       MASTRA_TOOLKIT_MODE: "factory",
+      MASTRA_APP_DATA_DIR: dataDirectory,
       FACTORY_REPOSITORY_EXECUTION: "disabled",
       CLI_PROXY_API_KEY: "test-only-key",
       GITHUB_APP_ID: "1",
@@ -52,7 +52,8 @@ describe("single-project Factory composition", () => {
       GITHUB_APP_WEBHOOK_SECRET: "test-stable-state-secret",
       FACTORY_PUBLIC_URL: "http://127.0.0.1:4111",
       FACTORY_ALLOWED_ORIGINS: "http://127.0.0.1:4111",
-    }, process.cwd(), profile);
+    };
+    const config = loadFactoryConfig(environment, process.cwd(), profile);
     const bundle = createFactoryAgentBundle({
       profile,
       browser: false,
@@ -124,7 +125,7 @@ describe("single-project Factory composition", () => {
       }, unboundContext)).rejects.toThrow(/persisted Factory project session/i);
     }
     expect(sandboxInvoked).toBe(false);
-    const factory = await createToolkitFactory(config, bundle, defaults);
+    const factory = await createToolkitFactory(config, bundle, defaults, environment);
 
     try {
       const prepared = await factory.prepare();

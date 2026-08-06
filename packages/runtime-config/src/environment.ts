@@ -46,13 +46,16 @@ export function loadRuntimeConfig(
 
   const profileApiKey = parseProfileApiKey(environment[profile.provider.apiKeyEnv]);
   const apiKey = parsed.PROXY_API_KEY ?? profileApiKey;
+  if (!apiKey) {
+    throw new Error(`Missing required model credential: ${profile.provider.apiKeyEnv}`);
+  }
   const modelHost = {
     baseUrl: (parsed.PROXY_BASE_URL ?? profile.provider.baseUrl).replace(/\/+$/, ""),
     model: parsed.PROXY_MODEL,
   };
   return {
     mode: parsed.MASTRA_TOOLKIT_MODE,
-    proxy: apiKey ? { ...modelHost, apiKey } : modelHost,
+    proxy: { ...modelHost, apiKey },
   };
 }
 
@@ -121,9 +124,10 @@ async function migrateLegacyHostData(host: ToolkitHostId, paths: HostDataPaths):
     throw new Error(`Legacy and destination directories both contain local data for ${host}`);
   }
 
-  await mkdir(paths.directory, { recursive: true, mode: 0o700 });
-  for (const name of legacyData) {
-    await rename(join(legacyDirectory, name), join(paths.directory, name));
+  try {
+    await rename(legacyDirectory, paths.directory);
+  } catch (error) {
+    throw new Error(`Unable to atomically migrate legacy local data for ${host}`, { cause: error });
   }
 }
 

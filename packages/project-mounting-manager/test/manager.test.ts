@@ -68,6 +68,29 @@ describe("ProjectMountingManager", () => {
     expect(manager.diagnostics().at(-1)?.phase).toBe("commit");
   });
 
+  test("does not publish a host generation when MCP commit fails", async () => {
+    const projectRoot = await projectFixture();
+    const host = new RecordingHost();
+    const mcp = new RecordingMcp();
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp,
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      host,
+    });
+    const first = manager.snapshot();
+    mcp.failNextCommit = true;
+
+    await expect(manager.reload()).rejects.toThrow("MCP commit failed");
+
+    expect(manager.snapshot()).toBe(first);
+    expect(host.current?.generation.id).toBe(1);
+    expect(mcp.currentGeneration).toBe(1);
+    expect(host.rollbackCount).toBe(1);
+    expect(mcp.rollbackCount).toBe(1);
+  });
+
   test("rejects an invalid specialist tool selection before host publication", async () => {
     const projectRoot = await projectFixture();
     const host = new RecordingHost();
@@ -144,6 +167,7 @@ class RecordingHost implements StagedHostRegistrationPort {
 class RecordingMcp implements McpLifecyclePort {
   currentGeneration = 0;
   rollbackCount = 0;
+  failNextCommit = false;
 
   async prepare(): Promise<PreparedMcpGeneration> {
     const candidate = this.currentGeneration + 1;
@@ -151,6 +175,10 @@ class RecordingMcp implements McpLifecyclePort {
     return {
       snapshot: () => ({ mcp_lookup: tool("mcp_lookup") }),
       commit: async () => {
+        if (this.failNextCommit) {
+          this.failNextCommit = false;
+          throw new Error("MCP commit failed");
+        }
         this.currentGeneration = candidate;
       },
       rollback: async () => {

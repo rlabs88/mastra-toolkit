@@ -21,8 +21,15 @@ describe("CodeMcpAdapter", () => {
     expect(adapter.getTools()).toEqual({ first_tool: {} });
     expect(second.disconnects()).toBe(1);
 
-    await adapter.close();
+    const third = fakeManager({ third_tool: {} });
+    candidates.push(third);
+    const retired = await adapter.prepare();
+    await retired.commit();
+    await retired.retirePrevious?.();
     expect(first.disconnects()).toBe(1);
+
+    await adapter.close();
+    expect(third.disconnects()).toBe(1);
   });
 });
 

@@ -34,6 +34,7 @@ describe("loadFactoryConfig", () => {
     profile.aliases.push("startup-only");
 
     expect(loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-only-key",
       FACTORY_REPOSITORY_EXECUTION: "disabled",
       PROXY_MODEL: "startup-only",
     }, process.cwd(), profile).runtime.proxy.model).toBe("startup-only");
@@ -105,6 +106,7 @@ describe("loadFactoryConfig", () => {
 
   test("boots the Factory control plane without repository sandboxes", () => {
     const config = loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-only-key",
       MASTRA_TOOLKIT_MODE: "factory",
       FACTORY_REPOSITORY_EXECUTION: "disabled",
     }, process.cwd());
@@ -187,6 +189,7 @@ describe("loadFactoryConfig", () => {
 
   test("selects the hardened persistent operations profile with an approved runtime secret provider", () => {
     const config = loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-only-key",
       FACTORY_PROJECT_RUNTIME_PROFILE: "persistent-operations",
       NODE_ENV: "production",
       SANDBOX_PROVIDER: "platform",

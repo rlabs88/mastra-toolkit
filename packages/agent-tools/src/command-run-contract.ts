@@ -187,9 +187,11 @@ export function parseStrictObject(
   try {
     value = JSON.parse(command.command_line)
   } catch {
-    throw new Error(`${command.command_type} command_line must be a JSON object`)
+    throw new Error(`${command.command_type} command_line must be a JSON object with only: ${allowedKeys.join(", ")}`)
   }
-  if (!isRecord(value)) throw new Error(`${command.command_type} command_line must be a JSON object`)
+  if (!isRecord(value)) {
+    throw new Error(`${command.command_type} command_line must be a JSON object with only: ${allowedKeys.join(", ")}`)
+  }
   const allowed = new Set(allowedKeys)
   const unknownKey = Object.keys(value).find((key) => !allowed.has(key))
   if (unknownKey) throw new Error(`${command.command_type} has unknown field: ${unknownKey}`)

@@ -24,8 +24,8 @@ const SANDBOX_COMMAND_RESULT_PREFIX = "__MASTRA_TOOLKIT_COMMAND_RESULT__";
 const inputSchema = z.object({
   description: z.string().min(1).max(4_000).regex(/^[^\r\n]+$/),
   commands: z.array(z.object({
-    command_type: z.enum(COMMAND_TYPES),
-    command_line: z.string().min(1),
+    command_type: z.enum(COMMAND_TYPES).describe("Selects the exact command_line contract; task_status is an internal work checkpoint, never a background task poll."),
+    command_line: z.string().min(1).describe("shell uses a raw foreground command. Structured forms use JSON: read {path,offset?,limit?}; glob {pattern,path?}; grep {pattern,path?}; task_status {task_group,task_type,status,compact_context?}; read_media {path,offset?,limit?}; web_discover {url,mode,path?}. apply_patch uses a raw unified patch."),
     step: z.number().int().positive(),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),
   }).strict()).min(1).max(20),
@@ -59,7 +59,7 @@ export interface SandboxCommandRunToolOptions {
 export function createSandboxCommandRunTool(options: SandboxCommandRunToolOptions = {}) {
   return createTool({
     id: "command_run",
-    description: "Run 1–20 permission-gated repository commands inside the active workspace sandbox.",
+    description: "Run 1–20 bounded, permission-gated commands in the active sandbox. Prefer structured read/glob/grep JSON over shell for inspection. task_status records a work checkpoint and cannot poll a background task ID. Commands with the same step are independent; use a later step only for a true dependency.",
     inputSchema,
     outputSchema,
     requireApproval: input => parseCommands(input.commands).some(commandRequiresApproval),
@@ -154,7 +154,7 @@ async function executeSandboxCommand(
     cwd: workdir,
     ...(command.timeout_ms ? { timeout: command.timeout_ms } : {}),
     abortSignal: signal,
-    maxRetainedBytes: MAX_RESULT_CHARS,
+    maxRetainedBytes: MAX_RESULT_CHARS * 4,
   });
   if (result.exitCode !== 0) throw new SandboxCommandFailure(result.stderr || result.stdout, result);
   return {

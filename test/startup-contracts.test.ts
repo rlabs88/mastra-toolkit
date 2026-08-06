@@ -35,6 +35,9 @@ describe("local startup contracts", () => {
     expect(manifest.scripts["dev:factory:infisical"]).toBe(
       "node scripts/with-infisical.mjs env MASTRA_TOOLKIT_MODE=factory PROXY_MODEL=code-frontier-high npm run dev:factory",
     );
+    expect(manifest.scripts["dev:infisical"]).toBe(
+      "node scripts/with-infisical.mjs env PROXY_MODEL=code-frontier-high npm run dev",
+    );
   });
 
   test("admits ephemeral local Factory development without WorkOS", async () => {

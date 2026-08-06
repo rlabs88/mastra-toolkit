@@ -576,8 +576,11 @@ function cancelledResult(command: ParsedCommand, message = "Cancelled because an
 
 function boundOutput(output: string, maximum: number): string {
   if (output.length <= maximum) return output
-  const marker = "\n… output truncated"
-  return `${output.slice(0, Math.max(0, maximum - marker.length))}${marker}`.slice(0, maximum)
+  const marker = "\n… output truncated …\n"
+  const retained = Math.max(0, maximum - marker.length)
+  const headLength = Math.ceil(retained / 2)
+  const tailLength = Math.floor(retained / 2)
+  return `${output.slice(0, headLength)}${marker}${output.slice(-tailLength)}`.slice(0, maximum)
 }
 
 function errorMessage(error: unknown): string {
