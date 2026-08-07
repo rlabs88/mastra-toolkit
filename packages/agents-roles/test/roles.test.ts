@@ -2,17 +2,17 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
-import { createTool } from "@mastra/core/tools";
+import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import { describe, expect, test, vi } from "vitest";
-import { z } from "zod";
 import {
   CORTEX_ROLE,
   FLUX_ROLE,
   ROLE_IDS,
   ROLES,
   ZEN_ROLE,
-  TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
+  TOOLKIT_WORKSPACE_CONTEXT_KEY,
   composePrompt,
+  createToolkitAgentRegistry,
   createToolkitAgents,
 } from "../src/index.js";
 
@@ -67,50 +67,101 @@ describe("canonical agent roles", () => {
     ]));
 
     expect(hashes).toEqual({
-      cortex: "f3c8a1dc79c0feed6c5842fa6b36d2133b4f6c3aaca9be4e6f36abf4e4d81538",
-      flux: "001ead187814b9efeffe5c200f2a1f78e18ca8f5edfdafb4de53e6e731757e20",
-      zen: "d4b43b960ed6a9323d9094c9cde46c2c673c56a4a9994c3cff5fdb0457490253",
+      cortex: "08aab5280ec12e4c62c8d4989b4456cf084e01043a87e77951ff759f869b7751",
+      flux: "200c0e2add58ede9ec0382800ab7c33ae529a0cec505328cb6982578030c0122",
+      zen: "411351b9d27271fe546a4cdd879947d6e2b2ee717249cc3a1c3fd2341be81188",
     });
   });
 
-  test("creates the current Mastra delegation topology", async () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
+  test("directs every role to native Mastra workspace tools", () => {
+    for (const id of ROLE_IDS) {
+      const prompt = composePrompt(ROLES[id]);
+      expect(prompt).not.toMatch(/command_run|adhd_run/);
+      expect(prompt).toMatch(/Mastra workspace/i);
+    }
+    const flux = composePrompt(FLUX_ROLE);
+    expect(flux).toMatch(/Use the existing native subagent surface/i);
+    expect(flux).toMatch(/Do not invent a replacement orchestration tool/i);
+    expect(flux).not.toMatch(/ADHD|out-of-process|command-line tool|skill form/i);
+  });
+
+  test("creates the canonical non-recursive leaf set", async () => {
+    const agents = createToolkitAgents({ browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
-    expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
-    expect(Object.keys(await agents.cortex.listAgents())).toEqual([]);
-    expect(Object.keys(await agents.flux.listAgents())).toEqual([]);
+    for (const agent of Object.values(agents)) expect(await agent.listAgents()).toEqual({});
   });
 
-  test("keeps command_run available during delegated runs", async () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
-    const delegatedContext = new RequestContext<unknown>([[TOOLKIT_DELEGATED_RUN_CONTEXT_KEY, true]]);
+  test("creates canonical supervisors over non-recursive canonical leaves", async () => {
+    const registry = createToolkitAgentRegistry({ browser: false });
+    const workspace = new Workspace({
+      id: "bound-workspace",
+      filesystem: new LocalFilesystem({ basePath: process.cwd(), contained: true }),
+    });
+    const requestContext = new RequestContext<unknown>([[TOOLKIT_WORKSPACE_CONTEXT_KEY, workspace]]);
 
-    expect(Object.keys(await agents.cortex.listTools())).toEqual(["command_run"]);
-    expect(Object.keys(await agents.flux.listTools())).toEqual(["command_run", "adhd_run"]);
-    expect(Object.keys(await agents.zen.listTools())).toEqual(["command_run"]);
-    expect(Object.keys(await agents.cortex.listTools({ requestContext: delegatedContext }))).toEqual(["command_run"]);
+    for (const supervisor of Object.values(registry.supervisors)) {
+      const targets = await supervisor.listAgents();
+      expect(Object.keys(targets)).toEqual(["cortex", "flux", "zen"]);
+      expect(targets).toEqual(registry.leaves);
+      expect(await supervisor.getWorkspace({ requestContext })).toBe(workspace);
+    }
+    for (const leaf of Object.values(registry.leaves)) {
+      expect(await leaf.listAgents()).toEqual({});
+      expect(await leaf.getWorkspace({ requestContext })).toBe(workspace);
+    }
   });
 
-  test("uses the command_run tool supplied by the runtime host", async () => {
-    const commandRun = createTool({
-      id: "command_run",
-      description: "sandbox command fixture",
-      inputSchema: z.object({}),
-      execute: async () => ({ ok: true }),
+  test("executes a canonical leaf through Mastra's native supervisor tool", async () => {
+    const registry = createToolkitAgentRegistry({ browser: false });
+    const workspace = new Workspace({
+      id: "supervisor-workspace",
+      filesystem: new LocalFilesystem({ basePath: process.cwd(), contained: true }),
     });
-    const agents = createToolkitAgents({
-      browser: false,
-      commandRun,
+    const requestContext = new RequestContext<unknown>([[TOOLKIT_WORKSPACE_CONTEXT_KEY, workspace]]);
+    const abortController = new AbortController();
+    vi.spyOn(registry.leaves.flux, "getModel").mockResolvedValue({ specificationVersion: "v3" } as never);
+    const generate = vi.spyOn(registry.leaves.flux, "generate").mockImplementation((async (...args: unknown[]) => {
+      const options = args[1] as { requestContext?: RequestContext; abortSignal?: AbortSignal } | undefined;
+      expect(options?.requestContext).toBe(requestContext);
+      expect(options?.abortSignal).toBe(abortController.signal);
+      expect(await registry.leaves.flux.getWorkspace({ requestContext })).toBe(workspace);
+      return {
+        text: "FLUX_SUPERVISOR_OK",
+        response: { dbMessages: [] },
+        toolResults: [],
+        finishReason: "stop",
+        usage: {},
+      } as never;
+    }) as never);
+    const supervisor = registry.supervisors.cortex as unknown as {
+      listAgentTools(options: Record<string, unknown>): Promise<Record<string, {
+        execute?: (input: unknown, context: unknown) => Promise<unknown>;
+      }>>;
+    };
+    const tools = await supervisor.listAgentTools({
+      runId: "supervisor-run",
+      threadId: "supervisor-thread",
+      resourceId: "supervisor-resource",
+      requestContext,
+      methodType: "generate",
+      autoResumeSuspendedTools: false,
+      delegation: {},
+      backgroundTaskEnabled: false,
     });
 
-    expect((await agents.cortex.listTools()).command_run).toBe(commandRun);
-    expect((await agents.flux.listTools()).command_run).toBe(commandRun);
-    expect((await agents.zen.listTools()).command_run).toBe(commandRun);
+    expect(Object.keys(tools)).toEqual(["agent-cortex", "agent-flux", "agent-zen"]);
+    const result = await tools["agent-flux"]?.execute?.(
+      { prompt: "Inspect the canonical runtime" },
+      { requestContext, abortSignal: abortController.signal },
+    );
+
+    expect(result).toMatchObject({ text: "FLUX_SUPERVISOR_OK" });
+    expect(generate).toHaveBeenCalledOnce();
   });
 
   test("configures visible browser support for every canonical agent", () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: true });
+    const agents = createToolkitAgents({ browser: true });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
@@ -122,7 +173,6 @@ describe("canonical agent roles", () => {
     const afterToolCall = vi.fn();
     const audit = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const agents = createToolkitAgents({
-      commandRun: commandRunFixture(),
       browser: false,
       hooks: { beforeToolCall, afterToolCall },
     });
@@ -152,12 +202,3 @@ describe("canonical agent roles", () => {
     expect(source.join("\n")).not.toMatch(/agent-controller|createCodeModes|prepareAgentControllerMount/);
   });
 });
-
-function commandRunFixture() {
-  return createTool({
-    id: "command_run",
-    description: "command fixture",
-    inputSchema: z.object({}),
-    execute: async () => ({ ok: true }),
-  });
-}

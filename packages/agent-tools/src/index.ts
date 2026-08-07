@@ -1,3 +1,9 @@
-export * from "./capabilities.js";
-export * from "./command-run-contract.js";
-export * from "./command-run.js";
+export {
+  RUN_CONTAINMENT_POLICY,
+  browserActionRequiresApproval,
+  createRunBudgetHooks,
+  createToolAuditHooks,
+  createVisibleBrowser,
+  type ToolAuditEvent,
+} from "./capabilities.js";
+export * from "./dynamic-workflow.js";

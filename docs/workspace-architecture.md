@@ -33,14 +33,14 @@ Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications shar
 
 ## Production module structure
 
-The eight package boundaries remain distinct, but their implementation is intentionally concentrated into 31 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
+The eight package boundaries remain distinct, but their implementation is intentionally concentrated into 29 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
 
 ```text
 packages/
 ├── runtime-config/src/{index,profile,environment,gateway}.ts
-├── agent-tools/src/{index,capabilities,command-run-contract,command-run}.ts
+├── agent-tools/src/{index,capabilities,dynamic-workflow}.ts
 ├── agents-roles/src/{index,roles,prompts,agents}.ts
-├── sandbox/src/{index,contract,machine,providers,command-run}.ts
+├── sandbox/src/{index,contract,machine,providers}.ts
 ├── project-mounting-manager/src/{index,contract,discovery,manager}.ts
 ├── mastra-primitives-export/src/{index,primitives}.ts
 ├── mcode/src/{index,recipe,project,runtime}.ts
@@ -71,11 +71,11 @@ project-mounting-manager  factory-github-projects
     apps/mcode      apps/studio  apps/factory
 ```
 
-`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and the Mastra supervisor/leaf registry. Each canonical supervisor points to all three canonical leaves; leaves have no `agents` map and cannot recursively delegate. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. Agents receive Mastra's native workspace file/search tools and sandbox execution automatically from their authorized workspace. `agent-tools` owns host-neutral browser, audit, aggregate run-containment, and `dynamic_workflow` authoring policy; `dynamic_workflow` accepts declarative Mastra graphs, issues no command, touches no filesystem, and receives agent and workflow ceilings from its MCode or Studio host. Factory does not expose this neutral orchestration adapter while its canonical modes/native-subagent construction seam remains upstream-blocked. `sandbox` owns the cloneable machine contract and provider adapters. The toolkit retains neither the alternate command loop nor the divergent fan-out tool.
 
 `runtime-config` owns the secret-free YAML catalog, startup environment resolution, and host data paths. MCode, Studio, and Factory persist local state beneath `~/.mastra-toolkit/{mcode,studio,factory}` unless `MASTRA_APP_DATA_DIR` explicitly selects another host directory. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 
-`mastra-primitives-export` references those canonical public exports without copying them. Its versioned `ToolkitRuntimeContract` publishes a deterministic capability descriptor and digest for role, prompt, model, tool, delegation, containment, background-task, workspace, and sandbox policy. A `ToolkitRuntimeBinding` keeps live identity, workspace, sandbox, command authorization, browser, and approval values outside the descriptor. Host projections consume the same contract and a local binding; the contract and projections never own an `AgentController`.
+`mastra-primitives-export` references those canonical public exports without copying them. Its versioned `ToolkitRuntimeContract` publishes a deterministic capability descriptor and digest for role, prompt, model, tool, delegation, containment, background-task, workspace, and sandbox policy. A `ToolkitRuntimeBinding` keeps live identity, workspace, sandbox, browser, and approval values outside the descriptor. Host projections consume the same contract and a local binding; the contract and projections never own an `AgentController`.
 
 ## Project mounting
 
@@ -93,10 +93,10 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 
 ## Host boundaries
 
-- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its MCode and Studio controller projections bind the shared runtime contract to Code modes, native leaf subagents, settings input, and the existing controller mount. `McodeRecipeV1` remains only as a deprecated compatibility alias. The package also owns provider adaptation, local project mounting, sessions, and reusable TUI construction. Studio consumes its prepared constructor arguments and finalize lifecycle; the top-level `new Mastra(...)` in the Studio entrypoint is the one deployer-required exception to host-facade-only construction. Programmatic hosts use the prepared runtime's abort path if construction fails before finalize.
+- `packages/mcode` is an RLabs extension built on published `@mastra/code-sdk` and `mastracode` APIs. Its MCode projection binds non-recursive canonical agents to Code modes and exactly three native AgentController subagents. Its Studio projection additionally registers the generic canonical supervisor topology through supported `Agent({ agents })` semantics. `McodeRecipeV2` remains only as a deprecated compatibility alias. The package also owns provider adaptation, local project mounting, sessions, and reusable TUI construction. Studio consumes its prepared constructor arguments and finalize lifecycle; the top-level `new Mastra(...)` in the Studio entrypoint is the one deployer-required exception to host-facade-only construction. Programmatic hosts use the prepared runtime's abort path if construction fails before finalize.
 - `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
 - `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
-- `packages/factory-integration` binds the shared runtime contract to Factory request identity, workspace, sandbox, command authorization, approvals, authentication, persistence, provisioning, diagnostics, and local provider migration. It does not import MCode. Factory constructs exactly one upstream-owned controller. The current stable Factory public API cannot accept canonical modes/native subagents, so the projection and diagnostics mark that surface `upstream-blocked`; no second controller, dependency patch, or fork substitutes for the missing seam. `apps/factory` is its thin composition root.
+- `packages/factory-integration` binds the shared runtime contract to Factory request identity, workspace, sandbox, approvals, authentication, persistence, provisioning, diagnostics, and local provider migration. It does not import MCode. Factory constructs exactly one upstream-owned controller. `@mastra/factory@0.5.0` accepts no canonical modes, native subagents, or guarded controller-construction callback, so the projection and diagnostics mark that surface `upstream-blocked` and expose no delegation adapter; no second controller, dependency patch, or fork substitutes for the missing seam. `apps/factory` is its thin composition root.
 - A future `packages/factory-github-projects` belongs between the GitHub Projects V2 API and `factory-integration`. It may own project-item bindings, leases, reconciliation, and scheduling, but never agent definitions, agent tools, sessions, sandboxes, project mounting, or credentials. Its creation is deferred until issue #127 needs executable code.
 - Agent-facing project or RLabs API access enters through narrow tool ports injected at host composition time. Raw SDK clients, tokens, webhook verification, persistence, and control-plane scheduling cannot cross into `agents-roles`.
 
@@ -137,6 +137,6 @@ Fork checkouts are external trust boundaries and are not npm workspace members. 
 - Root: `npm run typecheck`, `npm test`, and `npm run build`.
 - Package: the owning package's `npm run check`.
 - MCode: local project boot, six modes, native subagent targets, project workflow tools, and PTY/CUA evidence when UI behavior changes.
-- Factory: auth, storage migration, delegation, sandbox, an `agent-browser` browser pass, and CUA evidence for visible workflows.
+- Factory: auth, storage migration, the delegation-blocker contract, sandbox, an `agent-browser` browser pass, and CUA evidence for visible workflows.
 - Studio: browser validation when the Studio host or shared mounted runtime changes.
 - Repository: `git diff --check`, checkpoint verification, secret scan, and generated-state inspection.

@@ -17,17 +17,25 @@ describe("shared Mastra Toolkit runtime contract", () => {
     const first = createToolkitRuntimeContract({ profile });
     const second = createToolkitRuntimeContract({ profile });
 
-    expect(first.version).toBe(1);
+    expect(first.version).toBe(3);
+    expect(first.capability.schemaVersion).toBe(3);
     expect(first.roles.ids).toEqual(["cortex", "flux", "zen"]);
     expect(first.roles.definitions.cortex.id).toBe("cortex");
     expect(first.runtime.profile).toEqual(profile);
     expect(first.runtime.defaults.version).toBe(1);
-    expect(first.tools.commandRun).toBe("command-run/v1");
+    expect(first.tools.agentVisible).toEqual({
+      workspace: "mastra-workspace-tools/v1",
+      dynamicWorkflow: "dynamic-workflow/v1",
+    });
     expect(first.delegation).toEqual({
       nativeTool: "subagent",
       targets: ["cortex", "flux", "zen"],
       delegatedLeavesReceiveSubagent: false,
+      supervisorSurface: "agents-map",
+      supervisorTargets: ["cortex", "flux", "zen"],
+      supervisorLeavesReceiveAgents: false,
     });
+    expect(first.roles.createAgentRegistry).toBeTypeOf("function");
     expect(first.containment).toEqual({
       maxToolCalls: 64,
       maxDelegations: 8,
@@ -74,7 +82,6 @@ describe("shared Mastra Toolkit runtime contract", () => {
       },
       workspace: { resolve: async () => workspace },
       sandbox: { resolve: async () => sandbox },
-      commandExecution: { authorize: async () => undefined },
       approval: { context: { mode: "interactive" } },
     } satisfies ToolkitRuntimeBinding<typeof workspace, typeof sandbox>;
 
@@ -88,7 +95,6 @@ describe("shared Mastra Toolkit runtime contract", () => {
       identity: { projectId: "project", userId: "user", sessionId: "session" },
       workspace: { resolve: () => ({ id: "workspace" }) },
       sandbox: { resolve: () => ({ provider: "local" }) },
-      commandExecution: { authorize: () => undefined },
       approval: { context: { mode: "test" } },
     } satisfies ToolkitRuntimeBinding;
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });

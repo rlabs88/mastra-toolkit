@@ -13,7 +13,7 @@ MCode's recipe aggregated canonical agents, modes, tools, model defaults, and a 
 
 ## Present
 
-This package is the host-neutral aggregation boundary over canonical role, tool/rule, runtime-config, sandbox-machine, and project workspace-resolution contracts. It exposes a versioned, deterministic capability descriptor and the binding shape hosts use for live execution values. It owns no controller or host lifecycle.
+This package is the host-neutral aggregation boundary over canonical role and supervisor/leaf registry, tool/rule, runtime-config, sandbox-machine, and project workspace-resolution contracts. It exposes a versioned, deterministic capability descriptor and the binding shape hosts use for live execution values. It owns no controller or host lifecycle.
 
 ## Future
 

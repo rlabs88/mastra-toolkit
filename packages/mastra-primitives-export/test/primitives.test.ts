@@ -41,5 +41,15 @@ describe("ToolkitRuntimeContract", () => {
       providerBaseUrl: "https://example.invalid/v1?api_key=resolved-test-secret",
     })).toThrow(/query parameters/i);
     expect(Object.isFrozen(first.capability.runtime.backgroundTasks.agent)).toBe(true);
+    expect(first.capability.tools.agentVisible).toEqual({
+      workspace: "mastra-workspace-tools/v1",
+      dynamicWorkflow: "dynamic-workflow/v1",
+    });
+    expect(first.capability.tools).not.toHaveProperty("compatibilityLibraries");
+    expect(first.tools).not.toHaveProperty("commandRun");
+    expect(first.tools.dynamicWorkflow).toBe("dynamic-workflow/v1");
+    expect(first.tools.createDynamicWorkflow).toBeTypeOf("function");
+    expect(first.tools.reconcileDynamicWorkflowDefinitions).toBeTypeOf("function");
+    expect(first.sandbox).not.toHaveProperty("createCommandRun");
   });
 });

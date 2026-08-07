@@ -5,9 +5,9 @@ This manifest is the routing table for changes. A package owns a reusable contra
 | Boundary | Owns | Consumes | Extensions belong here when… |
 | --- | --- | --- | --- |
 | `packages/runtime-config` | model profile, aliases, environment resolution, host data paths, proxy gateway | Mastra core, YAML, Zod | the change is host-neutral model or runtime configuration |
-| `packages/agent-tools` | Command Run language/scheduling contracts, ADHD, visible browser policy, tool audit hooks | Mastra core and Stagehand | a capability contract is reusable independent of role and host |
+| `packages/agent-tools` | visible browser policy, tool audit hooks, aggregate run containment, the `dynamic_workflow` authoring contract | Mastra core and Stagehand | a capability contract is reusable independent of role and host |
 | `packages/agents-roles` | Cortex/Flux/Zen prompts, role metadata, agent factory | `agent-tools`, `runtime-config` | the canonical agent identity or policy changes |
-| `packages/sandbox` | sandbox schema/config, machine contract, Local/Docker/Platform adapters, executable `command_run` tool | Mastra sandbox providers and agent-tools command contracts | provider behavior or sandbox-contained execution changes |
+| `packages/sandbox` | sandbox schema/config, machine contract, Local/Docker/Platform adapters | Mastra sandbox providers | provider behavior or sandbox-contained execution changes |
 | `packages/project-mounting-manager` | specialist/workflow discovery, explicit publication, generations, watcher, transaction ports | Mastra core only | project resources must mount consistently across hosts |
 | `packages/mastra-primitives-export` | versioned runtime contract, binding interfaces, deterministic capability descriptor and digest | roles, tools, config, sandbox, mounting manager | hosts need one verified aggregation of canonical runtime primitives |
 | `packages/mcode` | MCode/Studio controller projections, Code modes/subagents/settings, controller mount, MCP and host adapters, session/TUI runtime | primitives export, sandbox, mounting manager, published Code APIs | RLabs extends Mastra Code without changing upstream source |

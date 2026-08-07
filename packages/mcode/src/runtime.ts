@@ -272,13 +272,6 @@ export async function prepareMcodeRuntime(
     },
     workspace: { resolve: () => workspace },
     sandbox: { resolve: () => workspace.resolveSandbox({ requestContext: new RequestContext() }) },
-    commandExecution: {
-      authorize: context => {
-        if (context?.workspace !== workspace) {
-          throw new Error("MCode command execution requires the bound project workspace");
-        }
-      },
-    },
     approval: { context: { host: options.host ?? "mcode" } },
   } satisfies ToolkitRuntimeBinding<typeof workspace, Awaited<ReturnType<typeof workspace.resolveSandbox>>>;
   let resources: ProjectMountingManager | undefined;
@@ -295,7 +288,7 @@ export async function prepareMcodeRuntime(
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
-  const commandRun = projection.tools.command_run;
+  const dynamicWorkflow = projection.tools.dynamic_workflow;
   const agents = projection.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
@@ -363,12 +356,19 @@ export async function prepareMcodeRuntime(
       const mcp = options.mcp
         ?? (options.disableMcp ? new EmptyMcpLifecycle() : createCodeMcpAdapter(project.rootPath));
       try {
+        // A crash between the create and archive writes can leave a
+        // model-authored definition active, and only active rows load at
+        // startWorkers(). Archive them before anything can mount them.
+        await contract.tools.reconcileDynamicWorkflowDefinitions(mastra);
         resources = await ProjectMountingManager.create({
           projectRoot: project.rootPath,
           modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
-          currentTools: new StaticToolSnapshot({ command_run: commandRun }),
-          requiredSpecialistTools: ["command_run"],
+          // Reported, not published: the mounting manager rejects a project
+          // workflow that would shadow a reserved host tool id.
+          currentTools: new StaticToolSnapshot({
+            dynamic_workflow: dynamicWorkflow,
+          }),
           host: new MastraProjectHostRegistry(mastra),
           workspace,
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),

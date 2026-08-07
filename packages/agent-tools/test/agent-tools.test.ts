@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   browserActionRequiresApproval,
-  createAdhdTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   RUN_CONTAINMENT_POLICY,
@@ -44,90 +43,6 @@ describe("agent tool policies", () => {
     ]);
   });
 
-  test("runs isolated Flux perspectives and preserves the parent request context", async () => {
-    const generate = vi.fn(async (_prompt: string, options: { requestContext: RequestContext }) => ({
-      text: JSON.stringify({
-        workspaceRoot: options.requestContext.get("workspaceRoot"),
-        factoryDelegation: options.requestContext.get("mastraToolkitFactoryDelegation"),
-        workspace: options.requestContext.get("mastraToolkitWorkspace"),
-        depth: options.requestContext.get("adhdDepth"),
-      }),
-    }));
-    const tool = createAdhdTool(() => ({ generate }) as never);
-    const workspace = { id: "sandbox-workspace" };
-
-    const result = await tool.execute?.(
-      { problem: "Choose an API", perspectives: ["maintainer", "caller"] },
-      {
-        requestContext: new RequestContext([
-          ["workspaceRoot", "/workspace"],
-          ["mastraToolkitFactoryDelegation", true],
-          ["mastraToolkitWorkspace", workspace],
-        ]),
-      } as never,
-    );
-
-    expect(generate).toHaveBeenCalledTimes(2);
-    const context = JSON.stringify({
-      workspaceRoot: "/workspace",
-      factoryDelegation: true,
-      workspace,
-      depth: 1,
-    });
-    expect(result).toEqual({
-      problem: "Choose an API",
-      candidates: [
-        { perspective: "maintainer", text: context },
-        { perspective: "caller", text: context },
-      ],
-    });
-  });
-
-  test("rejects nested ADHD exploration", async () => {
-    const tool = createAdhdTool(() => ({ generate: vi.fn() }) as never);
-
-    await expect(tool.execute?.(
-      { problem: "Choose an API", perspectives: ["maintainer", "caller"] },
-      { requestContext: new RequestContext([["adhdDepth", 1]]) } as never,
-    )).rejects.toThrow(/Nested adhd_run/);
-  });
-
-  test("bounds fan-out and retained candidate payloads", async () => {
-    let active = 0;
-    let maximumActive = 0;
-    const signals: AbortSignal[] = [];
-    const generate = vi.fn(async (_prompt: string, options: { abortSignal: AbortSignal }) => {
-      active += 1;
-      maximumActive = Math.max(maximumActive, active);
-      signals.push(options.abortSignal);
-      await Promise.resolve();
-      active -= 1;
-      return { text: "x".repeat(20_000) };
-    });
-    const tool = createAdhdTool(() => ({ generate }) as never);
-    const perspectives = ["one", "two", "three", "four", "five", "six"];
-
-    const result = await tool.execute?.(
-      { problem: "Bound this run", perspectives },
-      { requestContext: new RequestContext() } as never,
-    ) as { candidates: Array<{ text: string }> };
-
-    expect(maximumActive).toBeLessThanOrEqual(2);
-    expect(signals).toHaveLength(6);
-    expect(result.candidates.reduce((total, candidate) => total + candidate.text.length, 0))
-      .toBeLessThanOrEqual(24_000);
-    expect(result.candidates.some(candidate => candidate.text.endsWith("…"))).toBe(true);
-  });
-
-  test("rejects duplicate investigation scopes before execution", async () => {
-    const tool = createAdhdTool(() => ({ generate: vi.fn() }) as never);
-    const result = await tool.execute?.(
-      { problem: "Avoid repeated work", perspectives: ["Repository inventory", " repository INVENTORY "] },
-      { requestContext: new RequestContext() } as never,
-    ) as { message: string };
-    expect(result.message).toMatch(/distinct/i);
-  });
-
   test("terminates duplicate scopes and repeated remote writes with a bounded diagnostic", async () => {
     const hooks = createRunBudgetHooks(() => 1_000);
     const requestContext = new RequestContext();
@@ -162,6 +77,30 @@ describe("agent tool policies", () => {
     expect(() => hooks.beforeToolCall?.({ toolName: "subagent", input: { task: "scope-9" }, context }))
       .toThrow(/delegation limit/);
 
+    const supervisorHooks = createRunBudgetHooks(() => 1_000);
+    const supervisorContext = { requestContext: new RequestContext() };
+    const supervisorCall = {
+      toolName: "agent-cortex",
+      input: { task: "inspect the canonical registry" },
+      context: supervisorContext,
+    };
+    await supervisorHooks.beforeToolCall?.(supervisorCall);
+    expect(() => supervisorHooks.beforeToolCall?.(supervisorCall)).toThrow(/Duplicate in-flight scope/);
+    await supervisorHooks.afterToolCall?.({ ...supervisorCall, output: "done" });
+    expect(() => supervisorHooks.beforeToolCall?.(supervisorCall)).toThrow(/No progress detected/);
+
+    const supervisorBudgetContext = { requestContext: new RequestContext() };
+    for (let index = 0; index < 8; index += 1) {
+      const call = { toolName: "agent-flux", input: { task: `scope-${index}` }, context: supervisorBudgetContext };
+      await supervisorHooks.beforeToolCall?.(call);
+      await supervisorHooks.afterToolCall?.({ ...call, output: "done" });
+    }
+    expect(() => supervisorHooks.beforeToolCall?.({
+      toolName: "agent-zen",
+      input: { task: "scope-9" },
+      context: supervisorBudgetContext,
+    })).toThrow(/delegation limit/);
+
     const retainedContext = { requestContext: new RequestContext() };
     const retainedCall = {
       toolName: "read",
@@ -178,8 +117,6 @@ describe("agent tool policies", () => {
   test("does not import role, Code SDK, or Factory code", async () => {
     const source = await Promise.all([
       "capabilities.ts",
-      "command-run-contract.ts",
-      "command-run.ts",
       "index.ts",
     ].map(path => readFile(join(import.meta.dirname, "..", "src", path), "utf8")));
     expect(source.join("\n")).not.toMatch(/agents-roles|code-sdk|factory/i);

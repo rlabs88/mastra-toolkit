@@ -1,12 +1,15 @@
 import {
   browserActionRequiresApproval,
+  createDynamicWorkflowTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
+  reconcileDynamicWorkflowDefinitions,
   RUN_CONTAINMENT_POLICY,
 } from "@rlabs/agent-tools";
 import {
   composePrompt,
+  createToolkitAgentRegistry,
   createToolkitAgents,
   ROLE_IDS,
   ROLES,
@@ -20,13 +23,10 @@ import {
   type ModelProfile,
 } from "@rlabs/runtime-config";
 import { createHash } from "node:crypto";
-import {
-  createSandboxCommandRunTool,
-  createSandboxMachine,
-} from "@rlabs/sandbox";
+import { createSandboxMachine } from "@rlabs/sandbox";
 
-export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 1 as const;
-const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 1 as const;
+export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 3 as const;
+const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 3 as const;
 
 export interface ToolkitRuntimeIdentity {
   readonly projectId: string;
@@ -42,12 +42,6 @@ export interface ToolkitRuntimeBinding<TWorkspace = unknown, TSandbox = unknown>
   readonly identity: ToolkitRuntimeIdentity | ToolkitRuntimeResolver<ToolkitRuntimeIdentity>;
   readonly workspace: ToolkitRuntimeResolver<TWorkspace>;
   readonly sandbox: ToolkitRuntimeResolver<TSandbox>;
-  readonly commandExecution: {
-    authorize(context?: {
-      readonly requestContext?: unknown;
-      readonly workspace?: TWorkspace;
-    }): void | Promise<void>;
-  };
   readonly browser?: { readonly implementation: unknown };
   readonly approval: { readonly context: unknown };
 }
@@ -57,7 +51,7 @@ export interface ToolkitRuntimeContractOptions {
   readonly providerBaseUrl?: string;
 }
 
-export interface ToolkitRuntimeCapabilityDescriptorV1 {
+export interface ToolkitRuntimeCapabilityDescriptorV3 {
   readonly schemaVersion: typeof TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION;
   readonly contractVersion: typeof TOOLKIT_RUNTIME_CONTRACT_VERSION;
   readonly roles: readonly ["cortex", "flux", "zen"];
@@ -66,7 +60,10 @@ export interface ToolkitRuntimeCapabilityDescriptorV1 {
   readonly roleMaxSteps: Readonly<Record<"cortex" | "flux" | "zen", number>>;
   readonly roleTemperatures: Readonly<Record<"cortex" | "flux" | "zen", number>>;
   readonly tools: {
-    readonly commandRun: "command-run/v1";
+    readonly agentVisible: {
+      readonly workspace: "mastra-workspace-tools/v1";
+      readonly dynamicWorkflow: "dynamic-workflow/v1";
+    };
     readonly audit: "tool-audit/v1";
     readonly runBudget: "run-budget/v1";
     readonly browserApproval: "visible-browser-approval/v1";
@@ -75,6 +72,9 @@ export interface ToolkitRuntimeCapabilityDescriptorV1 {
     readonly nativeTool: "subagent";
     readonly targets: readonly ["cortex", "flux", "zen"];
     readonly delegatedLeavesReceiveSubagent: false;
+    readonly supervisorSurface: "agents-map";
+    readonly supervisorTargets: readonly ["cortex", "flux", "zen"];
+    readonly supervisorLeavesReceiveAgents: false;
   };
   readonly containment: typeof RUN_CONTAINMENT_POLICY;
   readonly runtime: {
@@ -106,17 +106,20 @@ export interface ToolkitRuntimeContract {
     readonly ids: typeof ROLE_IDS;
     readonly definitions: typeof ROLES;
     readonly composePrompt: typeof composePrompt;
+    readonly createAgentRegistry: typeof createToolkitAgentRegistry;
     readonly createAgents: typeof createToolkitAgents;
   };
   readonly tools: {
-    readonly commandRun: "command-run/v1";
-    readonly createCommandRun: typeof createSandboxCommandRunTool;
+    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV3["tools"]["agentVisible"];
+    readonly dynamicWorkflow: "dynamic-workflow/v1";
+    readonly createDynamicWorkflow: typeof createDynamicWorkflowTool;
+    readonly reconcileDynamicWorkflowDefinitions: typeof reconcileDynamicWorkflowDefinitions;
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
     readonly browserActionRequiresApproval: typeof browserActionRequiresApproval;
   };
-  readonly delegation: ToolkitRuntimeCapabilityDescriptorV1["delegation"];
+  readonly delegation: ToolkitRuntimeCapabilityDescriptorV3["delegation"];
   readonly containment: typeof RUN_CONTAINMENT_POLICY;
   readonly runtime: {
     readonly profile: ModelProfile;
@@ -126,14 +129,16 @@ export interface ToolkitRuntimeContract {
   };
   readonly sandbox: {
     readonly createMachine: typeof createSandboxMachine;
-    readonly createCommandRun: typeof createSandboxCommandRunTool;
   };
   readonly workspace: {
     readonly contextKey: typeof TOOLKIT_WORKSPACE_CONTEXT_KEY;
     readonly ProjectMountingManager: typeof ProjectMountingManager;
   };
-  readonly capability: ToolkitRuntimeCapabilityDescriptorV1;
+  readonly capability: ToolkitRuntimeCapabilityDescriptorV3;
 }
+
+/** @deprecated Runtime contract v2 predates dynamic_workflow. */
+export type ToolkitRuntimeCapabilityDescriptorV2 = ToolkitRuntimeCapabilityDescriptorV3;
 
 export function createToolkitRuntimeContract(
   options: ToolkitRuntimeContractOptions,
@@ -147,6 +152,9 @@ export function createToolkitRuntimeContract(
     nativeTool: "subagent",
     targets: ROLE_IDS,
     delegatedLeavesReceiveSubagent: false,
+    supervisorSurface: "agents-map",
+    supervisorTargets: ROLE_IDS,
+    supervisorLeavesReceiveAgents: false,
   } as const);
   const payload = {
     schemaVersion: TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION,
@@ -157,7 +165,10 @@ export function createToolkitRuntimeContract(
     roleMaxSteps: mapRoles(id => ROLES[id].model.steps),
     roleTemperatures: mapRoles(id => ROLES[id].model.temperature),
     tools: {
-      commandRun: "command-run/v1",
+      agentVisible: {
+        workspace: "mastra-workspace-tools/v1",
+        dynamicWorkflow: "dynamic-workflow/v1",
+      },
       audit: "tool-audit/v1",
       runBudget: "run-budget/v1",
       browserApproval: "visible-browser-approval/v1",
@@ -188,7 +199,7 @@ export function createToolkitRuntimeContract(
   const capability = deepFreeze({
     ...payload,
     digest: digest(stableJson(payload)),
-  }) as ToolkitRuntimeCapabilityDescriptorV1;
+  }) as ToolkitRuntimeCapabilityDescriptorV2;
 
   return deepFreeze({
     version: TOOLKIT_RUNTIME_CONTRACT_VERSION,
@@ -196,11 +207,14 @@ export function createToolkitRuntimeContract(
       ids: ROLE_IDS,
       definitions: ROLES,
       composePrompt,
+      createAgentRegistry: createToolkitAgentRegistry,
       createAgents: createToolkitAgents,
     },
     tools: {
-      commandRun: "command-run/v1",
-      createCommandRun: createSandboxCommandRunTool,
+      agentVisible: capability.tools.agentVisible,
+      dynamicWorkflow: "dynamic-workflow/v1",
+      createDynamicWorkflow: createDynamicWorkflowTool,
+      reconcileDynamicWorkflowDefinitions,
       createRunBudgetHooks,
       createToolAuditHooks,
       createVisibleBrowser,
@@ -216,7 +230,6 @@ export function createToolkitRuntimeContract(
     },
     sandbox: {
       createMachine: createSandboxMachine,
-      createCommandRun: createSandboxCommandRunTool,
     },
     workspace: {
       contextKey: TOOLKIT_WORKSPACE_CONTEXT_KEY,
@@ -241,7 +254,7 @@ function deepFreeze<T>(value: T): T {
 
 export function verifyToolkitRuntimeCapability(
   contract: ToolkitRuntimeContract,
-  capability: ToolkitRuntimeCapabilityDescriptorV1 | string,
+  capability: ToolkitRuntimeCapabilityDescriptorV2 | string,
 ): boolean {
   if (typeof capability === "string") return capability === contract.capability.digest;
   const { digest: candidateDigest, ...payload } = capability;
