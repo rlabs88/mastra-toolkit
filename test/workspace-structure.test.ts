@@ -17,12 +17,13 @@ const packageNames = [
   "mastra-primitives-export",
   "mcode",
   "factory-integration",
+  "factory-github-projects",
 ] as const;
 
 describe("workspace ownership", () => {
   test("pins one coherent stable Mastra release set across every runtime manifest", async () => {
     const expected = {
-      "@mastra/factory": "0.5.0",
+      "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-b836be817b/mastra-factory-0.5.0.tgz",
       "@mastra/code-sdk": "1.1.3",
       "mastracode": "0.32.6",
       "@mastra/core": "1.57.0",
@@ -50,6 +51,7 @@ describe("workspace ownership", () => {
         "@mastra/libsql",
         "@mastra/pg",
       ],
+      "packages/factory-github-projects/package.json": ["@mastra/factory", "@mastra/core", "@mastra/libsql"],
       "packages/mcode/package.json": ["@mastra/code-sdk", "@mastra/core", "mastracode"],
       "packages/project-mounting-manager/package.json": ["@mastra/core"],
       "packages/runtime-config/package.json": ["@mastra/core"],
@@ -104,6 +106,15 @@ describe("workspace ownership", () => {
       "mastra-primitives-export": ["index.ts", "primitives.ts"],
       "mcode": ["index.ts", "project.ts", "recipe.ts", "runtime.ts"],
       "factory-integration": ["config.ts", "index.ts", "integration.ts", "runtime.ts"],
+      "factory-github-projects": [
+        "config.ts",
+        "github-projects-client.ts",
+        "index.ts",
+        "integration.ts",
+        "reconciler.ts",
+        "storage.ts",
+        "types.ts",
+      ],
     };
 
     for (const packageName of packageNames) {
@@ -162,6 +173,13 @@ describe("workspace ownership", () => {
     ]);
     await expectSourceToExclude("packages/mcode/src", ["createToolkitAgents"]);
     await expectSourceToExclude("packages/factory-integration/src", ["createToolkitAgents"]);
+    await expectSourceToExclude("packages/factory-github-projects/src", [
+      "@rlabs/agent-tools",
+      "@rlabs/agents-roles",
+      "@rlabs/mcode",
+      "@rlabs/project-mounting-manager",
+      "@rlabs/sandbox",
+    ]);
   });
 
   test("keeps Factory lifecycle behind its host facade", async () => {

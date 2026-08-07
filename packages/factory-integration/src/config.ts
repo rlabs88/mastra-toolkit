@@ -1,4 +1,5 @@
 import { loadRuntimeConfig, type ModelProfile, type RuntimeConfig } from "@rlabs/runtime-config";
+import { loadGithubProjectsConfig, type GithubProjectsFactoryConfig } from "@rlabs/factory-github-projects";
 import {
   loadSandboxConfig,
   resolveSandboxRuntimeProfile,
@@ -24,6 +25,7 @@ const factoryEnvironmentSchema = z.object({
   GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
   GITHUB_APP_SLUG: z.string().min(1).default("rlabs-mastra-toolkit"),
   GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
+  GITHUB_PROJECTS_TOKEN: z.string().min(1).optional(),
   WORKOS_API_KEY: z.string().min(1).optional(),
   WORKOS_CLIENT_ID: z.string().min(1).optional(),
   WORKOS_COOKIE_PASSWORD: z.string().min(32).optional(),
@@ -66,6 +68,10 @@ export interface FactoryConfig {
     readonly GITHUB_APP_SLUG: string;
     readonly GITHUB_APP_WEBHOOK_SECRET?: string;
   };
+  readonly githubProjects?: {
+    readonly token: string;
+    readonly config: GithubProjectsFactoryConfig;
+  };
   readonly workos?: {
     readonly apiKey: string;
     readonly clientId: string;
@@ -75,7 +81,10 @@ export interface FactoryConfig {
 
 export function requiredFactorySecretNames(environment: NodeJS.ProcessEnv): readonly string[] {
   const profile = factoryProjectRuntimeProfileSchema.parse(environment.FACTORY_PROJECT_RUNTIME_PROFILE);
-  return profile === "persistent-operations" ? PERSISTENT_FACTORY_SECRET_KEYS : [];
+  if (profile !== "persistent-operations") return [];
+  return environment.GITHUB_PROJECTS_CONFIG?.trim()
+    ? [...PERSISTENT_FACTORY_SECRET_KEYS, "GITHUB_PROJECTS_TOKEN"]
+    : PERSISTENT_FACTORY_SECRET_KEYS;
 }
 
 export function loadFactoryConfig(
@@ -84,6 +93,7 @@ export function loadFactoryConfig(
   profile?: ModelProfile,
 ): FactoryConfig {
   const parsed = factoryEnvironmentSchema.parse(environment);
+  const githubProjects = loadGithubProjectsConfig(environment);
   const publicUrl = normalizeOrigin(parsed.FACTORY_PUBLIC_URL, "FACTORY_PUBLIC_URL");
   const allowedOrigins = parsed.FACTORY_ALLOWED_ORIGINS
     ? parsed.FACTORY_ALLOWED_ORIGINS.split(",").map((value, index) =>
@@ -91,6 +101,12 @@ export function loadFactoryConfig(
     : [publicUrl];
   assertCompleteGroup(parsed, GITHUB_KEYS, "GitHub App");
   assertCompleteGroup(parsed, WORKOS_KEYS, "WorkOS");
+  if (githubProjects && !parsed.GITHUB_APP_ID) {
+    throw new Error("GitHub Projects V2 requires the canonical GitHub App integration");
+  }
+  if (githubProjects && !parsed.GITHUB_PROJECTS_TOKEN) {
+    throw new Error("GitHub Projects V2 requires its host-injected GITHUB_PROJECTS_TOKEN");
+  }
   if (
     !parsed.WORKOS_API_KEY
     && (!isLoopbackOrigin(publicUrl) || allowedOrigins.some(origin => !isLoopbackOrigin(origin)))
@@ -166,7 +182,12 @@ export function loadFactoryConfig(
     clientId: parsed.WORKOS_CLIENT_ID!,
     cookiePassword: parsed.WORKOS_COOKIE_PASSWORD!,
   } : undefined;
-  return { ...base, ...(github ? { github } : {}), ...(workos ? { workos } : {}) };
+  return {
+    ...base,
+    ...(github ? { github } : {}),
+    ...(githubProjects ? { githubProjects: { config: githubProjects.config, token: parsed.GITHUB_PROJECTS_TOKEN! } } : {}),
+    ...(workos ? { workos } : {}),
+  };
 }
 
 function normalizeOrigin(value: string, label: string): string {
