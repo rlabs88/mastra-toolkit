@@ -12,12 +12,11 @@ applies_to: ["**/*"]
 ## Read first
 
 - Read the repository [AGENTS.md](../../AGENTS.md) and this package's [CONTEXT.md](CONTEXT.md).
-- Treat tool schemas, approval decisions, scheduling, containment, cancellation, output limits, attachments, audit events, and SSRF checks as one behavioral contract.
+- Treat approval decisions, containment, cancellation, output limits, browser policy, and audit events as one behavioral contract.
 
 ## Operating rules
 
 - Keep this package independent from role definitions, Mastra Code SDK projections, and Factory adapters.
-- Keep Command Run parsing, scheduling, approval, traces, and output contracts host-neutral. Executable sandbox containment belongs to `packages/sandbox`.
 - Keep browser actions visible and preserve explicit approval for mutating navigation, tab, and page actions.
 - Keep API-interacting tools request-scoped and backed by narrow injected ports. Do not store credentials, bindings, leases, persistent workers, or external SDK clients here.
 - Require authorization, explicit approval for mutation, idempotency, auditability, and bounded output at external API boundaries. Do not add a generic arbitrary HTTP or API tool.
@@ -26,21 +25,17 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── capabilities.ts        # ADHD, audit, and visible-browser policy
-├── command-run-contract.ts # schemas, parsing, paths, and trace contract
-├── command-run.ts          # scheduling and execution adapters
-└── index.ts                # sole TypeScript package facade
+├── capabilities.ts # audit, run containment, and visible-browser policy
+└── index.ts        # sole TypeScript package facade
 ```
 
-- Treat the two Command Run modules and the sandbox-owned executable tool as one behavioral contract; changes spanning parser, execution, containment, media, web, and audit surfaces must remain coherent across both packages.
 - Keep all supported TypeScript consumers on the package root. Do not restore implementation subpath exports.
 - Start a new role- and host-neutral capability inside `capabilities.ts` until it proves a deeper independent contract.
-- `command_run` and `adhd_run` are retained compatibility capabilities. Do not add new consumers or expand their DSL/fan-out scope; future replacement uses native Mastra workflows, task state, subagents, and background tasks after parity is proven.
+- Do not recreate toolkit-owned command-loop or divergent-fan-out tools. A future orchestration capability belongs in an explicitly published Mastra workflow with its own approval, state, and cancellation contract.
 
 ## Change boundaries
 
 - Change behavior only with a failing package-local contract test first.
-- Change parser, scheduler, adapter, trace, media, and web contracts together when a modification crosses those surfaces.
 - Do not add role prompts, model routing, Code modes, subagent projections, or Factory lifecycle behavior here.
 
 ## Validation

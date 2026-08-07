@@ -13,8 +13,8 @@ Command Run, ADHD exploration, browser policy, and tool audit behavior began und
 
 ## Present
 
-This private package exposes one root facade over three deep modules: host-neutral capabilities, the Command Run contract, and Command Run execution. It owns parsing, scheduling, approval, trace, and result behavior plus ADHD, visible-browser, and audit policies. The executable Command Run tool belongs to `packages/sandbox`, where execution requires a sandbox workspace. Role packages consume the root facade; Mastra Code and Factory behavior remain outside this boundary.
+This private package exposes one root facade over host-neutral browser approval, tool audit, and aggregate run-containment policy. It owns no command execution language or divergent-fan-out tool. Role packages consume these hooks and browser policy; native workspace execution, Mastra Code projections, workflows, and Factory behavior remain outside this boundary.
 
 ## Future
 
-Hosts may add tools through their own adapters, while the guarded execution and approval semantics here remain stable. New capability families should join this package only when they are role-independent and have package-local containment and failure contracts.
+Hosts may add request-scoped tools through their own adapters, while the audit and approval semantics here remain stable. New capability families should join this package only when they are role-independent and have package-local containment and failure contracts. Structured orchestration should be introduced as an explicitly published Mastra workflow, not as a general agent tool.

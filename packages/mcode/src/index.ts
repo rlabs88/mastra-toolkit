@@ -13,6 +13,7 @@ export {
   MCODE_CAPABILITY_SCHEMA_VERSION,
   MCODE_CONTROLLER_PROJECTION_VERSION,
   MCODE_RECIPE_VERSION,
+  NATIVE_WORKSPACE_TOOL_IDS,
   buildModePrompt,
   createCodeModes,
   createCodeSubagents,
@@ -29,12 +30,12 @@ export {
   type AgentModeSelection,
   type CanonicalAgentId,
   type CodeModeId,
-  type McodeCapabilityDescriptorV1,
+  type McodeCapabilityDescriptorV2,
   type McodeControllerProjection,
-  type McodeControllerIngredientsV1,
+  type McodeControllerIngredientsV2,
   type McodeControllerProjectionOptions,
   type McodeRecipeOptions,
-  type McodeRecipeV1,
+  type McodeRecipeV2,
   type StudioControllerProjection,
 } from "./recipe.js";
 export {

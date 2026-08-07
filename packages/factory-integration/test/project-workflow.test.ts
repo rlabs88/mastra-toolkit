@@ -2,7 +2,7 @@ import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
-import { LocalFilesystem, LocalSandbox, Workspace } from "@mastra/core/workspace";
+import { createWorkspaceTools, LocalFilesystem, LocalSandbox, Workspace } from "@mastra/core/workspace";
 import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
@@ -45,9 +45,6 @@ describe("Factory project workflows", () => {
       requireApproval?: boolean;
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
-    const commandRun = tools.command_run as {
-      execute?: (input: unknown, context: unknown) => Promise<unknown>;
-    };
     const streamed: unknown[] = [];
     const context = {
       requestContext: factorySessionRequestContext(),
@@ -58,12 +55,14 @@ describe("Factory project workflows", () => {
     try {
       expect(projectWorkflow).toBeDefined();
       expect(projectWorkflow.requireApproval).toBe(true);
-      await expect(commandRun.execute?.({
-        description: "locate the Factory project checkout",
-        commands: [{ command_type: "shell", command_line: "pwd", step: 1 }],
-      }, context)).resolves.toMatchObject({
-        results: [{ status: "completed", output: `${canonicalProjectRoot}\n` }],
+      const nativeWorkspaceTools = await createWorkspaceTools(workspace, {
+        requestContext: context.requestContext,
+        workspace,
       });
+      await expect(nativeWorkspaceTools.mastra_workspace_execute_command.execute(
+        { command: "pwd" },
+        { requestContext: context.requestContext, workspace },
+      )).resolves.toBe(`${canonicalProjectRoot}\n`);
 
       await expect(projectWorkflow.execute?.({ action: "list" }, context)).resolves.toEqual({
         workflows: [{ id: "demo", description: "Run demo", metadata: { fixture: true } }],

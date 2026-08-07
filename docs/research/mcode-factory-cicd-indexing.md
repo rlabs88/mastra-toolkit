@@ -98,7 +98,7 @@ interface McodeControllerIngredientsV1 {
 }
 ```
 
-The recipe constructor should take already resolved, host-neutral inputs: the one `ModelProfile`, the sandbox-owned `command_run` tool, and explicit agent host options. It constructs the canonical agents plus controller ingredients but must not re-read environment variables, instantiate `Mastra`, create/init a controller, select a sandbox provider, start PMM, create a session, or construct a TUI. This removes the former internal `createCodeModes()` profile reload and preserves the repository rule to resolve a model profile once at startup.
+The recipe constructor should take already resolved, host-neutral inputs: the one `ModelProfile` and explicit agent host options. It constructs the canonical agents plus controller ingredients; Mastra injects native workspace file/search/execute tools from the host-authorized workspace. The constructor must not re-read environment variables, instantiate `Mastra`, create/init a controller, select a sandbox provider, start PMM, create a session, or construct a TUI. This removes the former internal `createCodeModes()` profile reload and preserves the repository rule to resolve a model profile once at startup.
 
 For v1, the executable projection should contain only:
 

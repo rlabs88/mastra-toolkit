@@ -272,13 +272,6 @@ export async function prepareMcodeRuntime(
     },
     workspace: { resolve: () => workspace },
     sandbox: { resolve: () => workspace.resolveSandbox({ requestContext: new RequestContext() }) },
-    commandExecution: {
-      authorize: context => {
-        if (context?.workspace !== workspace) {
-          throw new Error("MCode command execution requires the bound project workspace");
-        }
-      },
-    },
     approval: { context: { host: options.host ?? "mcode" } },
   } satisfies ToolkitRuntimeBinding<typeof workspace, Awaited<ReturnType<typeof workspace.resolveSandbox>>>;
   let resources: ProjectMountingManager | undefined;
@@ -295,7 +288,6 @@ export async function prepareMcodeRuntime(
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
-  const commandRun = projection.tools.command_run;
   const agents = projection.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
@@ -367,8 +359,7 @@ export async function prepareMcodeRuntime(
           projectRoot: project.rootPath,
           modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
-          currentTools: new StaticToolSnapshot({ command_run: commandRun }),
-          requiredSpecialistTools: ["command_run"],
+          currentTools: new StaticToolSnapshot({}),
           host: new MastraProjectHostRegistry(mastra),
           workspace,
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),

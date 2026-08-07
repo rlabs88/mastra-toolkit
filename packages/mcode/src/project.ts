@@ -1,4 +1,5 @@
 import { createMcpManager, type McpManager, type McpServerConfig } from "@mastra/code-sdk/mcp/index";
+import { MASTRACODE_WORKSPACE_TOOLS } from "@mastra/code-sdk/agents/tool-availability";
 import type { Agent, ToolsInput } from "@mastra/core/agent";
 import type { Mastra } from "@mastra/core/mastra";
 import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
@@ -178,10 +179,23 @@ export function createMcodeWorkspace(
     ],
     checkSkillFileMtime: options.hotReloadSkills ?? false,
     tools: {
-      mastra_workspace_execute_command: { requireApproval: true },
-      mastra_workspace_write_file: { requireApproval: true },
-      mastra_workspace_edit_file: { requireApproval: true },
-      mastra_workspace_delete: { requireApproval: true },
+      ...MASTRACODE_WORKSPACE_TOOLS,
+      mastra_workspace_execute_command: {
+        ...MASTRACODE_WORKSPACE_TOOLS.mastra_workspace_execute_command,
+        requireApproval: true,
+      },
+      mastra_workspace_write_file: {
+        ...MASTRACODE_WORKSPACE_TOOLS.mastra_workspace_write_file,
+        requireApproval: true,
+      },
+      mastra_workspace_edit_file: {
+        ...MASTRACODE_WORKSPACE_TOOLS.mastra_workspace_edit_file,
+        requireApproval: true,
+      },
+      mastra_workspace_delete: {
+        ...MASTRACODE_WORKSPACE_TOOLS.mastra_workspace_delete,
+        requireApproval: true,
+      },
     },
   });
 }

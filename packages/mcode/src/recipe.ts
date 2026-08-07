@@ -1,6 +1,6 @@
 import type { ToolsInput } from "@mastra/core/agent";
 import type { AgentControllerMode, AgentControllerSubagent } from "@mastra/core/agent-controller";
-import { ARCHETYPES, composePrompt, ROLE_IDS, type RoleId, type ToolkitAgents, type ToolkitAgentsOptions } from "@rlabs/agents-roles";
+import { ROLE_IDS, type RoleId, type ToolkitAgents, type ToolkitAgentsOptions } from "@rlabs/agents-roles";
 import {
   createToolkitRuntimeContract,
   type ToolkitRuntimeBinding,
@@ -17,8 +17,16 @@ export const scopeModePrompt = `# Scope mode
 
 Establish the project boundary, current evidence, constraints, risks, and the smallest coherent next change. You retain the complete coding tool surface and ordinary approval rules. Use tools whenever they improve the evidence; do not treat this prompt overlay as a read-only boundary.`;
 
-export const CANONICAL_AGENT_IDS = ["cortex", "flux", "zen"] as const;
+export const CANONICAL_AGENT_IDS = ROLE_IDS;
 export const CODE_MODE_NAMES = ["scope", "build"] as const;
+export const NATIVE_WORKSPACE_TOOL_IDS = [
+  "view",
+  "write_file",
+  "string_replace_lsp",
+  "find_files",
+  "search_content",
+  "execute_command",
+] as const;
 
 export type CanonicalAgentId = (typeof CANONICAL_AGENT_IDS)[number];
 export type CodeModeId = (typeof CODE_MODE_NAMES)[number];
@@ -92,19 +100,18 @@ function capitalize(value: string): string {
 }
 
 export function createCodeSubagents(
-  profile: ModelProfile,
-  tools: ToolsInput,
+  contract: ToolkitRuntimeContract,
 ): AgentControllerSubagent[] {
-  return ROLE_IDS.map(id => {
-    const archetype = ARCHETYPES[id];
+  const profile = contract.runtime.profile;
+  return contract.roles.ids.map(id => {
+    const role = contract.roles.definitions[id];
     return {
       id,
-      name: archetype.name,
-      description: archetype.description,
-      instructions: composePrompt(archetype),
-      tools,
+      name: role.name,
+      description: role.description,
+      instructions: contract.roles.composePrompt(role),
       defaultModelId: resolveProxyGatewayModelId(profile, profile.roles[id]),
-      maxSteps: archetype.model.steps,
+      maxSteps: role.model.steps,
     };
   });
 }
@@ -121,10 +128,10 @@ function isRoleId(value: unknown): value is RoleId {
   return typeof value === "string" && ROLE_IDS.some(id => id === value);
 }
 
-export const MCODE_CONTROLLER_PROJECTION_VERSION = 1 as const;
+export const MCODE_CONTROLLER_PROJECTION_VERSION = 2 as const;
 /** @deprecated Use MCODE_CONTROLLER_PROJECTION_VERSION. */
 export const MCODE_RECIPE_VERSION = MCODE_CONTROLLER_PROJECTION_VERSION;
-export const MCODE_CAPABILITY_SCHEMA_VERSION = 1 as const;
+export const MCODE_CAPABILITY_SCHEMA_VERSION = 2 as const;
 
 interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "profile"> {
   readonly profile: ModelProfile;
@@ -134,14 +141,14 @@ interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "pr
 export type McodeRecipeOptions = McodeRecipeCompatibilityOptions;
 
 export interface McodeControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
+  extends Omit<ToolkitAgentsOptions, "profile"> {}
 
-export interface McodeControllerIngredientsV1 {
+export interface McodeControllerIngredientsV2 {
   readonly modes: AgentControllerMode[];
   readonly subagents: AgentControllerSubagent[];
 }
 
-export interface McodeCapabilityDescriptorV1 {
+export interface McodeCapabilityDescriptorV2 {
   readonly schemaVersion: typeof MCODE_CAPABILITY_SCHEMA_VERSION;
   readonly projectionVersion: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
   /** @deprecated Use projectionVersion. */
@@ -150,9 +157,9 @@ export interface McodeCapabilityDescriptorV1 {
   readonly contractDigest: `sha256:${string}`;
   readonly modes: readonly string[];
   readonly subagents: readonly string[];
-  readonly requiredTools: readonly ["command_run"];
+  readonly requiredTools: typeof NATIVE_WORKSPACE_TOOL_IDS;
   readonly behavior: {
-    readonly toolContract: "command-run/v1";
+    readonly toolContract: "mastra-workspace-tools/v1";
     readonly modeInstructionDigests: Readonly<Record<string, `sha256:${string}`>>;
     readonly subagentInstructionDigests: Readonly<Record<string, `sha256:${string}`>>;
     readonly subagentMaxSteps: Readonly<Record<string, number>>;
@@ -186,15 +193,12 @@ export interface McodeControllerProjection {
   readonly version: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
   readonly binding: ToolkitRuntimeBinding;
   readonly agents: ToolkitAgents;
-  readonly tools: {
-    readonly command_run: McodeRecipeOptions["commandRun"];
-  };
-  readonly controller: McodeControllerIngredientsV1;
-  readonly capability: McodeCapabilityDescriptorV1;
+  readonly controller: McodeControllerIngredientsV2;
+  readonly capability: McodeCapabilityDescriptorV2;
 }
 
 /** @deprecated Use McodeControllerProjection. */
-export type McodeRecipeV1 = McodeControllerProjection;
+export type McodeRecipeV2 = McodeControllerProjection;
 export type StudioControllerProjection = McodeControllerProjection;
 
 export function createMcodeControllerProjection(
@@ -218,28 +222,20 @@ function createControllerProjection(
   contract: ToolkitRuntimeContract,
   binding: ToolkitRuntimeBinding,
   options: McodeControllerProjectionOptions,
-  compatibilityCommandRun?: McodeRecipeOptions["commandRun"],
 ): McodeControllerProjection {
-  const commandRun = compatibilityCommandRun ?? contract.tools.createCommandRun({
-    authorize: async context => {
-      await binding.commandExecution.authorize({
-        requestContext: context.requestContext,
-        ...(context.workspace ? { workspace: context.workspace } : {}),
-      });
-    },
-  });
-  const agents = contract.roles.createAgents({
+  const agentOptions = {
     ...options,
-    commandRun,
     profile: contract.runtime.profile,
-  });
+  };
+  const agents = projection === "studio"
+    ? contract.roles.createAgentRegistry(agentOptions).supervisors
+    : contract.roles.createAgents(agentOptions);
   const modes = createCodeModes(agents, contract.runtime.profile);
-  const subagents = createCodeSubagents(contract.runtime.profile, { command_run: commandRun });
+  const subagents = createCodeSubagents(contract);
   return {
     version: MCODE_CONTROLLER_PROJECTION_VERSION,
     binding,
     agents,
-    tools: { command_run: commandRun },
     controller: { modes, subagents },
     capability: createMcodeCapabilityDescriptor(
       contract.runtime.profile,
@@ -251,15 +247,14 @@ function createControllerProjection(
   };
 }
 
-export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV1 {
+export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV2 {
   const contract = createToolkitRuntimeContract({ profile: options.profile });
-  const { commandRun, profile: _profile, ...projectionOptions } = options;
+  const { profile: _profile, ...projectionOptions } = options;
   return createControllerProjection(
     "mcode",
     contract,
     compatibilityBinding(),
     projectionOptions,
-    commandRun,
   );
 }
 
@@ -269,7 +264,7 @@ export function createMcodeCapabilityDescriptor(
   subagents: AgentControllerSubagent[],
   contractDigest = createToolkitRuntimeContract({ profile }).capability.digest,
   projection: "mcode" | "studio" = "mcode",
-): McodeCapabilityDescriptorV1 {
+): McodeCapabilityDescriptorV2 {
   const payload = {
     schemaVersion: MCODE_CAPABILITY_SCHEMA_VERSION,
     projectionVersion: MCODE_CONTROLLER_PROJECTION_VERSION,
@@ -278,9 +273,9 @@ export function createMcodeCapabilityDescriptor(
     contractDigest,
     modes: modes.map(mode => mode.id),
     subagents: subagents.map(subagent => subagent.id),
-    requiredTools: ["command_run"],
+    requiredTools: NATIVE_WORKSPACE_TOOL_IDS,
     behavior: {
-      toolContract: "command-run/v1",
+      toolContract: "mastra-workspace-tools/v1",
       modeInstructionDigests: Object.fromEntries(modes.map(mode => [mode.id, digestInstructions(mode.instructions)])),
       subagentInstructionDigests: Object.fromEntries(subagents.map(subagent => [subagent.id, digestInstructions(subagent.instructions)])),
       subagentMaxSteps: Object.fromEntries(subagents.flatMap(subagent =>
@@ -324,7 +319,6 @@ function compatibilityBinding(): ToolkitRuntimeBinding {
     },
     workspace: { resolve: unavailable },
     sandbox: { resolve: unavailable },
-    commandExecution: { authorize: () => undefined },
     approval: { context: { compatibility: true } },
   };
 }

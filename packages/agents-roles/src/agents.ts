@@ -6,7 +6,6 @@ import type { AnyWorkspace } from "@mastra/core/workspace";
 import type { StagehandBrowser } from "@mastra/stagehand";
 import {
   browserActionRequiresApproval,
-  createAdhdTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
@@ -21,11 +20,9 @@ import { CORTEX_ROLE, FLUX_ROLE, ZEN_ROLE, type RoleDefinition } from "./roles.j
 import { composePrompt } from "./prompts.js";
 
 export const TOOLKIT_WORKSPACE_CONTEXT_KEY = "mastraToolkitWorkspace";
-export const TOOLKIT_DELEGATED_RUN_CONTEXT_KEY = "mastraToolkitDelegatedRun";
 
 export interface ToolkitAgentsOptions {
   readonly browser: boolean;
-  readonly commandRun: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
   readonly additionalTools?: ToolkitAdditionalTools;
@@ -44,35 +41,49 @@ export interface ToolkitAgents {
   readonly zen: Agent<"zen">;
 }
 
+export interface ToolkitAgentRegistry {
+  readonly supervisors: ToolkitAgents;
+  readonly leaves: ToolkitAgents;
+}
+
+export function createToolkitAgentRegistry(options: ToolkitAgentsOptions): ToolkitAgentRegistry {
+  const resolvedOptions = options.profile ? options : { ...options, profile: loadModelProfile() };
+  const leaves = createAgentSet(resolvedOptions);
+  return {
+    leaves,
+    supervisors: createAgentSet(resolvedOptions, leaves),
+  };
+}
+
 export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgents {
+  return createAgentSet(options);
+}
+
+function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): ToolkitAgents {
   const profile = options.profile ?? loadModelProfile();
-  const commandRun = options.commandRun;
-  let flux!: Agent<"flux">;
-  const adhdRun = createAdhdTool(() => flux);
   const cortex = createAgent(
     CORTEX_ROLE,
     profile,
-    { command_run: commandRun },
     options.additionalTools,
     browser(options),
     options.hooks,
+    agents,
   );
-  flux = createAgent(
+  const flux = createAgent(
     FLUX_ROLE,
     profile,
-    { command_run: commandRun, adhd_run: adhdRun },
     options.additionalTools,
     browser(options),
     options.hooks,
+    agents,
   );
   const zen = createAgent(
     ZEN_ROLE,
     profile,
-    { command_run: commandRun },
     options.additionalTools,
     browser(options),
     options.hooks,
-    { cortex, flux },
+    agents,
   );
   return { cortex, flux, zen };
 }
@@ -80,11 +91,10 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
 function createAgent<TId extends RoleDefinition["id"]>(
   role: RoleDefinition<TId>,
   profile: ModelProfile,
-  tools: ToolsInput,
   additionalTools?: ToolkitAdditionalTools,
   agentBrowser?: StagehandBrowser,
   additionalHooks?: ToolHooks,
-  agents?: Record<string, Agent>,
+  agents?: ToolkitAgents,
 ): Agent<TId> {
   const hooks = composeToolHooks(additionalHooks);
   return new Agent({
@@ -97,7 +107,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      return { ...resolvedAdditionalTools, ...tools } as ToolsInput;
+      return { ...resolvedAdditionalTools } as ToolsInput;
     },
     workspace: ({ requestContext, mastra }) =>
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),
@@ -110,7 +120,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       requireToolApproval: ({ toolName, args }) => browserActionRequiresApproval(toolName, args),
     },
     ...(agentBrowser ? { browser: agentBrowser } : {}),
-    ...(agents ? { agents } : {}),
+    ...(agents ? { agents: { ...agents } } : {}),
   });
 }
 
