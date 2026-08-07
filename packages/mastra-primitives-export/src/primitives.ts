@@ -1,8 +1,10 @@
 import {
   browserActionRequiresApproval,
+  createDynamicWorkflowTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
+  reconcileDynamicWorkflowDefinitions,
   RUN_CONTAINMENT_POLICY,
 } from "@rlabs/agent-tools";
 import {
@@ -23,8 +25,8 @@ import {
 import { createHash } from "node:crypto";
 import { createSandboxMachine } from "@rlabs/sandbox";
 
-export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 2 as const;
-const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 2 as const;
+export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 3 as const;
+const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 3 as const;
 
 export interface ToolkitRuntimeIdentity {
   readonly projectId: string;
@@ -49,7 +51,7 @@ export interface ToolkitRuntimeContractOptions {
   readonly providerBaseUrl?: string;
 }
 
-export interface ToolkitRuntimeCapabilityDescriptorV2 {
+export interface ToolkitRuntimeCapabilityDescriptorV3 {
   readonly schemaVersion: typeof TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION;
   readonly contractVersion: typeof TOOLKIT_RUNTIME_CONTRACT_VERSION;
   readonly roles: readonly ["cortex", "flux", "zen"];
@@ -60,6 +62,7 @@ export interface ToolkitRuntimeCapabilityDescriptorV2 {
   readonly tools: {
     readonly agentVisible: {
       readonly workspace: "mastra-workspace-tools/v1";
+      readonly dynamicWorkflow: "dynamic-workflow/v1";
     };
     readonly audit: "tool-audit/v1";
     readonly runBudget: "run-budget/v1";
@@ -107,13 +110,16 @@ export interface ToolkitRuntimeContract {
     readonly createAgents: typeof createToolkitAgents;
   };
   readonly tools: {
-    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV2["tools"]["agentVisible"];
+    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV3["tools"]["agentVisible"];
+    readonly dynamicWorkflow: "dynamic-workflow/v1";
+    readonly createDynamicWorkflow: typeof createDynamicWorkflowTool;
+    readonly reconcileDynamicWorkflowDefinitions: typeof reconcileDynamicWorkflowDefinitions;
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
     readonly browserActionRequiresApproval: typeof browserActionRequiresApproval;
   };
-  readonly delegation: ToolkitRuntimeCapabilityDescriptorV2["delegation"];
+  readonly delegation: ToolkitRuntimeCapabilityDescriptorV3["delegation"];
   readonly containment: typeof RUN_CONTAINMENT_POLICY;
   readonly runtime: {
     readonly profile: ModelProfile;
@@ -128,8 +134,11 @@ export interface ToolkitRuntimeContract {
     readonly contextKey: typeof TOOLKIT_WORKSPACE_CONTEXT_KEY;
     readonly ProjectMountingManager: typeof ProjectMountingManager;
   };
-  readonly capability: ToolkitRuntimeCapabilityDescriptorV2;
+  readonly capability: ToolkitRuntimeCapabilityDescriptorV3;
 }
+
+/** @deprecated Runtime contract v2 predates dynamic_workflow. */
+export type ToolkitRuntimeCapabilityDescriptorV2 = ToolkitRuntimeCapabilityDescriptorV3;
 
 export function createToolkitRuntimeContract(
   options: ToolkitRuntimeContractOptions,
@@ -158,6 +167,7 @@ export function createToolkitRuntimeContract(
     tools: {
       agentVisible: {
         workspace: "mastra-workspace-tools/v1",
+        dynamicWorkflow: "dynamic-workflow/v1",
       },
       audit: "tool-audit/v1",
       runBudget: "run-budget/v1",
@@ -202,6 +212,9 @@ export function createToolkitRuntimeContract(
     },
     tools: {
       agentVisible: capability.tools.agentVisible,
+      dynamicWorkflow: "dynamic-workflow/v1",
+      createDynamicWorkflow: createDynamicWorkflowTool,
+      reconcileDynamicWorkflowDefinitions,
       createRunBudgetHooks,
       createToolAuditHooks,
       createVisibleBrowser,

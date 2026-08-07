@@ -45,11 +45,46 @@ describe("CodeMcpAdapter", () => {
     await adapter.close();
     expect(candidate.disconnects()).toBe(1);
   });
+
+  test("rejects a partial replacement so reload can retain the active generation", async () => {
+    const active = fakeManager({ active_tool: {} });
+    const partial = fakeManager({ partial_tool: {} }, [{ name: "browseros" }]);
+    const candidates = [active, partial];
+    const adapter = new CodeMcpAdapter(() => candidates.shift()!.manager);
+
+    const initial = await adapter.prepare();
+    await initial.commit();
+
+    await expect(adapter.prepare()).rejects.toThrow(/browseros/);
+    expect(adapter.getTools()).toEqual({ active_tool: {} });
+    expect(active.disconnects()).toBe(0);
+    expect(partial.disconnects()).toBe(1);
+
+    await adapter.close();
+    expect(active.disconnects()).toBe(1);
+  });
+
+  test("disconnects a replacement whose initialization rejects", async () => {
+    const active = fakeManager({ active_tool: {} });
+    const rejected = fakeManager({}, [], new Error("startup exploded"));
+    const candidates = [active, rejected];
+    const adapter = new CodeMcpAdapter(() => candidates.shift()!.manager);
+
+    const initial = await adapter.prepare();
+    await initial.commit();
+
+    await expect(adapter.prepare()).rejects.toThrow("startup exploded");
+    expect(adapter.getTools()).toEqual({ active_tool: {} });
+    expect(rejected.disconnects()).toBe(1);
+
+    await adapter.close();
+  });
 });
 
 function fakeManager(
   tools: Record<string, unknown>,
   failed: readonly { name: string }[] = [],
+  initError?: Error,
 ): {
   manager: McpManager;
   disconnects(): number;
@@ -57,7 +92,10 @@ function fakeManager(
   let disconnectCount = 0;
   return {
     manager: {
-      initInBackground: async () => ({ connected: [], failed, skipped: [], totalTools: Object.keys(tools).length }),
+      initInBackground: async () => {
+        if (initError) throw initError;
+        return { connected: [], failed, skipped: [], totalTools: Object.keys(tools).length };
+      },
       getTools: () => tools,
       disconnect: async () => { disconnectCount += 1; },
     } as unknown as McpManager,

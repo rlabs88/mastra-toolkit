@@ -17,14 +17,15 @@ describe("shared Mastra Toolkit runtime contract", () => {
     const first = createToolkitRuntimeContract({ profile });
     const second = createToolkitRuntimeContract({ profile });
 
-    expect(first.version).toBe(2);
-    expect(first.capability.schemaVersion).toBe(2);
+    expect(first.version).toBe(3);
+    expect(first.capability.schemaVersion).toBe(3);
     expect(first.roles.ids).toEqual(["cortex", "flux", "zen"]);
     expect(first.roles.definitions.cortex.id).toBe("cortex");
     expect(first.runtime.profile).toEqual(profile);
     expect(first.runtime.defaults.version).toBe(1);
     expect(first.tools.agentVisible).toEqual({
       workspace: "mastra-workspace-tools/v1",
+      dynamicWorkflow: "dynamic-workflow/v1",
     });
     expect(first.delegation).toEqual({
       nativeTool: "subagent",

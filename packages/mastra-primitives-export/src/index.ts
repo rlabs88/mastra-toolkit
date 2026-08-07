@@ -4,6 +4,7 @@ export {
   verifyToolkitRuntimeCapability,
   type ToolkitRuntimeBinding,
   type ToolkitRuntimeCapabilityDescriptorV2,
+  type ToolkitRuntimeCapabilityDescriptorV3,
   type ToolkitRuntimeContract,
   type ToolkitRuntimeContractOptions,
   type ToolkitRuntimeIdentity,

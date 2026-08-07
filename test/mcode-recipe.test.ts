@@ -55,6 +55,9 @@ describe("canonical MCode recipe", () => {
       const leaves = await supervisor.listAgents();
       expect(Object.keys(leaves)).toEqual(["cortex", "flux", "zen"]);
     }
+    expect(Object.keys(await studio.agents.cortex.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await studio.agents.zen.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await studio.agents.flux.listTools())).not.toContain("dynamic_workflow");
     for (const agent of Object.values(mcode.agents)) {
       expect(await agent.listAgents()).toEqual({});
       expect(Object.keys(await agent.listTools()).filter(isRoleSpecificDelegationTool)).toEqual([]);
@@ -67,9 +70,9 @@ describe("canonical MCode recipe", () => {
       browser: false,
     });
 
-    expect(recipe.version).toBe(2);
-    expect(recipe.capability.schemaVersion).toBe(2);
-    expect(recipe.capability.projectionVersion).toBe(2);
+    expect(recipe.version).toBe(3);
+    expect(recipe.capability.schemaVersion).toBe(3);
+    expect(recipe.capability.projectionVersion).toBe(3);
     expect(recipe).not.toHaveProperty("settings");
     expect(recipe.controller.modes.map(mode => mode.id)).toEqual([
       "cortex/scope",
@@ -81,10 +84,14 @@ describe("canonical MCode recipe", () => {
     ]);
     expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
     expect(recipe).not.toHaveProperty("tools.command_run");
+    expect(recipe).toHaveProperty("tools.dynamic_workflow");
     expect(recipe.capability.requiredTools).toContain("execute_command");
     expect(recipe.controller.subagents.every(subagent =>
       !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run" || tool === "adhd_run")
     )).toBe(true);
+    expect(Object.keys(await recipe.agents.cortex.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await recipe.agents.zen.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await recipe.agents.flux.listTools())).not.toContain("dynamic_workflow");
     for (const agent of Object.values(recipe.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");

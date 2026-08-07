@@ -23,7 +23,7 @@ interface RunBudgetState {
   readonly uncertainWrites: Set<string>;
 }
 
-const RUN_BUDGET_CONTEXT_KEY = "mastraToolkitRunBudget";
+export const RUN_BUDGET_CONTEXT_KEY = "mastraToolkitRunBudget";
 export const RUN_CONTAINMENT_POLICY = Object.freeze({
   maxToolCalls: 64,
   maxDelegations: 8,

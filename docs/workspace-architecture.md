@@ -33,12 +33,12 @@ Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications shar
 
 ## Production module structure
 
-The eight package boundaries remain distinct, but their implementation is intentionally concentrated into 28 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
+The eight package boundaries remain distinct, but their implementation is intentionally concentrated into 29 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
 
 ```text
 packages/
 ├── runtime-config/src/{index,profile,environment,gateway}.ts
-├── agent-tools/src/{index,capabilities}.ts
+├── agent-tools/src/{index,capabilities,dynamic-workflow}.ts
 ├── agents-roles/src/{index,roles,prompts,agents}.ts
 ├── sandbox/src/{index,contract,machine,providers}.ts
 ├── project-mounting-manager/src/{index,contract,discovery,manager}.ts
@@ -71,7 +71,7 @@ project-mounting-manager  factory-github-projects
     apps/mcode      apps/studio  apps/factory
 ```
 
-`agents-roles` is the one source of role IDs, prompt composition, model policy, and the Mastra supervisor/leaf registry. Each canonical supervisor points to all three canonical leaves; leaves have no `agents` map and cannot recursively delegate. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. Agents receive Mastra's native workspace file/search tools and sandbox execution automatically from their authorized workspace. `agent-tools` owns only host-neutral browser, audit, and aggregate run-containment policy; `sandbox` owns the cloneable machine contract and provider adapters. The toolkit does not retain an alternate command-loop or divergent-fan-out tool. A future orchestration capability must be an explicitly published Mastra workflow rather than another general agent tool.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and the Mastra supervisor/leaf registry. Each canonical supervisor points to all three canonical leaves; leaves have no `agents` map and cannot recursively delegate. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. Agents receive Mastra's native workspace file/search tools and sandbox execution automatically from their authorized workspace. `agent-tools` owns host-neutral browser, audit, aggregate run-containment, and `dynamic_workflow` authoring policy; `dynamic_workflow` accepts declarative Mastra graphs, issues no command, touches no filesystem, and receives agent and workflow ceilings from its MCode or Studio host. Factory does not expose this neutral orchestration adapter while its canonical modes/native-subagent construction seam remains upstream-blocked. `sandbox` owns the cloneable machine contract and provider adapters. The toolkit retains neither the alternate command loop nor the divergent fan-out tool.
 
 `runtime-config` owns the secret-free YAML catalog, startup environment resolution, and host data paths. MCode, Studio, and Factory persist local state beneath `~/.mastra-toolkit/{mcode,studio,factory}` unless `MASTRA_APP_DATA_DIR` explicitly selects another host directory. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 

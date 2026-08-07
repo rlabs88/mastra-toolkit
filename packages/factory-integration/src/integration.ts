@@ -184,7 +184,7 @@ export interface FactoryControllerProjection {
 export type FactoryAgentBundle = FactoryControllerProjection;
 
 export interface FactoryControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile"> {}
+  extends Omit<ToolkitAgentsOptions, "profile" | "dynamicWorkflow"> {}
 
 export class ToolkitFactoryIntegration implements FactoryIntegration {
   readonly id = "mastra-toolkit";
@@ -240,7 +240,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
 }
 
 export function createFactoryAgentBundle(
-  options: ToolkitAgentsOptions,
+  options: FactoryControllerProjectionOptions & { readonly profile?: ToolkitAgentsOptions["profile"] },
 ): FactoryAgentBundle {
   const contract = createToolkitRuntimeContract({
     profile: options.profile ?? loadModelProfile(),

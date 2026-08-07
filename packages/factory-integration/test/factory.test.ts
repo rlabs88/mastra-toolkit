@@ -50,6 +50,7 @@ describe("single-project Factory composition", () => {
     });
     expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
     expect(projection).not.toHaveProperty("tools.command_run");
+    expect(projection).not.toHaveProperty("tools.dynamic_workflow");
     for (const agent of Object.values(projection.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
@@ -66,6 +67,7 @@ describe("single-project Factory composition", () => {
     ).agentTools();
 
     expect(tools).toHaveProperty("project_workflow");
+    expect(tools).not.toHaveProperty("dynamic_workflow");
     expect(Object.keys(tools).filter(toolName =>
       toolName === "subagent" || /^(?:use|delegate)_(?:cortex|flux|zen)$/.test(toolName),
     )).toEqual([]);
@@ -168,6 +170,7 @@ describe("single-project Factory composition", () => {
     expect(tools).not.toHaveProperty("delegate_cortex");
     expect(tools).not.toHaveProperty("delegate_flux");
     expect(tools).not.toHaveProperty("delegate_zen");
+    expect(tools).not.toHaveProperty("dynamic_workflow");
     for (const agent of Object.values(bundle.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");

@@ -128,12 +128,12 @@ function isRoleId(value: unknown): value is RoleId {
   return typeof value === "string" && ROLE_IDS.some(id => id === value);
 }
 
-export const MCODE_CONTROLLER_PROJECTION_VERSION = 2 as const;
+export const MCODE_CONTROLLER_PROJECTION_VERSION = 3 as const;
 /** @deprecated Use MCODE_CONTROLLER_PROJECTION_VERSION. */
 export const MCODE_RECIPE_VERSION = MCODE_CONTROLLER_PROJECTION_VERSION;
-export const MCODE_CAPABILITY_SCHEMA_VERSION = 2 as const;
+export const MCODE_CAPABILITY_SCHEMA_VERSION = 3 as const;
 
-interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "profile"> {
+interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "profile" | "dynamicWorkflow"> {
   readonly profile: ModelProfile;
 }
 
@@ -141,14 +141,14 @@ interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "pr
 export type McodeRecipeOptions = McodeRecipeCompatibilityOptions;
 
 export interface McodeControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile"> {}
+  extends Omit<ToolkitAgentsOptions, "profile" | "dynamicWorkflow"> {}
 
-export interface McodeControllerIngredientsV2 {
+export interface McodeControllerIngredientsV3 {
   readonly modes: AgentControllerMode[];
   readonly subagents: AgentControllerSubagent[];
 }
 
-export interface McodeCapabilityDescriptorV2 {
+export interface McodeCapabilityDescriptorV3 {
   readonly schemaVersion: typeof MCODE_CAPABILITY_SCHEMA_VERSION;
   readonly projectionVersion: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
   /** @deprecated Use projectionVersion. */
@@ -193,12 +193,21 @@ export interface McodeControllerProjection {
   readonly version: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
   readonly binding: ToolkitRuntimeBinding;
   readonly agents: ToolkitAgents;
-  readonly controller: McodeControllerIngredientsV2;
-  readonly capability: McodeCapabilityDescriptorV2;
+  readonly tools: {
+    readonly dynamic_workflow: NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
+  };
+  readonly controller: McodeControllerIngredientsV3;
+  readonly capability: McodeCapabilityDescriptorV3;
 }
 
 /** @deprecated Use McodeControllerProjection. */
-export type McodeRecipeV2 = McodeControllerProjection;
+export type McodeRecipeV3 = McodeControllerProjection;
+/** @deprecated MCode projection v2 predates dynamic_workflow. */
+export type McodeRecipeV2 = McodeRecipeV3;
+/** @deprecated Use McodeControllerIngredientsV3. */
+export type McodeControllerIngredientsV2 = McodeControllerIngredientsV3;
+/** @deprecated Use McodeCapabilityDescriptorV3. */
+export type McodeCapabilityDescriptorV2 = McodeCapabilityDescriptorV3;
 export type StudioControllerProjection = McodeControllerProjection;
 
 export function createMcodeControllerProjection(
@@ -223,8 +232,12 @@ function createControllerProjection(
   binding: ToolkitRuntimeBinding,
   options: McodeControllerProjectionOptions,
 ): McodeControllerProjection {
+  // The host owns persistence and allowlists; the canonical role package only
+  // decides which roles receive the resulting capability.
+  const dynamicWorkflow = contract.tools.createDynamicWorkflow({ agents: contract.roles.ids });
   const agentOptions = {
     ...options,
+    dynamicWorkflow,
     profile: contract.runtime.profile,
   };
   const agents = projection === "studio"
@@ -236,6 +249,7 @@ function createControllerProjection(
     version: MCODE_CONTROLLER_PROJECTION_VERSION,
     binding,
     agents,
+    tools: { dynamic_workflow: dynamicWorkflow },
     controller: { modes, subagents },
     capability: createMcodeCapabilityDescriptor(
       contract.runtime.profile,
@@ -264,7 +278,7 @@ export function createMcodeCapabilityDescriptor(
   subagents: AgentControllerSubagent[],
   contractDigest = createToolkitRuntimeContract({ profile }).capability.digest,
   projection: "mcode" | "studio" = "mcode",
-): McodeCapabilityDescriptorV2 {
+): McodeCapabilityDescriptorV3 {
   const payload = {
     schemaVersion: MCODE_CAPABILITY_SCHEMA_VERSION,
     projectionVersion: MCODE_CONTROLLER_PROJECTION_VERSION,

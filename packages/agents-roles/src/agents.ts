@@ -23,6 +23,11 @@ export const TOOLKIT_WORKSPACE_CONTEXT_KEY = "mastraToolkitWorkspace";
 
 export interface ToolkitAgentsOptions {
   readonly browser: boolean;
+  /**
+   * Durable multi-agent orchestration is constructed by the host and assigned
+   * here so role policy remains independent from runtime persistence.
+   */
+  readonly dynamicWorkflow?: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
   readonly additionalTools?: ToolkitAdditionalTools;
@@ -61,6 +66,9 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
 
 function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): ToolkitAgents {
   const profile = options.profile ?? loadModelProfile();
+  const orchestration = options.dynamicWorkflow
+    ? { dynamic_workflow: options.dynamicWorkflow }
+    : undefined;
   const cortex = createAgent(
     CORTEX_ROLE,
     profile,
@@ -68,6 +76,7 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
     browser(options),
     options.hooks,
     agents,
+    orchestration,
   );
   const flux = createAgent(
     FLUX_ROLE,
@@ -84,6 +93,7 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
     browser(options),
     options.hooks,
     agents,
+    orchestration,
   );
   return { cortex, flux, zen };
 }
@@ -95,6 +105,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
   agentBrowser?: StagehandBrowser,
   additionalHooks?: ToolHooks,
   agents?: ToolkitAgents,
+  roleTools?: ToolsInput,
 ): Agent<TId> {
   const hooks = composeToolHooks(additionalHooks);
   return new Agent({
@@ -107,7 +118,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      return { ...resolvedAdditionalTools } as ToolsInput;
+      return { ...resolvedAdditionalTools, ...roleTools } as ToolsInput;
     },
     workspace: ({ requestContext, mastra }) =>
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),

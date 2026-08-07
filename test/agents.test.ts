@@ -8,14 +8,18 @@ import type { CommandInput } from "@rlabs/agent-tools";
 // @ts-expect-error The sandbox-owned Command Run adapter was deleted with the tool.
 import type { SandboxCommandRunToolOptions } from "@rlabs/sandbox";
 
-describe("legacy toolkit tools", () => {
-  test("publishes only the surviving tool and sandbox APIs", () => {
+describe("canonical toolkit tools", () => {
+  test("publishes dynamic orchestration without restoring legacy command APIs", () => {
     expect(Object.keys(agentTools).sort()).toEqual([
+      "DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY",
+      "DYNAMIC_WORKFLOW_ORIGIN",
       "RUN_CONTAINMENT_POLICY",
       "browserActionRequiresApproval",
+      "createDynamicWorkflowTool",
       "createRunBudgetHooks",
       "createToolAuditHooks",
       "createVisibleBrowser",
+      "reconcileDynamicWorkflowDefinitions",
     ]);
     expect(Object.keys(sandbox).sort()).toEqual([
       "DEFAULT_SANDBOX_SPEC_PATH",

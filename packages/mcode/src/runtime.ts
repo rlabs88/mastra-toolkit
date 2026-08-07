@@ -288,6 +288,7 @@ export async function prepareMcodeRuntime(
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
+  const dynamicWorkflow = projection.tools.dynamic_workflow;
   const agents = projection.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
@@ -355,11 +356,19 @@ export async function prepareMcodeRuntime(
       const mcp = options.mcp
         ?? (options.disableMcp ? new EmptyMcpLifecycle() : createCodeMcpAdapter(project.rootPath));
       try {
+        // A crash between the create and archive writes can leave a
+        // model-authored definition active, and only active rows load at
+        // startWorkers(). Archive them before anything can mount them.
+        await contract.tools.reconcileDynamicWorkflowDefinitions(mastra);
         resources = await ProjectMountingManager.create({
           projectRoot: project.rootPath,
           modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
-          currentTools: new StaticToolSnapshot({}),
+          // Reported, not published: the mounting manager rejects a project
+          // workflow that would shadow a reserved host tool id.
+          currentTools: new StaticToolSnapshot({
+            dynamic_workflow: dynamicWorkflow,
+          }),
           host: new MastraProjectHostRegistry(mastra),
           workspace,
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),

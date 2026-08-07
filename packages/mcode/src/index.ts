@@ -31,11 +31,14 @@ export {
   type CanonicalAgentId,
   type CodeModeId,
   type McodeCapabilityDescriptorV2,
+  type McodeCapabilityDescriptorV3,
   type McodeControllerProjection,
   type McodeControllerIngredientsV2,
+  type McodeControllerIngredientsV3,
   type McodeControllerProjectionOptions,
   type McodeRecipeOptions,
   type McodeRecipeV2,
+  type McodeRecipeV3,
   type StudioControllerProjection,
 } from "./recipe.js";
 export {

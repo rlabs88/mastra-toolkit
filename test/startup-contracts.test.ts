@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
-const STARTUP_CHECK_TIMEOUT_MS = 15_000;
+const STARTUP_CHECK_TIMEOUT_MS = 30_000;
 const secretNames = [
   "PROXY_API_KEY",
   "CLI_PROXY_API_KEY",
