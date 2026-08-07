@@ -48,6 +48,14 @@ export class GithubProjectsFactoryIntegration implements FactoryIntegration {
       github: this.options.github,
       commands: this.#commands,
       repositories,
+      factoryProjects: {
+        async resolveDefaultModelId(input) {
+          return (await context.storage.projects.get({
+            orgId: input.orgId,
+            id: input.factoryProjectId,
+          }))?.defaultModelId;
+        },
+      },
       ownerId: this.#ownerId,
     });
     return [new GithubProjectsSchedulerWorker(reconciler, this.options.config.reconcileIntervalMs)];

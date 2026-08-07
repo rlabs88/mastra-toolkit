@@ -80,6 +80,114 @@ describe("GithubProjectsReconciler", () => {
     expect(setStatus.mock.calls.every(call => call[1] === "progress")).toBe(true);
   });
 
+  test("adopts the Factory-assigned work item identity after a governed start", async () => {
+    const projects = await storage();
+    const startWorkItem = vi.fn(async () => ({ workItemId: "factory-assigned-work-item" }));
+    const reconciler = new GithubProjectsReconciler({
+      config: {
+        automationUserId: "local-user", reconcileIntervalMs: 30_000,
+        maxConcurrentProjects: 1, maxConcurrentItemsPerProject: 1,
+        bindings: [binding("binding-1", "factory-1", "PVT_1")],
+      },
+      storage: projects,
+      github: {
+        listProjectItems: async () => [item("I_authoritative", 101, "rlabs88/repo-a")],
+        setStatus: vi.fn(async () => undefined),
+      },
+      commands: {
+        startWorkItem,
+        getWorkItem: vi.fn(async () => ({ stages: ["execute"] })),
+      } as unknown as FactoryAutomationCommandsPort,
+      repositories: { resolveLinkedRepository: async () => ({ projectRepositoryId: "link-1" }) },
+      ownerId: "worker-1",
+    });
+
+    await expect(reconciler.runOnce()).resolves.toMatchObject({ started: 1 });
+    await expect(projects.getExecution("I_authoritative")).resolves.toMatchObject({
+      workItemId: "factory-assigned-work-item",
+      status: "active",
+    });
+  });
+
+  test("passes the Factory project default model into governed starts", async () => {
+    const projects = await storage();
+    const startWorkItem = vi.fn(async input => ({ workItemId: input.workItemId }));
+    const resolveDefaultModelId = vi.fn(async () => "a1-proxy/code-workhorse-high");
+    const reconciler = new GithubProjectsReconciler({
+      config: {
+        automationUserId: "local-user", reconcileIntervalMs: 30_000,
+        maxConcurrentProjects: 1, maxConcurrentItemsPerProject: 1,
+        bindings: [binding("binding-1", "factory-1", "PVT_1")],
+      },
+      storage: projects,
+      github: {
+        listProjectItems: async () => [item("I_model", 101, "rlabs88/repo-a")],
+        setStatus: vi.fn(async () => undefined),
+      },
+      commands: {
+        startWorkItem,
+        getWorkItem: vi.fn(async () => ({ stages: ["execute"] })),
+      } as unknown as FactoryAutomationCommandsPort,
+      repositories: { resolveLinkedRepository: async () => ({ projectRepositoryId: "link-1" }) },
+      factoryProjects: { resolveDefaultModelId },
+      ownerId: "worker-1",
+    });
+
+    await reconciler.runOnce();
+
+    expect(startWorkItem).toHaveBeenCalledOnce();
+    expect(resolveDefaultModelId).toHaveBeenCalledWith({ orgId: "org-1", factoryProjectId: "factory-1" });
+    expect(startWorkItem.mock.calls[0]?.[0].defaultModelId).toBe("a1-proxy/code-workhorse-high");
+  });
+
+  test("wires the Factory project default model through the production integration", async () => {
+    const projects = await storage();
+    const startWorkItem = vi.fn(async input => ({ workItemId: input.workItemId }));
+    const getProject = vi.fn(async () => ({ defaultModelId: "a1-proxy/code-workhorse-high" }));
+    const integration = createGithubProjectsFactoryIntegration({
+      config: {
+        automationUserId: "local-user", reconcileIntervalMs: 30_000,
+        maxConcurrentProjects: 1, maxConcurrentItemsPerProject: 1,
+        bindings: [binding("binding-1", "factory-1", "PVT_1")],
+      },
+      storage: projects,
+      github: {
+        listProjectItems: async () => [item("I_integrated_model", 101, "rlabs88/repo-a")],
+        setStatus: vi.fn(async () => undefined),
+      },
+      ownerId: "worker-1",
+    });
+    integration.initializeAutomation({
+      commands: {
+        startWorkItem,
+        getWorkItem: vi.fn(async () => ({ stages: ["execute"] })),
+      } as unknown as FactoryAutomationCommandsPort,
+    });
+    const [worker] = integration.workers({
+      storage: {
+        projects: { get: getProject },
+        sourceControlOwner: {
+          repositories: {
+            findByExternalId: vi.fn(async () => ({ id: "repo-1", slug: "rlabs88/repo-a" })),
+          },
+          connections: {
+            list: vi.fn(async () => [{ id: "connection-1" }]),
+          },
+          projectRepositories: {
+            list: vi.fn(async () => [{ id: "link-1", repositoryId: "repo-1" }]),
+          },
+        },
+      },
+    } as unknown as Parameters<typeof integration.workers>[0]);
+
+    await worker?.start();
+    await worker?.stop();
+
+    expect(getProject).toHaveBeenCalledWith({ orgId: "org-1", id: "factory-1" });
+    expect(startWorkItem).toHaveBeenCalledOnce();
+    expect(startWorkItem.mock.calls[0]?.[0].defaultModelId).toBe("a1-proxy/code-workhorse-high");
+  });
+
   test("rejects unlinked repositories without starting or projecting status", async () => {
     const projects = await storage();
     const startWorkItem = vi.fn();

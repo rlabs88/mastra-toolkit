@@ -23,6 +23,13 @@ export interface LinkedRepositoryResolver {
     repositoryNameWithOwner: string;
   }): Promise<{ projectRepositoryId: string } | null>;
 }
+
+export interface FactoryProjectDefaultsResolver {
+  resolveDefaultModelId(input: {
+    orgId: string;
+    factoryProjectId: string;
+  }): Promise<string | null | undefined>;
+}
 export interface ReconcileResult {
   readonly started: number;
   readonly skippedLease: number;
@@ -38,6 +45,7 @@ export class GithubProjectsReconciler {
     github: GithubProjectsPort;
     commands: FactoryAutomationCommandsPort;
     repositories: LinkedRepositoryResolver;
+    factoryProjects?: FactoryProjectDefaultsResolver;
     ownerId: string;
   }) {}
 
@@ -183,6 +191,10 @@ export class GithubProjectsReconciler {
       await this.options.storage.recordDiagnostic(rejected.at(-1)!);
       return "rejected";
     }
+    const defaultModelId = await this.options.factoryProjects?.resolveDefaultModelId({
+      orgId: binding.orgId,
+      factoryProjectId: binding.factoryProjectId,
+    });
     const acquired = await this.options.storage.acquireExecutionLease({
       contentNodeId: item.identity.contentNodeId,
       bindingId: binding.id,
@@ -217,16 +229,14 @@ export class GithubProjectsReconciler {
       role,
       destinationStage: "execute",
       workItemId,
+      ...(defaultModelId ? { defaultModelId } : {}),
       ...(workspace ? { metadata: { workspacePolicy: workspace } } : {}),
     });
-    if (accepted.workItemId !== workItemId) {
-      throw new Error(`Factory accepted unexpected work item '${accepted.workItemId}' for '${item.identity.contentNodeId}'`);
-    }
     await this.options.storage.recordExecution({
       contentNodeId: item.identity.contentNodeId,
       bindingId: binding.id,
       projectItemNodeId: item.identity.projectItemNodeId,
-      workItemId,
+      workItemId: accepted.workItemId,
       status: "active",
     });
     if (item.statusOptionId !== binding.statusOptions.inProgress) {
