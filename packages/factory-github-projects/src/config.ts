@@ -11,12 +11,12 @@ const bindingSchema = z.object({
   githubProjectNumber: z.number().int().positive(),
   statusFieldId: id,
   statusOptions: z.object({
-    backlog: id, ready: id, inProgress: id, validating: id, done: id, canceled: id,
+    backlog: id, intake: id, investigate: id, planning: id, building: id, review: id, done: id, canceled: id,
   }),
-  executionFieldId: id,
-  executionOptions: z.object({ automatic: id, manual: id, hitl: id }),
-  workTypeFieldId: id,
-  workTypeOptions: z.object({ implementation: id, research: id, prototype: id, decision: id, map: id }),
+  executionFieldId: id.optional(),
+  executionOptions: z.object({ automatic: id, manual: id, hitl: id }).optional(),
+  workTypeFieldId: id.optional(),
+  workTypeOptions: z.object({ implementation: id, research: id, prototype: id, decision: id, map: id }).optional(),
   workspaceFieldId: id.optional(),
   priorityFieldId: id.optional(),
   workspacePolicies: z.array(z.object({
@@ -30,8 +30,8 @@ const bindingSchema = z.object({
   enabled: z.boolean().default(true),
 }).superRefine((binding, context) => {
   requireUniqueIds(context, Object.values(binding.statusOptions), "status option IDs");
-  requireUniqueIds(context, Object.values(binding.executionOptions), "execution option IDs");
-  requireUniqueIds(context, Object.values(binding.workTypeOptions), "work type option IDs");
+  requireUniqueIds(context, Object.values(binding.executionOptions ?? {}), "execution option IDs");
+  requireUniqueIds(context, Object.values(binding.workTypeOptions ?? {}), "work type option IDs");
   requireUniqueIds(context, [
     binding.statusFieldId,
     binding.executionFieldId,
@@ -41,6 +41,12 @@ const bindingSchema = z.object({
   ].filter((value): value is string => Boolean(value)), "field IDs");
   if (binding.workspacePolicies?.length && !binding.workspaceFieldId) {
     context.addIssue({ code: "custom", message: "workspacePolicies require workspaceFieldId" });
+  }
+  if (Boolean(binding.executionFieldId) !== Boolean(binding.executionOptions)) {
+    context.addIssue({ code: "custom", message: "executionFieldId and executionOptions must be configured together" });
+  }
+  if (Boolean(binding.workTypeFieldId) !== Boolean(binding.workTypeOptions)) {
+    context.addIssue({ code: "custom", message: "workTypeFieldId and workTypeOptions must be configured together" });
   }
   requireUniqueIds(
     context,
@@ -59,8 +65,6 @@ const bindingSchema = z.object({
 
 const configSchema = z.object({
   reconcileIntervalMs: z.number().int().min(5_000).max(3_600_000).default(60_000),
-  maxConcurrentProjects: z.number().int().positive().max(32).default(4),
-  maxConcurrentItemsPerProject: z.number().int().positive().max(32).default(1),
   bindings: z.array(bindingSchema).min(1),
 });
 

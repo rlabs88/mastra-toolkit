@@ -8,20 +8,22 @@ export interface GithubProjectBindingConfig {
   readonly statusFieldId: string;
   readonly statusOptions: {
     readonly backlog: string;
-    readonly ready: string;
-    readonly inProgress: string;
-    readonly validating: string;
+    readonly intake: string;
+    readonly investigate: string;
+    readonly planning: string;
+    readonly building: string;
+    readonly review: string;
     readonly done: string;
     readonly canceled: string;
   };
-  readonly executionFieldId: string;
-  readonly executionOptions: {
+  readonly executionFieldId?: string;
+  readonly executionOptions?: {
     readonly automatic: string;
     readonly manual: string;
     readonly hitl: string;
   };
-  readonly workTypeFieldId: string;
-  readonly workTypeOptions: {
+  readonly workTypeFieldId?: string;
+  readonly workTypeOptions?: {
     readonly implementation: string;
     readonly research: string;
     readonly prototype: string;
@@ -46,8 +48,6 @@ export interface WorkspacePolicy {
 export interface GithubProjectsFactoryConfig {
   readonly automationUserId: string;
   readonly reconcileIntervalMs: number;
-  readonly maxConcurrentProjects: number;
-  readonly maxConcurrentItemsPerProject: number;
   readonly bindings: readonly GithubProjectBindingConfig[];
 }
 
@@ -72,7 +72,6 @@ export interface GithubProjectItemSnapshot {
   readonly content: GithubProjectItemContent;
   readonly fieldValues: Readonly<Record<string, string | number | null>>;
   readonly position: number;
-  readonly blockedByOpenCount: number;
   readonly labels?: readonly string[];
 }
 
@@ -88,25 +87,19 @@ export interface NormalizedGithubProjectItem {
   readonly workspaceOptionId: string | null;
   readonly priority: number | null;
   readonly position: number;
-  readonly blockedByOpenCount: number;
 }
 
 export type ProjectItemEligibility =
-  | { readonly eligible: true; readonly role: "work" | "plan" }
+  | { readonly eligible: true }
   | {
       readonly eligible: false;
       readonly reason:
         | "unsupported_content"
         | "closed"
-        | "status_not_ready"
-        | "execution_not_automatic"
-        | "blocked"
-        | "human_decision"
-        | "map_requires_graph_reconciliation"
-        | "unknown_work_type";
+        | "status_not_intake";
     };
 
-export type FactoryLifecycleState = "queued" | "active" | "validating" | "verified-complete" | "canceled";
+export type FactoryLifecycleStage = "intake" | "triage" | "planning" | "execute" | "review" | "done" | "canceled";
 export type ProjectStatusKey = keyof GithubProjectBindingConfig["statusOptions"];
 
 export function normalizeProjectItem(
@@ -138,7 +131,6 @@ export function normalizeProjectItem(
     workspaceOptionId: option(binding.workspaceFieldId),
     priority: typeof priorityValue === "number" && Number.isFinite(priorityValue) ? priorityValue : null,
     position: snapshot.position,
-    blockedByOpenCount: snapshot.blockedByOpenCount,
   };
 }
 
@@ -148,23 +140,8 @@ export function evaluateProjectItem(
 ): ProjectItemEligibility {
   if (item.contentType !== "Issue") return { eligible: false, reason: "unsupported_content" };
   if (item.state !== "OPEN") return { eligible: false, reason: "closed" };
-  if (item.statusOptionId !== binding.statusOptions.ready) return { eligible: false, reason: "status_not_ready" };
-  if (item.executionOptionId !== binding.executionOptions.automatic) {
-    return { eligible: false, reason: "execution_not_automatic" };
-  }
-  if (item.blockedByOpenCount > 0) return { eligible: false, reason: "blocked" };
-  if (item.workTypeOptionId === binding.workTypeOptions.decision) {
-    return { eligible: false, reason: "human_decision" };
-  }
-  if (item.workTypeOptionId === binding.workTypeOptions.map) {
-    return { eligible: false, reason: "map_requires_graph_reconciliation" };
-  }
-  if (item.workTypeOptionId === binding.workTypeOptions.research) return { eligible: true, role: "plan" };
-  if (
-    item.workTypeOptionId === binding.workTypeOptions.implementation
-    || item.workTypeOptionId === binding.workTypeOptions.prototype
-  ) return { eligible: true, role: "work" };
-  return { eligible: false, reason: "unknown_work_type" };
+  if (item.statusOptionId !== binding.statusOptions.intake) return { eligible: false, reason: "status_not_intake" };
+  return { eligible: true };
 }
 
 export function orderEligibleItems<T extends Pick<NormalizedGithubProjectItem, "identity" | "priority" | "position">>(
@@ -176,10 +153,20 @@ export function orderEligibleItems<T extends Pick<NormalizedGithubProjectItem, "
     || left.identity.contentNodeId.localeCompare(right.identity.contentNodeId));
 }
 
-export function projectStatusForFactoryState(state: FactoryLifecycleState): ProjectStatusKey {
-  if (state === "queued") return "backlog";
-  if (state === "active") return "inProgress";
-  if (state === "validating") return "validating";
-  if (state === "verified-complete") return "done";
-  return "canceled";
+export function projectStatusForFactoryStage(stage: FactoryLifecycleStage): ProjectStatusKey {
+  if (stage === "triage") return "investigate";
+  if (stage === "execute") return "building";
+  return stage;
+}
+
+export function factoryStageForProjectStatus(
+  binding: GithubProjectBindingConfig,
+  statusOptionId: string | null,
+): FactoryLifecycleStage | undefined {
+  const status = Object.entries(binding.statusOptions)
+    .find(([, optionId]) => optionId === statusOptionId)?.[0] as ProjectStatusKey | undefined;
+  if (!status || status === "backlog") return undefined;
+  if (status === "investigate") return "triage";
+  if (status === "building") return "execute";
+  return status;
 }

@@ -30,8 +30,8 @@ export class GithubProjectsGraphqlClient implements GithubProjectsPort {
         throw new Error(`Configured GitHub Project '${binding.githubProjectNodeId}' was not found`);
       }
       for (const node of project.items.nodes ?? []) {
-        if (node.fieldValues.pageInfo?.hasNextPage || node.content?.blockedBy?.pageInfo?.hasNextPage) {
-          throw new Error(`GitHub Project item '${node.id}' exceeds the supported field or dependency page size`);
+        if (node.fieldValues.pageInfo?.hasNextPage) {
+          throw new Error(`GitHub Project item '${node.id}' exceeds the supported field-value page size`);
         }
         const content = normalizeContent(node.content);
         if (!content) continue;
@@ -46,7 +46,6 @@ export class GithubProjectsGraphqlClient implements GithubProjectsPort {
           content,
           fieldValues,
           position: items.length,
-          blockedByOpenCount: node.content?.blockedBy?.nodes?.filter(issue => issue.state === "OPEN").length ?? 0,
         });
       }
       cursor = project.items.pageInfo.hasNextPage ? (project.items.pageInfo.endCursor ?? null) : null;
@@ -120,7 +119,6 @@ interface QueryContent {
   url?: string;
   state?: string;
   repository?: { id: string; databaseId?: number | null; nameWithOwner: string };
-  blockedBy?: { nodes?: Array<{ state: string }>; pageInfo?: { hasNextPage: boolean } };
 }
 interface QueryFieldValue {
   optionId?: string | null;
@@ -168,7 +166,6 @@ query FactoryProjectItems($organization: String!, $number: Int!, $cursor: String
             __typename
             ... on Issue {
               id number title url state repository { id databaseId nameWithOwner }
-              blockedBy(first: 100) { nodes { state } pageInfo { hasNextPage } }
             }
             ... on PullRequest { id number title url state repository { id databaseId nameWithOwner } }
           }

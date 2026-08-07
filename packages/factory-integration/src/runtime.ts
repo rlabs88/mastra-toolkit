@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
+import { defaultFactoryRules } from "@mastra/factory/rules/defaults";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
 import {
   GithubProjectsGraphqlClient,
@@ -86,6 +87,7 @@ export async function createToolkitFactory(
       ...(githubProjects ? [githubProjects] : []),
       ...(github ? [github] : []),
     ],
+    ...(githubProjects ? { rules: createProjectsManagedFactoryRules() } : {}),
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -107,6 +109,18 @@ export async function createToolkitFactory(
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
   );
+}
+
+export function createProjectsManagedFactoryRules() {
+  return defaultFactoryRules({
+    version: "toolkit-github-projects-v2-only-v1",
+    overrides: {
+      github: {
+        issueOpened: { onEvent: () => undefined },
+        pullRequestOpened: { onEvent: () => undefined },
+      },
+    },
+  });
 }
 
 export function createFactorySandboxMachine(

@@ -12,6 +12,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   createFactoryControllerProjection,
   createFactoryRuntimeBinding,
+  createProjectsManagedFactoryRules,
   createToolkitFactory,
   loadFactoryConfig,
 } from "../src/index.js";
@@ -30,6 +31,17 @@ afterEach(async () => {
 });
 
 describe("single-project Factory composition", () => {
+  test("makes GitHub Project Intake the only automatic GitHub admission path", async () => {
+    const rules = createProjectsManagedFactoryRules();
+
+    expect(rules.github.issueOpened?.onEvent).toBeTypeOf("function");
+    expect(rules.github.pullRequestOpened?.onEvent).toBeTypeOf("function");
+    expect(await rules.github.issueOpened?.onEvent?.({} as never)).toBeUndefined();
+    expect(await rules.github.pullRequestOpened?.onEvent?.({} as never)).toBeUndefined();
+    expect(rules.work.triage?.issue?.onEnter).toBeTypeOf("function");
+    expect(rules.work.planning?.issue?.onEnter).toBeTypeOf("function");
+  });
+
   test("projects the shared contract without legacy command tools or a second controller", async () => {
     const profile = loadModelProfile();
     const contract = createToolkitRuntimeContract({ profile });
@@ -134,8 +146,8 @@ describe("single-project Factory composition", () => {
           id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
           githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
           statusFieldId: "status", statusOptions: {
-            backlog: "backlog", ready: "ready", inProgress: "progress",
-            validating: "validating", done: "done", canceled: "canceled",
+            backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+            building: "building", review: "review", done: "done", canceled: "canceled",
           },
           executionFieldId: "execution",
           executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },

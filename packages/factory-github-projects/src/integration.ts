@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ApiRoute } from "@mastra/core/server";
 import { MastraWorker } from "@mastra/core/worker";
 import type { FactoryIntegration, IntegrationContext } from "@mastra/factory";
+import type { FactoryAutomationCommands } from "@mastra/factory";
 import type { GithubProjectsPort } from "./github-projects-client.js";
 import {
   GithubProjectsReconciler,
@@ -33,7 +34,7 @@ export class GithubProjectsFactoryIntegration implements FactoryIntegration {
     this.#ownerId = options.ownerId ?? randomUUID();
   }
 
-  initializeAutomation(args: { commands: FactoryAutomationCommandsPort }): void {
+  initializeAutomation(args: { commands: FactoryAutomationCommands }): void {
     this.#commands = args.commands;
   }
 
@@ -71,8 +72,6 @@ export class GithubProjectsFactoryIntegration implements FactoryIntegration {
       const binding = this.options.config.bindings.find(candidate => candidate.githubProjectNodeId === projectNodeId);
       const schedulingFieldIds = new Set([
         binding?.statusFieldId,
-        binding?.executionFieldId,
-        binding?.workTypeFieldId,
         binding?.workspaceFieldId,
         binding?.priorityFieldId,
       ].filter((value): value is string => Boolean(value)));
@@ -95,7 +94,8 @@ export class GithubProjectsFactoryIntegration implements FactoryIntegration {
       configured: true,
       bindingCount: this.options.config.bindings.length,
       enabledBindingCount: this.options.config.bindings.filter(binding => binding.enabled).length,
-      schedulingAuthority: "github-project-fields",
+      statusAuthority: "github-project-status-and-factory-stage",
+      admissionAuthority: "github-project-intake",
       identity: "github-content-node-id",
       automationCommandsBound: Boolean(this.#commands),
     };

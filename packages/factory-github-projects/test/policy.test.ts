@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   evaluateProjectItem,
+  factoryStageForProjectStatus,
   loadGithubProjectsConfig,
   normalizeProjectItem,
   orderEligibleItems,
-  projectStatusForFactoryState,
+  projectStatusForFactoryStage,
 } from "../src/index.js";
 
 const binding = {
@@ -17,9 +18,11 @@ const binding = {
   statusFieldId: "PVTF_status",
   statusOptions: {
     backlog: "backlog",
-    ready: "ready",
-    inProgress: "progress",
-    validating: "validating",
+    intake: "intake",
+    investigate: "investigate",
+    planning: "planning",
+    building: "building",
+    review: "review",
     done: "done",
     canceled: "canceled",
   },
@@ -37,11 +40,20 @@ const binding = {
 } as const;
 
 describe("Projects V2 policy", () => {
-  test("validates stable field and option ids and rejects duplicate Factory bindings", () => {
+  test("validates stable status ids and permits Status-only Projects", () => {
     const environment = {
       GITHUB_PROJECTS_TOKEN: "secret-not-returned",
       GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
-      GITHUB_PROJECTS_CONFIG: JSON.stringify({ reconcileIntervalMs: 30_000, bindings: [binding] }),
+      GITHUB_PROJECTS_CONFIG: JSON.stringify({
+        reconcileIntervalMs: 30_000,
+        bindings: [{
+          ...binding,
+          executionFieldId: undefined,
+          executionOptions: undefined,
+          workTypeFieldId: undefined,
+          workTypeOptions: undefined,
+        }],
+      }),
     };
     const loaded = loadGithubProjectsConfig(environment);
     expect(loaded?.config.bindings).toHaveLength(1);
@@ -55,34 +67,30 @@ describe("Projects V2 policy", () => {
     })).toThrow(/Factory project.*one GitHub Project/i);
   });
 
-  test("rejects ambiguous field authority, duplicate binding identities, and unenforced workspace restrictions", () => {
-    const environment = {
-      GITHUB_PROJECTS_TOKEN: "secret-not-returned",
-      GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
-      GITHUB_PROJECTS_CONFIG: "",
-    };
+  test("rejects ambiguous field authority and partial optional-field configuration", () => {
     const configure = (bindings: unknown[]) => loadGithubProjectsConfig({
-      ...environment,
+      GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
       GITHUB_PROJECTS_CONFIG: JSON.stringify({ reconcileIntervalMs: 30_000, bindings }),
     });
 
-    expect(() => configure([{ ...binding, statusOptions: { ...binding.statusOptions, ready: "backlog" } }]))
+    expect(() => configure([{ ...binding, statusOptions: { ...binding.statusOptions, intake: "backlog" } }]))
       .toThrow(/status option IDs must be unique/i);
     expect(() => configure([{ ...binding, executionFieldId: binding.statusFieldId }]))
       .toThrow(/field IDs must be unique/i);
+    expect(() => configure([{ ...binding, executionOptions: undefined }]))
+      .toThrow(/configured together/i);
+    expect(() => configure([{ ...binding, workTypeFieldId: undefined }]))
+      .toThrow(/configured together/i);
     expect(() => configure([binding, { ...binding, factoryProjectId: "factory-2", githubProjectNodeId: "PVT_2" }]))
       .toThrow(/binding ID.*unique/i);
-    expect(() => configure([{ ...binding, workspacePolicies: [{ projectFieldOptionId: "workspace", projectRepositoryId: "repo" }] }]))
-      .toThrow(/workspacePolicies require workspaceFieldId/i);
     expect(() => configure([{
       ...binding,
-      workspaceFieldId: "PVTF_workspace",
-      workspacePolicies: [{ projectFieldOptionId: "workspace", projectRepositoryId: "repo", allowedPaths: ["packages/a"] }],
-    }])).toThrow(/workspace execution restrictions are unsupported/i);
+      workspacePolicies: [{ projectFieldOptionId: "workspace", projectRepositoryId: "repo" }],
+    }])).toThrow(/workspacePolicies require workspaceFieldId/i);
   });
 
-  test("uses global node identity and field option ids without label authority", () => {
-    const item = normalizeProjectItem(binding, {
+  test("uses Intake status and global node identity as admission authority", () => {
+    const normalized = normalizeProjectItem(binding, {
       projectItemNodeId: "PVTI_item",
       content: {
         type: "Issue",
@@ -96,57 +104,54 @@ describe("Projects V2 policy", () => {
         state: "OPEN",
       },
       fieldValues: {
-        PVTF_status: "ready",
-        PVTF_execution: "automatic",
-        PVTF_work_type: "implementation",
+        PVTF_status: "intake",
+        PVTF_execution: "manual",
+        PVTF_work_type: "decision",
       },
       position: 2,
-      blockedByOpenCount: 0,
       labels: ["status:backlog"],
     });
 
-    expect(item.identity).toMatchObject({ contentNodeId: "I_global", number: 42 });
-    expect(evaluateProjectItem(binding, item)).toEqual({ eligible: true, role: "work" });
+    expect(normalized.identity).toMatchObject({ contentNodeId: "I_global", number: 42 });
+    expect(evaluateProjectItem(binding, normalized)).toEqual({ eligible: true });
   });
 
-  test.each([
-    ["backlog", "automatic", 0, "status_not_ready"],
-    ["ready", "manual", 0, "execution_not_automatic"],
-    ["ready", "hitl", 0, "execution_not_automatic"],
-    ["ready", "automatic", 1, "blocked"],
-  ])("rejects status=%s execution=%s blocked=%s", (status, execution, blocked, reason) => {
-    const item = normalizeProjectItem(binding, {
-      projectItemNodeId: "PVTI_item",
-      content: {
-        type: "Issue", contentNodeId: "I_global", repositoryNodeId: "R_global",
-        repositoryDatabaseId: 1, repositoryNameWithOwner: "a/b", number: 1,
-        title: "Task", url: "https://github.com/a/b/issues/1", state: "OPEN",
-      },
-      fieldValues: {
-        PVTF_status: status,
-        PVTF_execution: execution,
-        PVTF_work_type: "implementation",
-      },
-      position: 1,
-      blockedByOpenCount: blocked,
-    });
-    expect(evaluateProjectItem(binding, item)).toEqual({ eligible: false, reason });
+  test.each(["backlog", "investigate", "planning", "building", "review", "done", "canceled"])(
+    "does not admit status=%s before Intake",
+    status => {
+      const normalized = normalizeProjectItem(binding, {
+        projectItemNodeId: "PVTI_item",
+        content: {
+          type: "Issue", contentNodeId: "I_global", repositoryNodeId: "R_global",
+          repositoryDatabaseId: 1, repositoryNameWithOwner: "a/b", number: 1,
+          title: "Task", url: "https://github.com/a/b/issues/1", state: "OPEN",
+        },
+        fieldValues: { PVTF_status: status },
+        position: 1,
+      });
+      expect(evaluateProjectItem(binding, normalized)).toEqual({ eligible: false, reason: "status_not_intake" });
+    },
+  );
+
+  test("maps every Factory stage to the exact Project status and back", () => {
+    expect(projectStatusForFactoryStage("intake")).toBe("intake");
+    expect(projectStatusForFactoryStage("triage")).toBe("investigate");
+    expect(projectStatusForFactoryStage("planning")).toBe("planning");
+    expect(projectStatusForFactoryStage("execute")).toBe("building");
+    expect(projectStatusForFactoryStage("review")).toBe("review");
+    expect(projectStatusForFactoryStage("done")).toBe("done");
+    expect(projectStatusForFactoryStage("canceled")).toBe("canceled");
+    expect(factoryStageForProjectStatus(binding, "investigate")).toBe("triage");
+    expect(factoryStageForProjectStatus(binding, "building")).toBe("execute");
+    expect(factoryStageForProjectStatus(binding, "backlog")).toBeUndefined();
   });
 
-  test("orders the dependency frontier deterministically", () => {
+  test("orders the Intake frontier deterministically", () => {
     const items = [
       { identity: { contentNodeId: "I_b" }, priority: 2, position: 1 },
       { identity: { contentNodeId: "I_a" }, priority: 1, position: 9 },
       { identity: { contentNodeId: "I_c" }, priority: 1, position: 2 },
     ] as never;
     expect(orderEligibleItems(items).map(item => item.identity.contentNodeId)).toEqual(["I_c", "I_a", "I_b"]);
-  });
-
-  test("projects accepted Factory lifecycle states to Project Status", () => {
-    expect(projectStatusForFactoryState("queued")).toBe("backlog");
-    expect(projectStatusForFactoryState("active")).toBe("inProgress");
-    expect(projectStatusForFactoryState("validating")).toBe("validating");
-    expect(projectStatusForFactoryState("verified-complete")).toBe("done");
-    expect(projectStatusForFactoryState("canceled")).toBe("canceled");
   });
 });

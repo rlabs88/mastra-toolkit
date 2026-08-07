@@ -136,8 +136,8 @@ describe("loadFactoryConfig", () => {
         id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
         githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
         statusFieldId: "status", statusOptions: {
-          backlog: "backlog", ready: "ready", inProgress: "progress",
-          validating: "validating", done: "done", canceled: "canceled",
+          backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+          building: "building", review: "review", done: "done", canceled: "canceled",
         },
         executionFieldId: "execution", executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },
         workTypeFieldId: "workType", workTypeOptions: {
@@ -177,8 +177,8 @@ describe("loadFactoryConfig", () => {
           id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
           githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
           statusFieldId: "status", statusOptions: {
-            backlog: "backlog", ready: "ready", inProgress: "progress",
-            validating: "validating", done: "done", canceled: "canceled",
+            backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+            building: "building", review: "review", done: "done", canceled: "canceled",
           },
           executionFieldId: "execution", executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },
           workTypeFieldId: "workType", workTypeOptions: {

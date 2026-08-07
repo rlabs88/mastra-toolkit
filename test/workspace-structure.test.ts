@@ -23,7 +23,7 @@ const packageNames = [
 describe("workspace ownership", () => {
   test("pins one coherent stable Mastra release set across every runtime manifest", async () => {
     const expected = {
-      "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-b836be817b/mastra-factory-0.5.0.tgz",
+      "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
       "@mastra/code-sdk": "1.1.3",
       "mastracode": "0.32.6",
       "@mastra/core": "1.57.0",
