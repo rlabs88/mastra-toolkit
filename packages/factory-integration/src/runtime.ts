@@ -2,7 +2,14 @@ import { mkdir } from "node:fs/promises";
 import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
+import { defaultFactoryRules } from "@mastra/factory/rules/defaults";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
+import {
+  GithubProjectsGraphqlClient,
+  GithubProjectsStorage,
+  createGithubGraphqlTransport,
+  createGithubProjectsFactoryIntegration,
+} from "@rlabs/factory-github-projects";
 import { HOST_BACKGROUND_TASK_POLICY, loadModelProfile, prepareHostDataDirectory, ProxyGateway, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import {
   createToolkitRuntimeContract,
@@ -45,6 +52,16 @@ export async function createToolkitFactory(
   const controlPlaneDirectory = hostData.controlPlaneDirectory!;
   await mkdir(controlPlaneDirectory, { recursive: true, mode: 0o700 });
   const { factoryStorage, vector } = createFactoryStorage(config.databaseUrl, hostData.databasePath);
+  const githubProjectsStorage = config.githubProjects
+    ? factoryStorage.registerDomain(new GithubProjectsStorage())
+    : undefined;
+  const githubProjects = config.githubProjects && githubProjectsStorage
+    ? createGithubProjectsFactoryIntegration({
+      config: config.githubProjects.config,
+      storage: githubProjectsStorage,
+      github: new GithubProjectsGraphqlClient(createGithubGraphqlTransport(config.githubProjects.token)),
+    })
+    : undefined;
   const github = config.github ? new GithubIntegration({
     appId: config.github.GITHUB_APP_ID,
     privateKey: config.github.GITHUB_APP_PRIVATE_KEY,
@@ -54,6 +71,9 @@ export async function createToolkitFactory(
     ...(config.github.GITHUB_APP_WEBHOOK_SECRET
       ? { webhookSecret: config.github.GITHUB_APP_WEBHOOK_SECRET }
       : {}),
+    ...(githubProjects
+      ? { verifiedWebhookObservers: [event => githubProjects.observeVerifiedWebhook(event)] }
+      : {}),
   }) : undefined;
   const auth = createFactoryAuth(config.workos, environment.NODE_ENV, config.server);
   const stateSecret = config.github?.GITHUB_APP_WEBHOOK_SECRET ?? config.workos?.cookiePassword;
@@ -62,7 +82,12 @@ export async function createToolkitFactory(
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
-    integrations: [new ToolkitFactoryIntegration(projection, defaults), ...(github ? [github] : [])],
+    integrations: [
+      new ToolkitFactoryIntegration(projection, defaults),
+      ...(githubProjects ? [githubProjects] : []),
+      ...(github ? [github] : []),
+    ],
+    ...(githubProjects ? { rules: createProjectsManagedFactoryRules() } : {}),
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -84,6 +109,18 @@ export async function createToolkitFactory(
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
   );
+}
+
+export function createProjectsManagedFactoryRules() {
+  return defaultFactoryRules({
+    version: "toolkit-github-projects-v2-only-v1",
+    overrides: {
+      github: {
+        issueOpened: { onEvent: () => undefined },
+        pullRequestOpened: { onEvent: () => undefined },
+      },
+    },
+  });
 }
 
 export function createFactorySandboxMachine(

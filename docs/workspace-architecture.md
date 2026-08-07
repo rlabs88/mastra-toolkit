@@ -21,7 +21,7 @@ mastra-toolkit/
 │   ├── mastra-primitives-export/ # versioned host-neutral runtime contract
 │   ├── mcode/                    # Code SDK/controller/TUI adapter
 │   ├── factory-integration/      # Factory host and control-plane composition
-│   └── factory-github-projects/  # future, issue #127; not created yet
+│   └── factory-github-projects/  # GitHub Projects V2 control plane
 ├── deployment/
 │   ├── mcode-sandbox/            # activated Factory runtime image source and probes
 │   └── studio-server/            # target intent; build assets not yet added
@@ -33,7 +33,7 @@ Every package has an `AGENTS.md`/`CONTEXT.md` checkpoint pair. Applications shar
 
 ## Production module structure
 
-The eight package boundaries remain distinct, but their implementation is intentionally concentrated into 29 deep TypeScript modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
+The package boundaries remain distinct, and their implementations are concentrated into deep modules. Package roots are the only TypeScript export surface; JSON/YAML configuration assets are the only allowed subpath exports.
 
 ```text
 packages/
@@ -44,7 +44,8 @@ packages/
 ├── project-mounting-manager/src/{index,contract,discovery,manager}.ts
 ├── mastra-primitives-export/src/{index,primitives}.ts
 ├── mcode/src/{index,recipe,project,runtime}.ts
-└── factory-integration/src/{index,config,integration,runtime}.ts
+├── factory-integration/src/{index,config,integration,runtime}.ts
+└── factory-github-projects/src/{index,config,github-projects-client,integration,reconciler,storage,types}.ts
 ```
 
 Do not create one-function files, role directories, compatibility barrels, or TypeScript implementation subpaths. A new source module requires an independently changing responsibility or lifecycle; otherwise extend the existing deep module that owns the behavior.
@@ -63,7 +64,7 @@ agent-tools ───────► agents-roles     sandbox
                  ▼               ▼
                mcode     factory-integration
                  ▲               ▲
-                 │               │ optional, future
+                 │               │ optional control plane
 project-mounting-manager  factory-github-projects
                  │
           ┌──────┴───────┐        │
@@ -97,7 +98,7 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 - `apps/mcode` owns only the executable process lifecycle. `npm run code` launches it; `npm run code:infisical` injects runtime secrets first.
 - `apps/studio` creates the same prepared local project runtime and exposes it through Mastra Studio. The agent, workflow, and mounting definitions are shared with MCode.
 - `packages/factory-integration` binds the shared runtime contract to Factory request identity, workspace, sandbox, approvals, authentication, persistence, provisioning, diagnostics, and local provider migration. It does not import MCode. Factory constructs exactly one upstream-owned controller. `@mastra/factory@0.5.0` accepts no canonical modes, native subagents, or guarded controller-construction callback, so the projection and diagnostics mark that surface `upstream-blocked` and expose no delegation adapter; no second controller, dependency patch, or fork substitutes for the missing seam. `apps/factory` is its thin composition root.
-- A future `packages/factory-github-projects` belongs between the GitHub Projects V2 API and `factory-integration`. It may own project-item bindings, leases, reconciliation, and scheduling, but never agent definitions, agent tools, sessions, sandboxes, project mounting, or credentials. Its creation is deferred until issue #127 needs executable code.
+- `packages/factory-github-projects` belongs between the GitHub Projects V2 API and `factory-integration`. It owns project-item binding policy, durable invalidations, scheduler and execution leases, GraphQL field projection, and governed scheduling. It never owns agent definitions, agent tools, sessions, sandboxes, project mounting, GitHub credentials, or webhook verification.
 - Agent-facing project or RLabs API access enters through narrow tool ports injected at host composition time. Raw SDK clients, tokens, webhook verification, persistence, and control-plane scheduling cannot cross into `agents-roles`.
 
 The local MCode path is serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process and require no central HTTP server. Studio and Factory are server hosts of shared package contracts.
@@ -116,7 +117,9 @@ Ephemeral Factory environments receive short-lived task credentials. Persistent 
 
 ## Fork policy
 
-No upstream fork is used for the implemented baseline. MCode is an extension/composition package, not a source fork. Issue #125 does not permit an upstream fork, dependency patch, or copied controller implementation; its Factory construction gap remains open until an official upstream release exposes the required narrow input. Any future fork proposal is a separate architectural decision and is not authorized by this baseline.
+MCode is an extension/composition package, not a source fork. Issue #125 still does not permit a controller fork, dependency patch, or copied controller implementation; its Factory construction gap remains open until an official upstream release exposes the required narrow input. GitHub Projects V2 uses the separate, minimal Factory automation and verified-webhook seams proposed in upstream PR `mastra-ai/mastra#20885`. Toolkit validation consumes a stable `@mastra/factory@0.5.0` backport pinned to RLabs fork commit `ec57e0f97f`; it does not consume the upstream alpha dependency graph.
+
+The external checkout is `/Users/zzmc/dev/workspace/upstreams/mastra-factory-0.5.0`, with RLabs `origin` `https://github.com/rlabs88/mastra.git` and authoritative `upstream` `https://github.com/mastra-ai/mastra.git`. The consumed release artifact is `factory-automation-seams-0.5.0-ec57e0f97f-p1`; its delta is limited to the governed automation-command and verified-webhook observer seams unavailable in the public `0.5.0` release, including Intake preparation without agent kickoff, canonical GitHub issue metadata for rule dispatch, and authoritative Factory-project model inheritance for each rule-created role session.
 
 Fork checkouts are external trust boundaries and are not npm workspace members. Each must record an RLabs `origin`, authoritative `upstream`, pinned commit, reason for divergence, and consumer validation.
 

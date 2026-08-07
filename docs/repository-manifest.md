@@ -12,6 +12,7 @@ This manifest is the routing table for changes. A package owns a reusable contra
 | `packages/mastra-primitives-export` | versioned runtime contract, binding interfaces, deterministic capability descriptor and digest | roles, tools, config, sandbox, mounting manager | hosts need one verified aggregation of canonical runtime primitives |
 | `packages/mcode` | MCode/Studio controller projections, Code modes/subagents/settings, controller mount, MCP and host adapters, session/TUI runtime | primitives export, sandbox, mounting manager, published Code APIs | RLabs extends Mastra Code without changing upstream source |
 | `packages/factory-integration` | Factory runtime binding and controller projection, auth, storage, compatibility diagnostics, sandbox provisioning, future control-plane composition | primitives export, config, sandbox | behavior exists only because the host is Mastra Factory |
+| `packages/factory-github-projects` | GitHub Projects V2 bindings, GraphQL projection, durable invalidations, scheduler and execution leases, governed Factory scheduling | Factory public integration and automation APIs | GitHub Project desired state must drive Factory control-plane work |
 | `apps/mcode` | CLI process and exit lifecycle | `mcode` | command parsing or executable UX changes |
 | `apps/studio` | deployer-required top-level Mastra construction and server exports | `mcode` prepared host facade | Studio transport or server lifecycle changes |
 | `apps/factory` | Factory composition root and process lifecycle | `factory-integration` | Factory process bootstrap changes |
@@ -26,7 +27,7 @@ This manifest is the routing table for changes. A package owns a reusable contra
 - `mastra-primitives-export` aggregates canonical package-root contracts by reference and remains independent of MCode, Factory, applications, credentials, live SDK clients, and controllers.
 - `mcode` and `factory-integration` are sibling host adapters. Neither imports the other; both consume the shared runtime contract and supply host-local bindings.
 - Canonical agents receive capabilities as narrow, request-scoped tool ports. They never import host clients, control-plane schedulers, storage implementations, or credentials.
-- A future `factory-github-projects` package may own GitHub Projects V2 bindings, leases, reconciliation, and scheduling. Only `factory-integration` may compose it; it must not import agents, agent tools, MCode, project mounting, or sandbox implementations.
+- `factory-github-projects` owns GitHub Projects V2 bindings, leases, reconciliation, and scheduling. Only `factory-integration` composes it; it does not import agents, agent tools, MCode, project mounting, or sandbox implementations.
 - Deployment targets consume built applications and packages; runtime source does not import deployment policy.
 - Issue #125 does not permit an upstream fork, dependency patch, or copied Factory controller implementation.
 - Exactly one host-owned controller may exist per runtime. Factory canonical mode/native-subagent mounting remains blocked until an official upstream construction seam exists.

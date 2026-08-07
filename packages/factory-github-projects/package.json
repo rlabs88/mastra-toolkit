@@ -1,0 +1,25 @@
+{
+  "name": "@rlabs/factory-github-projects",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run test",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@mastra/core": "1.57.0",
+    "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@mastra/libsql": "1.19.0",
+    "@types/node": "22.20.1",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10"
+  }
+}

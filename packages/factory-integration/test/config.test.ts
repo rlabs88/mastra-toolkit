@@ -129,6 +129,68 @@ describe("loadFactoryConfig", () => {
       .toThrow(/WorkOS.*missing/i);
   });
 
+  test("loads Projects V2 policy while keeping the token outside declarative bindings", () => {
+    const projects = {
+      reconcileIntervalMs: 30_000,
+      bindings: [{
+        id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
+        githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
+        statusFieldId: "status", statusOptions: {
+          backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+          building: "building", review: "review", done: "done", canceled: "canceled",
+        },
+        executionFieldId: "execution", executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },
+        workTypeFieldId: "workType", workTypeOptions: {
+          implementation: "implementation", research: "research", prototype: "prototype",
+          decision: "decision", map: "map",
+        },
+        enabled: true,
+      }],
+    };
+    const config = loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-key",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      GITHUB_PROJECTS_TOKEN: "test-token",
+      GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
+      GITHUB_PROJECTS_CONFIG: JSON.stringify(projects),
+      GITHUB_APP_ID: "1",
+      GITHUB_APP_PRIVATE_KEY: "test-private-key",
+      GITHUB_APP_CLIENT_ID: "client",
+      GITHUB_APP_CLIENT_SECRET: "client-secret",
+      GITHUB_APP_WEBHOOK_SECRET: "webhook-secret",
+    }, process.cwd());
+
+    expect(config.githubProjects?.config.bindings[0]?.githubProjectNodeId).toBe("PVT_1");
+    expect(config.githubProjects?.token).toBe("test-token");
+    expect(JSON.stringify(config.githubProjects?.config)).not.toContain("test-token");
+  });
+
+  test("rejects Projects V2 without the canonical GitHub App integration", () => {
+    expect(() => loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-key",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+      GITHUB_PROJECTS_TOKEN: "test-token",
+      GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
+      GITHUB_PROJECTS_CONFIG: JSON.stringify({
+        reconcileIntervalMs: 30_000,
+        bindings: [{
+          id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
+          githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
+          statusFieldId: "status", statusOptions: {
+            backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+            building: "building", review: "review", done: "done", canceled: "canceled",
+          },
+          executionFieldId: "execution", executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },
+          workTypeFieldId: "workType", workTypeOptions: {
+            implementation: "implementation", research: "research", prototype: "prototype",
+            decision: "decision", map: "map",
+          },
+          enabled: true,
+        }],
+      }),
+    }, process.cwd())).toThrow(/requires the canonical GitHub App integration/i);
+  });
+
   test("rejects GitHub without a stable state secret", () => {
     expect(() => loadFactoryConfig({
       GITHUB_APP_ID: "1",

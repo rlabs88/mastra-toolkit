@@ -9,11 +9,12 @@
   "dependencies": {
     "@mastra/auth-workos": "1.6.4",
     "@mastra/core": "1.57.0",
-    "@mastra/factory": "0.5.0",
+    "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
     "@mastra/libsql": "1.19.0",
     "@mastra/pg": "1.19.0",
     "@mastra/redis-streams": "0.3.0",
     "@rlabs/agents-roles": "*",
+    "@rlabs/factory-github-projects": "*",
     "@rlabs/mastra-primitives-export": "*",
     "@rlabs/project-mounting-manager": "*",
     "@rlabs/runtime-config": "*",

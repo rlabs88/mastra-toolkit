@@ -12,7 +12,7 @@ flowchart TB
   MCode["mcode adapter"]
   Studio["Studio host"]
   Factory["factory-integration"]
-  Projects["factory-github-projects<br/>future issue #127"]
+  Projects["factory-github-projects<br/>Projects V2 control plane"]
 
   Config --> Roles
   Tools --> Roles
@@ -61,7 +61,7 @@ Default local state is segregated by host:
 
 ## GitHub Projects V2
 
-Issue #127 belongs in a future `packages/factory-github-projects` control-plane package. That package may translate GitHub project items into bindings, leases, reconciliation events, and Factory scheduling requests. It must not import agents, agent tools, MCode, project mounting, or sandbox implementations, and it must not expose raw GitHub clients or credentials to agents. `factory-integration` remains the only consumer and composition boundary.
+Issue #127 is implemented in the `packages/factory-github-projects` control-plane package. It translates GitHub Project items into bindings, leases, reconciliation events, status projection, and governed Factory scheduling requests. It does not import agents, agent tools, MCode, project mounting, or sandbox implementations, and it does not expose raw GitHub clients or credentials to agents. `factory-integration` remains the only consumer and composition boundary.
 
 ## Lifecycle and validation
 

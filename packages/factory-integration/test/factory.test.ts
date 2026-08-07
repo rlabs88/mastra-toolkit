@@ -12,6 +12,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   createFactoryControllerProjection,
   createFactoryRuntimeBinding,
+  createProjectsManagedFactoryRules,
   createToolkitFactory,
   loadFactoryConfig,
 } from "../src/index.js";
@@ -30,6 +31,17 @@ afterEach(async () => {
 });
 
 describe("single-project Factory composition", () => {
+  test("makes GitHub Project Intake the only automatic GitHub admission path", async () => {
+    const rules = createProjectsManagedFactoryRules();
+
+    expect(rules.github.issueOpened?.onEvent).toBeTypeOf("function");
+    expect(rules.github.pullRequestOpened?.onEvent).toBeTypeOf("function");
+    expect(await rules.github.issueOpened?.onEvent?.({} as never)).toBeUndefined();
+    expect(await rules.github.pullRequestOpened?.onEvent?.({} as never)).toBeUndefined();
+    expect(rules.work.triage?.issue?.onEnter).toBeTypeOf("function");
+    expect(rules.work.planning?.issue?.onEnter).toBeTypeOf("function");
+  });
+
   test("projects the shared contract without legacy command tools or a second controller", async () => {
     const profile = loadModelProfile();
     const contract = createToolkitRuntimeContract({ profile });
@@ -126,6 +138,27 @@ describe("single-project Factory composition", () => {
       GITHUB_APP_CLIENT_ID: "test-client",
       GITHUB_APP_CLIENT_SECRET: "test-client-secret",
       GITHUB_APP_WEBHOOK_SECRET: "test-stable-state-secret",
+      GITHUB_PROJECTS_TOKEN: "test-projects-token",
+      GITHUB_PROJECTS_AUTOMATION_USER_ID: "local-user",
+      GITHUB_PROJECTS_CONFIG: JSON.stringify({
+        reconcileIntervalMs: 30_000,
+        bindings: [{
+          id: "agent-factory", orgId: "local-org", factoryProjectId: "factory-1",
+          githubOrganization: "rlabs88", githubProjectNodeId: "PVT_1", githubProjectNumber: 5,
+          statusFieldId: "status", statusOptions: {
+            backlog: "backlog", intake: "intake", investigate: "investigate", planning: "planning",
+            building: "building", review: "review", done: "done", canceled: "canceled",
+          },
+          executionFieldId: "execution",
+          executionOptions: { automatic: "auto", manual: "manual", hitl: "hitl" },
+          workTypeFieldId: "work-type",
+          workTypeOptions: {
+            implementation: "implementation", research: "research", prototype: "prototype",
+            decision: "decision", map: "map",
+          },
+          enabled: true,
+        }],
+      }),
       FACTORY_PUBLIC_URL: "http://127.0.0.1:4111",
       FACTORY_ALLOWED_ORIGINS: "http://127.0.0.1:4111",
     };
@@ -185,6 +218,8 @@ describe("single-project Factory composition", () => {
         zen: bundle.agents.zen,
       });
       expect(Object.keys(prepared.agentControllers ?? {})).toEqual(["code"]);
+      const workers = prepared.workers === false ? [] : (prepared.workers ?? []);
+      expect(workers.map(worker => worker.name)).toContain("github-projects-v2-scheduler");
       const composed = new Mastra(prepared);
       for (const id of ["cortex", "flux", "zen"] as const) {
         const registered = composed.getAgent(id);
