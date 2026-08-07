@@ -1,5 +1,12 @@
 import { createCodeMcpAdapter, createMcodeWorkspace, MastraProjectHostRegistry, ProfileModelAliasResolver, StaticToolSnapshot } from "./project.js";
-import { CANONICAL_AGENT_IDS, CODE_MODE_IDS, createMcodeRecipe, fillMissingSubagentModelId } from "./recipe.js";
+import {
+  CANONICAL_AGENT_IDS,
+  CODE_MODE_IDS,
+  createMcodeControllerProjection,
+  createStudioControllerProjection,
+  fillMissingSubagentModelId,
+  type McodeControllerProjection,
+} from "./recipe.js";
 import { type MastraCodeAgentController, prepareAgentControllerMount, wireSessionConcerns } from "@mastra/code-sdk";
 import { setCustomProvidersSource } from "@mastra/code-sdk/agents/custom-provider-source";
 import { createMastraCodeGateway, type MastraCodeCustomProvider } from "@mastra/code-sdk/agents/model";
@@ -10,10 +17,16 @@ import { detectProject, type ProjectInfo } from "@mastra/code-sdk/utils/project"
 import { releaseAllThreadLocks } from "@mastra/code-sdk/utils/thread-lock";
 import type { AgentControllerConfig, Session } from "@mastra/core/agent-controller";
 import { Mastra } from "@mastra/core/mastra";
+import { RequestContext } from "@mastra/core/request-context";
 import type { ToolkitAdditionalTools, ToolkitAgents } from "@rlabs/agents-roles";
+import {
+  createToolkitRuntimeContract,
+  type ToolkitRuntimeBinding,
+  type ToolkitRuntimeContract,
+} from "@rlabs/mastra-primitives-export";
 import { type McpLifecyclePort, type PreparedMcpGeneration, type ProjectMountingDiagnostic, ProjectMountingManager } from "@rlabs/project-mounting-manager";
-import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, HOST_BACKGROUND_TASK_POLICY, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
-import { createSandboxCommandRunTool, loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
+import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, HOST_BACKGROUND_TASK_POLICY, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, ProxyGateway, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
+import { loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
 import { MastraTUI } from "mastracode/tui";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -212,6 +225,8 @@ export interface PreparedMcodeRuntime {
   readonly project: ProjectInfo;
   readonly config: McodeConfig;
   readonly agents: ToolkitAgents;
+  readonly contract: ToolkitRuntimeContract;
+  readonly projection: McodeControllerProjection;
   readonly mastraArgs: NonNullable<ConstructorParameters<typeof Mastra>[0]>;
   abort(): Promise<void>;
   finalize(mastra: Mastra): Promise<MountedMcodeRuntime>;
@@ -221,6 +236,8 @@ export interface MountedMcodeRuntime {
   readonly project: ProjectInfo;
   readonly config: McodeConfig;
   readonly agents: ToolkitAgents;
+  readonly contract: ToolkitRuntimeContract;
+  readonly projection: McodeControllerProjection;
   readonly mastra: Mastra;
   readonly controller: MastraCodeAgentController["controller"];
   readonly code: MastraCodeAgentController;
@@ -234,27 +251,52 @@ export async function prepareMcodeRuntime(
   const project = detectProject(resolve(options.cwd ?? process.cwd()));
   const environment = { ...(options.environment ?? process.env), WORKSPACE_ROOT: project.rootPath };
   const profile = options.profile ?? loadModelProfile();
-  const runtimeDefaults = resolveRuntimeDefaultsV1(profile);
-  const config = options.config ?? loadMcodeConfig(environment, project.rootPath, profile);
+  const config = freezeSnapshot(
+    options.config ?? loadMcodeConfig(environment, project.rootPath, profile),
+  );
   const workspace = createMcodeWorkspace(config.sandbox, {
     projectRoot: project.rootPath,
     hotReloadSkills: true,
   });
-  const commandRun = createSandboxCommandRunTool();
+  const contract = createToolkitRuntimeContract({
+    profile,
+    providerBaseUrl: config.runtime.proxy.baseUrl,
+  });
+  const contractProfile = contract.runtime.profile;
+  const runtimeDefaults = contract.runtime.defaults;
+  const binding = {
+    identity: {
+      projectId: project.rootPath,
+      userId: "local-user",
+      sessionId: `${options.host ?? "mcode"}-runtime`,
+    },
+    workspace: { resolve: () => workspace },
+    sandbox: { resolve: () => workspace.resolveSandbox({ requestContext: new RequestContext() }) },
+    commandExecution: {
+      authorize: context => {
+        if (context?.workspace !== workspace) {
+          throw new Error("MCode command execution requires the bound project workspace");
+        }
+      },
+    },
+    approval: { context: { host: options.host ?? "mcode" } },
+  } satisfies ToolkitRuntimeBinding<typeof workspace, Awaited<ReturnType<typeof workspace.resolveSandbox>>>;
   let resources: ProjectMountingManager | undefined;
   const dynamicTools = createDynamicTools(undefined, () =>
     (resources?.getTools() ?? {}) as Record<string, ToolLike>,
   ) as ToolkitAdditionalTools;
-  const recipe = createMcodeRecipe({
+  const createProjection = options.host === "studio"
+    ? createStudioControllerProjection
+    : createMcodeControllerProjection;
+  const projection = createProjection(contract, binding, {
     browser: options.browser ?? true,
-    commandRun,
     additionalTools: dynamicTools,
-    hooks: { beforeToolCall: ({ input }) => fillMissingSubagentModelId(profile, input) },
-    profile,
+    hooks: { beforeToolCall: ({ input }) => fillMissingSubagentModelId(contractProfile, input) },
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
-  const agents = recipe.agents;
+  const commandRun = projection.tools.command_run;
+  const agents = projection.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
     host: options.host ?? "mcode",
@@ -273,8 +315,8 @@ export async function prepareMcodeRuntime(
     controllerMount = await prepareAgentControllerMount({
       cwd: project.rootPath,
       settingsPath: join(dataDirectory, "settings.json"),
-      modes: recipe.controller.modes,
-      subagents: recipe.controller.subagents,
+      modes: projection.controller.modes,
+      subagents: projection.controller.subagents,
       workspace,
       disableMcp: true,
       disableHooks: options.disableHooks ?? false,
@@ -304,6 +346,8 @@ export async function prepareMcodeRuntime(
     project,
     config,
     agents,
+    contract,
+    projection,
     mastraArgs,
     async abort(): Promise<void> {
       if (claimed) return;
@@ -321,7 +365,7 @@ export async function prepareMcodeRuntime(
       try {
         resources = await ProjectMountingManager.create({
           projectRoot: project.rootPath,
-          modelAliases: new ProfileModelAliasResolver(profile),
+          modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
           currentTools: new StaticToolSnapshot({ command_run: commandRun }),
           requiredSpecialistTools: ["command_run"],
@@ -349,6 +393,8 @@ export async function prepareMcodeRuntime(
         project,
         config,
         agents,
+        contract,
+        projection,
         mastra,
         controller: controllerMount.base.controller,
         code: controllerMount.base,
@@ -406,6 +452,17 @@ async function cleanupFailedMcodeStartup(
   const results = await Promise.allSettled(tasks);
   setCustomProvidersSource(undefined);
   return results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+}
+
+function freezeSnapshot<T>(value: T): T {
+  const snapshot = structuredClone(value);
+  const freeze = (current: unknown): void => {
+    if (!current || typeof current !== "object" || Object.isFrozen(current)) return;
+    for (const nested of Object.values(current as Record<string, unknown>)) freeze(nested);
+    Object.freeze(current);
+  };
+  freeze(snapshot);
+  return snapshot;
 }
 
 class EmptyMcpLifecycle implements McpLifecyclePort {

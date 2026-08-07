@@ -1,7 +1,7 @@
 import { createFactoryRuntime } from "@rlabs/factory-integration";
 
 export const runtime = await createFactoryRuntime();
-export const { config, factory, mastra } = runtime;
+export const { config, contract, projection, factory, mastra } = runtime;
 export const stopFactory = () => runtime.close();
 const handleStopSignal = () => {
   void stopFactory().catch(error => {

@@ -13,7 +13,7 @@ The RLabs Mastra Code wrapper lived across `src/code`, agent mode files, Factory
 
 ## Present
 
-This package is the reusable adapter for RLabs' extended Mastra Code runtime. Its root Interface exposes three deep Modules: the versioned recipe projection, project adapters, and runtime lifecycle. The recipe is the MCode construction seam for canonical agents, modes, native subagents, tools, and its secret-free capability descriptor. Factory is a sibling adapter and consumes canonical agents directly. Runtime defaults remain a separate `@rlabs/runtime-config` projection consumed directly by each host. MCode projects those canonical packages into published Code SDK and TUI APIs without owning the executable process or forking upstream source.
+This package is the reusable adapter for RLabs' extended Mastra Code runtime. Its root interface exposes controller projections, project adapters, and runtime lifecycle. The MCode and Studio projections bind the shared `ToolkitRuntimeContract` to canonical agents, modes, native subagents, tools, and the existing published Code SDK controller mount. `McodeRecipeV1` remains a deprecated compatibility alias. Factory is a sibling adapter over the same shared contract. Runtime defaults are resolved once and passed into the contract; request-local identity, workspace, sandbox, command, browser, and approval values stay in the binding. MCode does not own the executable process or fork upstream source.
 
 ## Future
 

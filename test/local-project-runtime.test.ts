@@ -33,6 +33,8 @@ describe("local project runtime", () => {
 
     try {
       expect(runtime.project.rootPath).toBe(projectRoot);
+      expect(runtime.projection.capability.contractDigest).toBe(runtime.contract.capability.digest);
+      expect(runtime.projection.capability.projection).toBe("mcode");
       expect(runtime.controller.getMastra()).toBe(runtime.mastra);
       expect(runtime.controller.listModes().map(mode => mode.id)).toEqual(CODE_MODE_IDS);
       expect(runtime.mastra.getAgent("cortex").id).toBe(runtime.agents.cortex.id);

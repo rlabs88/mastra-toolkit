@@ -1,9 +1,61 @@
 import { describe, expect, test } from "vitest";
-import { createMcodeCapabilityDescriptor, createMcodeRecipe, loadMcodeConfig } from "@rlabs/mcode";
+import { RequestContext } from "@mastra/core/request-context";
+import { vi } from "vitest";
+import {
+  createMcodeCapabilityDescriptor,
+  createMcodeControllerProjection,
+  createMcodeRecipe,
+  createStudioControllerProjection,
+  loadMcodeConfig,
+} from "@rlabs/mcode";
+import { createToolkitRuntimeContract, type ToolkitRuntimeBinding } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 describe("canonical MCode recipe", () => {
+  test("projects one shared contract into MCode and Studio without owning a controller", async () => {
+    const profile = loadModelProfile();
+    const contract = createToolkitRuntimeContract({ profile });
+    const workspace = { id: "local-project" };
+    const sandbox = { provider: "local" };
+    const authorize = vi.fn();
+    const binding = {
+      identity: { projectId: "local-project", userId: "local-user", sessionId: "local-session" },
+      workspace: { resolve: () => workspace },
+      sandbox: { resolve: () => sandbox },
+      commandExecution: { authorize },
+      approval: { context: { host: "local" } },
+    } satisfies ToolkitRuntimeBinding<typeof workspace, typeof sandbox>;
+    const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
+    const studio = createStudioControllerProjection(contract, binding, { browser: false });
+
+    expect(mcode.capability.contractDigest).toBe(contract.capability.digest);
+    expect(mcode.binding).toBe(binding);
+    expect(studio.capability.contractDigest).toBe(contract.capability.digest);
+    expect(mcode.controller.modes.map(mode => mode.id)).toEqual(studio.controller.modes.map(mode => mode.id));
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(mcode.agents.cortex.id).toBe(contract.roles.definitions.cortex.id);
+    expect(studio.agents.zen.id).toBe(contract.roles.definitions.zen.id);
+    expect(mcode).not.toHaveProperty("agentController");
+    expect(studio).not.toHaveProperty("agentController");
+
+    const requestContext = new RequestContext();
+    const executionWorkspace = {
+      resolveFilesystem: async () => ({ basePath: "/workspace/project" }),
+      resolveSandbox: async () => ({
+        executeCommand: async () => ({ exitCode: 0, stdout: "ok\n", stderr: "" }),
+      }),
+    };
+    const projectedCommandRun = mcode.tools.command_run as {
+      execute?: (input: unknown, context: unknown) => Promise<unknown>;
+    };
+    await projectedCommandRun.execute?.({
+      description: "verify binding authorization",
+      commands: [{ command_type: "shell", command_line: "true", step: 1 }],
+    }, { requestContext, workspace: executionWorkspace } as never);
+    expect(authorize).toHaveBeenCalledWith({ requestContext, workspace: executionWorkspace });
+  });
+
   test("owns the shared agents, modes, subagents, and sandbox tool projection", async () => {
     const commandRun = createSandboxCommandRunTool();
     const recipe = createMcodeRecipe({
@@ -67,7 +119,7 @@ describe("canonical MCode recipe", () => {
     expect(changed.capability.digest).not.toBe(original.capability.digest);
   });
 
-  test("keeps runtime memory defaults outside the recipe capability and digest", () => {
+  test("inherits runtime-memory changes through the shared contract digest", () => {
     const profile = loadModelProfile();
     const changedMemory = structuredClone(profile);
     changedMemory.memory.contextBudgetTokens = 180_000;
@@ -84,7 +136,7 @@ describe("canonical MCode recipe", () => {
     });
 
     expect(original.capability.models).not.toHaveProperty("memory");
-    expect(changed.capability.digest).toBe(original.capability.digest);
+    expect(changed.capability.digest).not.toBe(original.capability.digest);
   });
 
   test("changes the capability digest when canonical instructions change", () => {

@@ -6,7 +6,7 @@ import {
   type RolePrompt,
 } from "./prompts.js";
 
-export const ROLE_IDS = ["cortex", "flux", "zen"] as const;
+export const ROLE_IDS = Object.freeze(["cortex", "flux", "zen"] as const);
 export type RoleId = (typeof ROLE_IDS)[number];
 
 export interface RoleDefinition<TId extends RoleId = RoleId> {
@@ -31,7 +31,7 @@ export function defineRole<TId extends RoleId>(options: {
   readonly steps: number;
   readonly prompts: RolePrompt;
 }): RoleDefinition<TId> {
-  return {
+  return deepFreeze({
     id: options.id,
     name: options.name,
     description: options.description,
@@ -41,7 +41,13 @@ export function defineRole<TId extends RoleId>(options: {
       steps: options.steps,
     },
     prompts: options.prompts,
-  };
+  });
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested);
+  return Object.freeze(value);
 }
 
 
@@ -75,5 +81,5 @@ export const ZEN_ROLE = defineRole({
 });
 
 
-export const ROLES = { cortex: CORTEX_ROLE, flux: FLUX_ROLE, zen: ZEN_ROLE } as const;
+export const ROLES = Object.freeze({ cortex: CORTEX_ROLE, flux: FLUX_ROLE, zen: ZEN_ROLE });
 export const ARCHETYPES = ROLES;

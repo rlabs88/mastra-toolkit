@@ -1,6 +1,11 @@
 import type { ToolsInput } from "@mastra/core/agent";
 import type { AgentControllerMode, AgentControllerSubagent } from "@mastra/core/agent-controller";
-import { ARCHETYPES, composePrompt, createToolkitAgents, ROLE_IDS, type RoleId, type ToolkitAgents, type ToolkitAgentsOptions } from "@rlabs/agents-roles";
+import { ARCHETYPES, composePrompt, ROLE_IDS, type RoleId, type ToolkitAgents, type ToolkitAgentsOptions } from "@rlabs/agents-roles";
+import {
+  createToolkitRuntimeContract,
+  type ToolkitRuntimeBinding,
+  type ToolkitRuntimeContract,
+} from "@rlabs/mastra-primitives-export";
 import { DEFAULT_ACTIVE_ALIAS, type ModelProfile, resolveAliasModelId, resolveProxyGatewayModelId } from "@rlabs/runtime-config";
 import { createHash } from "node:crypto";
 
@@ -116,12 +121,20 @@ function isRoleId(value: unknown): value is RoleId {
   return typeof value === "string" && ROLE_IDS.some(id => id === value);
 }
 
-export const MCODE_RECIPE_VERSION = 1 as const;
+export const MCODE_CONTROLLER_PROJECTION_VERSION = 1 as const;
+/** @deprecated Use MCODE_CONTROLLER_PROJECTION_VERSION. */
+export const MCODE_RECIPE_VERSION = MCODE_CONTROLLER_PROJECTION_VERSION;
 export const MCODE_CAPABILITY_SCHEMA_VERSION = 1 as const;
 
-export interface McodeRecipeOptions extends Omit<ToolkitAgentsOptions, "profile"> {
+interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "profile"> {
   readonly profile: ModelProfile;
 }
+
+/** @deprecated Pass a ToolkitRuntimeContract and ToolkitRuntimeBinding to createMcodeControllerProjection. */
+export type McodeRecipeOptions = McodeRecipeCompatibilityOptions;
+
+export interface McodeControllerProjectionOptions
+  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
 
 export interface McodeControllerIngredientsV1 {
   readonly modes: AgentControllerMode[];
@@ -130,7 +143,11 @@ export interface McodeControllerIngredientsV1 {
 
 export interface McodeCapabilityDescriptorV1 {
   readonly schemaVersion: typeof MCODE_CAPABILITY_SCHEMA_VERSION;
+  readonly projectionVersion: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
+  /** @deprecated Use projectionVersion. */
   readonly recipeVersion: typeof MCODE_RECIPE_VERSION;
+  readonly projection: "mcode" | "studio";
+  readonly contractDigest: `sha256:${string}`;
   readonly modes: readonly string[];
   readonly subagents: readonly string[];
   readonly requiredTools: readonly ["command_run"];
@@ -165,8 +182,9 @@ export interface McodeCapabilityDescriptorV1 {
   readonly digest: `sha256:${string}`;
 }
 
-export interface McodeRecipeV1 {
-  readonly version: typeof MCODE_RECIPE_VERSION;
+export interface McodeControllerProjection {
+  readonly version: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
+  readonly binding: ToolkitRuntimeBinding;
   readonly agents: ToolkitAgents;
   readonly tools: {
     readonly command_run: McodeRecipeOptions["commandRun"];
@@ -175,27 +193,89 @@ export interface McodeRecipeV1 {
   readonly capability: McodeCapabilityDescriptorV1;
 }
 
-export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV1 {
-  const agents = createToolkitAgents(options);
-  const modes = createCodeModes(agents, options.profile);
-  const subagents = createCodeSubagents(options.profile, { command_run: options.commandRun });
+/** @deprecated Use McodeControllerProjection. */
+export type McodeRecipeV1 = McodeControllerProjection;
+export type StudioControllerProjection = McodeControllerProjection;
+
+export function createMcodeControllerProjection(
+  contract: ToolkitRuntimeContract,
+  binding: ToolkitRuntimeBinding,
+  options: McodeControllerProjectionOptions,
+): McodeControllerProjection {
+  return createControllerProjection("mcode", contract, binding, options);
+}
+
+export function createStudioControllerProjection(
+  contract: ToolkitRuntimeContract,
+  binding: ToolkitRuntimeBinding,
+  options: McodeControllerProjectionOptions,
+): StudioControllerProjection {
+  return createControllerProjection("studio", contract, binding, options);
+}
+
+function createControllerProjection(
+  projection: "mcode" | "studio",
+  contract: ToolkitRuntimeContract,
+  binding: ToolkitRuntimeBinding,
+  options: McodeControllerProjectionOptions,
+  compatibilityCommandRun?: McodeRecipeOptions["commandRun"],
+): McodeControllerProjection {
+  const commandRun = compatibilityCommandRun ?? contract.tools.createCommandRun({
+    authorize: async context => {
+      await binding.commandExecution.authorize({
+        requestContext: context.requestContext,
+        ...(context.workspace ? { workspace: context.workspace } : {}),
+      });
+    },
+  });
+  const agents = contract.roles.createAgents({
+    ...options,
+    commandRun,
+    profile: contract.runtime.profile,
+  });
+  const modes = createCodeModes(agents, contract.runtime.profile);
+  const subagents = createCodeSubagents(contract.runtime.profile, { command_run: commandRun });
   return {
-    version: MCODE_RECIPE_VERSION,
+    version: MCODE_CONTROLLER_PROJECTION_VERSION,
+    binding,
     agents,
-    tools: { command_run: options.commandRun },
+    tools: { command_run: commandRun },
     controller: { modes, subagents },
-    capability: createMcodeCapabilityDescriptor(options.profile, modes, subagents),
+    capability: createMcodeCapabilityDescriptor(
+      contract.runtime.profile,
+      modes,
+      subagents,
+      contract.capability.digest,
+      projection,
+    ),
   };
+}
+
+export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV1 {
+  const contract = createToolkitRuntimeContract({ profile: options.profile });
+  const { commandRun, profile: _profile, ...projectionOptions } = options;
+  return createControllerProjection(
+    "mcode",
+    contract,
+    compatibilityBinding(),
+    projectionOptions,
+    commandRun,
+  );
 }
 
 export function createMcodeCapabilityDescriptor(
   profile: ModelProfile,
   modes: AgentControllerMode[],
   subagents: AgentControllerSubagent[],
+  contractDigest = createToolkitRuntimeContract({ profile }).capability.digest,
+  projection: "mcode" | "studio" = "mcode",
 ): McodeCapabilityDescriptorV1 {
   const payload = {
     schemaVersion: MCODE_CAPABILITY_SCHEMA_VERSION,
+    projectionVersion: MCODE_CONTROLLER_PROJECTION_VERSION,
     recipeVersion: MCODE_RECIPE_VERSION,
+    projection,
+    contractDigest,
     modes: modes.map(mode => mode.id),
     subagents: subagents.map(subagent => subagent.id),
     requiredTools: ["command_run"],
@@ -230,6 +310,23 @@ export function createMcodeCapabilityDescriptor(
   } as const;
   const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   return { ...payload, digest: `sha256:${digest}` };
+}
+
+function compatibilityBinding(): ToolkitRuntimeBinding {
+  const unavailable = () => {
+    throw new Error("The McodeRecipe compatibility alias has no live runtime binding");
+  };
+  return {
+    identity: {
+      projectId: "compatibility",
+      userId: "compatibility",
+      sessionId: "compatibility",
+    },
+    workspace: { resolve: unavailable },
+    sandbox: { resolve: unavailable },
+    commandExecution: { authorize: () => undefined },
+    approval: { context: { compatibility: true } },
+  };
 }
 
 function digestInstructions(instructions: unknown): `sha256:${string}` {

@@ -147,29 +147,55 @@ import type { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
 import type { ApiRoute } from "@mastra/core/server";
 import type { FactoryIntegration, IntegrationContext, IntegrationTools } from "@mastra/factory";
+import { getFactoryAuthUserId, type FactoryAuthUser } from "@mastra/factory/auth";
 import { getFactorySessionAddress } from "@mastra/factory/rules/binding-context";
 import {
-  createToolkitAgents,
   TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
   TOOLKIT_WORKSPACE_CONTEXT_KEY,
   type ToolkitAgents,
   type ToolkitAgentsOptions,
 } from "@rlabs/agents-roles";
 import {
+  createToolkitRuntimeContract,
+  type ToolkitRuntimeBinding,
+  type ToolkitRuntimeContract,
+} from "@rlabs/mastra-primitives-export";
+import {
   createSandboxCommandRunTool,
   type SandboxCommandRunAuthorizationContext,
 } from "@rlabs/sandbox";
-import type { RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import { loadModelProfile, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { z } from "zod";
 
 const MAX_DELEGATED_TOOL_RESULTS = 24;
 const MAX_DELEGATED_TOOL_RESULT_CHARS = 4_000;
-const FACTORY_AGENT_BUNDLE = Symbol("factory-agent-bundle");
+const FACTORY_CONTROLLER_PROJECTION = Symbol("factory-controller-projection");
 
-export interface FactoryAgentBundle {
+export interface FactoryControllerProjection {
   readonly agents: ToolkitAgents;
-  readonly [FACTORY_AGENT_BUNDLE]: true;
+  readonly binding: ToolkitRuntimeBinding;
+  readonly tools: {
+    readonly command_run: ReturnType<typeof createSandboxCommandRunTool>;
+  };
+  readonly runtime: {
+    readonly defaults: RuntimeDefaultsV1;
+  };
+  readonly capability: {
+    readonly projection: "factory";
+    readonly contractDigest: `sha256:${string}`;
+    readonly controllerConstruction: {
+      readonly owner: "@mastra/factory";
+      readonly count: 1;
+      readonly canonicalModesAndSubagents: "upstream-blocked";
+    };
+  };
+  readonly [FACTORY_CONTROLLER_PROJECTION]: true;
 };
+
+export type FactoryAgentBundle = FactoryControllerProjection;
+
+export interface FactoryControllerProjectionOptions
+  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
 
 const delegationOutputSchema = z.object({
   agentId: z.string(),
@@ -187,11 +213,11 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
   readonly id = "mastra-toolkit";
 
   constructor(
-    private readonly bundle: FactoryAgentBundle,
-    private readonly runtimeDefaults: RuntimeDefaultsV1,
+    private readonly bundle: FactoryControllerProjection,
+    _runtimeDefaults?: RuntimeDefaultsV1,
   ) {
-    if (bundle[FACTORY_AGENT_BUNDLE] !== true) {
-      throw new Error("Factory agent bundles must be created with createFactoryAgentBundle");
+    if (bundle[FACTORY_CONTROLLER_PROJECTION] !== true) {
+      throw new Error("Factory controller projections must be created with createFactoryControllerProjection");
     }
   }
 
@@ -204,7 +230,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       delegate_cortex: delegationTool("delegate_cortex", this.bundle.agents.cortex),
       delegate_flux: delegationTool("delegate_flux", this.bundle.agents.flux),
       delegate_zen: delegationTool("delegate_zen", this.bundle.agents.zen),
-      command_run: createFactoryCommandRunTool(),
+      command_run: this.bundle.tools.command_run,
       project_workflow: createFactoryProjectWorkflowTool(),
     } as IntegrationTools;
   }
@@ -216,8 +242,8 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       recursionGuarded: true,
       runtimeDefaults: {
         source: "@rlabs/runtime-config/models.yaml",
-        version: this.runtimeDefaults.version,
-        factoryMemory: this.runtimeDefaults.factory,
+        version: this.bundle.runtime.defaults.version,
+        factoryMemory: this.bundle.runtime.defaults.factory,
         persistedPrecedence: "memory-settings-over-startup-defaults",
         fillPolicy: "null-fields-only",
         thresholdFillAtomicity: "unsupported-upstream",
@@ -227,7 +253,8 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
         },
       },
       agentBoundary: {
-        source: "@rlabs/agents-roles",
+        source: "@rlabs/mastra-primitives-export",
+        contractDigest: this.bundle.capability.contractDigest,
         controllerConstruction: "unsupported-upstream",
         repositoryConfiguration: {
           verified: ["published-workflows"],
@@ -246,10 +273,96 @@ export function createFactoryCommandRunTool() {
 export function createFactoryAgentBundle(
   options: Omit<ToolkitAgentsOptions, "commandRun">,
 ): FactoryAgentBundle {
+  const contract = createToolkitRuntimeContract({
+    profile: options.profile ?? loadModelProfile(),
+  });
+  return createFactoryControllerProjection(contract, createFactoryRuntimeBinding(), options);
+}
+
+export function createFactoryControllerProjection(
+  contract: ToolkitRuntimeContract,
+  binding: ToolkitRuntimeBinding,
+  options: FactoryControllerProjectionOptions,
+): FactoryControllerProjection {
+  const commandRun = contract.tools.createCommandRun({
+    authorize: context => binding.commandExecution.authorize({
+      requestContext: context.requestContext,
+      ...(context.workspace ? { workspace: context.workspace } : {}),
+    }),
+  });
   return {
-    agents: createToolkitAgents({ ...options, commandRun: createFactoryCommandRunTool() }),
-    [FACTORY_AGENT_BUNDLE]: true,
+    binding,
+    agents: contract.roles.createAgents({
+      ...options,
+      commandRun,
+      profile: contract.runtime.profile,
+    }),
+    tools: { command_run: commandRun },
+    runtime: { defaults: contract.runtime.defaults },
+    capability: {
+      projection: "factory",
+      contractDigest: contract.capability.digest,
+      controllerConstruction: {
+        owner: "@mastra/factory",
+        count: 1,
+        canonicalModesAndSubagents: "upstream-blocked",
+      },
+    },
+    [FACTORY_CONTROLLER_PROJECTION]: true,
   };
+}
+
+export function createFactoryRuntimeBinding(): ToolkitRuntimeBinding {
+  return {
+    identity: {
+      resolve: context => {
+        const requestContext = asRecord(context)?.requestContext as RequestContext | undefined;
+        const address = getFactorySessionAddress(requestContext);
+        if (!address) throw new Error("Factory identity requires a persisted project session");
+        return {
+          projectId: address.factoryProjectId,
+          userId: requireFactoryUserId(requestContext),
+          sessionId: address.sessionId,
+        };
+      },
+    },
+    workspace: {
+      resolve: context => {
+        const workspace = asRecord(context)?.workspace;
+        if (!workspace) throw new Error("Factory workspace requires a persisted project session");
+        return workspace;
+      },
+    },
+    sandbox: {
+      resolve: async context => {
+        const record = asRecord(context);
+        const workspace = record?.workspace as SandboxCommandRunAuthorizationContext["workspace"];
+        const requestContext = record?.requestContext as RequestContext | undefined;
+        if (!workspace || !requestContext) {
+          throw new Error("Factory sandbox requires a persisted project session");
+        }
+        await requireFactoryProjectSession({ requestContext, workspace });
+        return workspace.resolveSandbox({ requestContext });
+      },
+    },
+    commandExecution: {
+      authorize: context => requireFactoryProjectSession({
+        requestContext: context?.requestContext as RequestContext,
+        ...(context?.workspace ? {
+          workspace: context.workspace as NonNullable<SandboxCommandRunAuthorizationContext["workspace"]>,
+        } : {}),
+      }),
+    },
+    approval: { context: { host: "factory", scope: "project-user-session" } },
+  };
+}
+
+function requireFactoryUserId(requestContext: RequestContext | undefined): string {
+  const userId = getFactoryAuthUserId(requestContext?.get("user") as FactoryAuthUser | undefined);
+  if (!userId) {
+    throw new Error("Factory identity requires an authenticated user");
+  }
+  return userId;
 }
 
 function delegationTool(id: `delegate_${string}`, agent: Agent) {

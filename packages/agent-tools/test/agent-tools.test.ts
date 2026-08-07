@@ -7,9 +7,21 @@ import {
   createAdhdTool,
   createRunBudgetHooks,
   createToolAuditHooks,
+  RUN_CONTAINMENT_POLICY,
 } from "../src/index.js";
 
 describe("agent tool policies", () => {
+  test("exports the canonical run containment policy used by host descriptors", () => {
+    expect(RUN_CONTAINMENT_POLICY).toEqual({
+      maxToolCalls: 64,
+      maxDelegations: 8,
+      maxRetainedOutputChars: 256_000,
+      maxWallClockMs: 1_200_000,
+      duplicateScopes: "reject",
+      uncertainRemoteWrites: "reconcile-before-retry",
+    });
+  });
+
   test("requires approval for page mutations but not tab inspection", () => {
     expect(browserActionRequiresApproval("stagehand_tabs", { action: "list" })).toBe(false);
     expect(browserActionRequiresApproval("stagehand_tabs", { action: "close" })).toBe(true);
