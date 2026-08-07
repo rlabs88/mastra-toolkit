@@ -31,16 +31,33 @@ describe("CodeMcpAdapter", () => {
     await adapter.close();
     expect(third.disconnects()).toBe(1);
   });
+
+  test("keeps connected MCP tools when an optional server fails", async () => {
+    const candidate = fakeManager({ surviving_tool: {} }, [{ name: "browseros" }]);
+    const adapter = new CodeMcpAdapter(() => candidate.manager);
+
+    const generation = await adapter.prepare();
+    await generation.commit();
+
+    expect(adapter.getTools()).toEqual({ surviving_tool: {} });
+    expect(candidate.disconnects()).toBe(0);
+
+    await adapter.close();
+    expect(candidate.disconnects()).toBe(1);
+  });
 });
 
-function fakeManager(tools: Record<string, unknown>): {
+function fakeManager(
+  tools: Record<string, unknown>,
+  failed: readonly { name: string }[] = [],
+): {
   manager: McpManager;
   disconnects(): number;
 } {
   let disconnectCount = 0;
   return {
     manager: {
-      initInBackground: async () => ({ connected: [], failed: [] }),
+      initInBackground: async () => ({ connected: [], failed, skipped: [], totalTools: Object.keys(tools).length }),
       getTools: () => tools,
       disconnect: async () => { disconnectCount += 1; },
     } as unknown as McpManager,

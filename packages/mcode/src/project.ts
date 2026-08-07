@@ -18,11 +18,7 @@ export class CodeMcpAdapter implements McpLifecyclePort {
 
   async prepare(): Promise<PreparedMcpGeneration> {
     const candidate = this.#createCandidate();
-    const result = await candidate.initInBackground();
-    if (result.failed.length > 0) {
-      await candidate.disconnect();
-      throw new Error(`MCP candidate failed to connect: ${result.failed.map(server => server.name).join(", ")}`);
-    }
+    await candidate.initInBackground();
     const previous = this.#current;
     let committed = false;
     let rolledBack = false;
