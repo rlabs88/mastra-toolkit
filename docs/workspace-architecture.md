@@ -38,7 +38,7 @@ The eight package boundaries remain distinct, but their implementation is intent
 ```text
 packages/
 ├── runtime-config/src/{index,profile,environment,gateway}.ts
-├── agent-tools/src/{index,capabilities,command-run-contract,command-run}.ts
+├── agent-tools/src/{index,capabilities,command-run-contract,command-run,dynamic-workflow}.ts
 ├── agents-roles/src/{index,roles,prompts,agents}.ts
 ├── sandbox/src/{index,contract,machine,providers,command-run}.ts
 ├── project-mounting-manager/src/{index,contract,discovery,manager}.ts
@@ -71,7 +71,7 @@ project-mounting-manager  factory-github-projects
     apps/mcode      apps/studio  apps/factory
 ```
 
-`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. `agent-tools` owns the host-neutral Command Run language/scheduling contracts and browser capabilities; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. Hosts project these packages; they do not copy them.
+`agents-roles` is the one source of role IDs, prompt composition, model policy, and Mastra agent factories. Its four deep modules group role policy, prompt policy, agent construction, and the public facade; Cortex, Flux, and Zen do not require one-file directories or public implementation subpaths. `agent-tools` owns the host-neutral Command Run language/scheduling contracts, browser capabilities, and the `dynamic_workflow` authoring contract; `sandbox` owns the executable `command_run` tool because execution requires an active sandbox workspace. `dynamic_workflow` stays in `agent-tools` because it crosses no containment boundary: it issues no command and touches no filesystem, and its agent and nested-workflow allowlists are injected by the host. Hosts project these packages; they do not copy them.
 
 `runtime-config` owns the secret-free YAML catalog, startup environment resolution, and host data paths. MCode, Studio, and Factory persist local state beneath `~/.mastra-toolkit/{mcode,studio,factory}` unless `MASTRA_APP_DATA_DIR` explicitly selects another host directory. `sandbox` owns the package-local runtime specification and the substitutable Local, Docker, and Platform machine adapters. No application-level aggregate configuration is canonical.
 

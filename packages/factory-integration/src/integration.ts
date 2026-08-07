@@ -176,6 +176,7 @@ export interface FactoryControllerProjection {
   readonly binding: ToolkitRuntimeBinding;
   readonly tools: {
     readonly command_run: ReturnType<typeof createSandboxCommandRunTool>;
+    readonly dynamic_workflow: NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
   };
   readonly runtime: {
     readonly defaults: RuntimeDefaultsV1;
@@ -231,6 +232,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       delegate_flux: delegationTool("delegate_flux", this.bundle.agents.flux),
       delegate_zen: delegationTool("delegate_zen", this.bundle.agents.zen),
       command_run: this.bundle.tools.command_run,
+      dynamic_workflow: this.bundle.tools.dynamic_workflow,
       project_workflow: createFactoryProjectWorkflowTool(),
     } as IntegrationTools;
   }
@@ -290,14 +292,23 @@ export function createFactoryControllerProjection(
       ...(context.workspace ? { workspace: context.workspace } : {}),
     }),
   });
+  // Factory sessions rebind their workspace and rotate task-scoped tokens, so a
+  // resumed run can face a different checkout than its earlier steps ran
+  // against. Fail closed until session re-materialization is a proven slice.
+  const dynamicWorkflow = contract.tools.createDynamicWorkflow({
+    agents: contract.roles.ids,
+    authorize: requireFactoryProjectSession,
+    resumable: false,
+  });
   return {
     binding,
     agents: contract.roles.createAgents({
       ...options,
       commandRun,
+      dynamicWorkflow,
       profile: contract.runtime.profile,
     }),
-    tools: { command_run: commandRun },
+    tools: { command_run: commandRun, dynamic_workflow: dynamicWorkflow },
     runtime: { defaults: contract.runtime.defaults },
     capability: {
       projection: "factory",

@@ -1,8 +1,10 @@
 import {
   browserActionRequiresApproval,
+  createDynamicWorkflowTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
+  reconcileDynamicWorkflowDefinitions,
   RUN_CONTAINMENT_POLICY,
 } from "@rlabs/agent-tools";
 import {
@@ -110,7 +112,10 @@ export interface ToolkitRuntimeContract {
   };
   readonly tools: {
     readonly commandRun: "command-run/v1";
+    readonly dynamicWorkflow: "dynamic-workflow/v1";
     readonly createCommandRun: typeof createSandboxCommandRunTool;
+    readonly createDynamicWorkflow: typeof createDynamicWorkflowTool;
+    readonly reconcileDynamicWorkflowDefinitions: typeof reconcileDynamicWorkflowDefinitions;
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
@@ -200,7 +205,10 @@ export function createToolkitRuntimeContract(
     },
     tools: {
       commandRun: "command-run/v1",
+      dynamicWorkflow: "dynamic-workflow/v1",
       createCommandRun: createSandboxCommandRunTool,
+      createDynamicWorkflow: createDynamicWorkflowTool,
+      reconcileDynamicWorkflowDefinitions,
       createRunBudgetHooks,
       createToolAuditHooks,
       createVisibleBrowser,

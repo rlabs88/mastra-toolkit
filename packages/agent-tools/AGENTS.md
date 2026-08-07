@@ -29,6 +29,7 @@ src/
 ├── capabilities.ts        # ADHD, audit, and visible-browser policy
 ├── command-run-contract.ts # schemas, parsing, paths, and trace contract
 ├── command-run.ts          # scheduling and execution adapters
+├── dynamic-workflow.ts     # declarative graph authoring, ceilings, and durable run lifecycle
 └── index.ts                # sole TypeScript package facade
 ```
 
@@ -36,6 +37,8 @@ src/
 - Keep all supported TypeScript consumers on the package root. Do not restore implementation subpath exports.
 - Start a new role- and host-neutral capability inside `capabilities.ts` until it proves a deeper independent contract.
 - `command_run` and `adhd_run` are retained compatibility capabilities. Do not add new consumers or expand their DSL/fan-out scope; future replacement uses native Mastra workflows, task state, subagents, and background tasks after parity is proven.
+- `dynamic_workflow` accepts declarative graph data only. Do not add a source, script, expression, `eval`, or closure-carrying field, and do not admit `step` or unrestricted `tool` graph entries. Keep agent and nested-workflow allowlists injected by the host so this package owns no role or workflow identity.
+- Keep every dynamic-workflow ceiling enforced by rewriting the authored graph rather than trusting it, and keep authored definitions archived so discovery never grants execution authority.
 
 ## Change boundaries
 

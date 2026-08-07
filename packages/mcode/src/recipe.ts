@@ -134,7 +134,7 @@ interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "pr
 export type McodeRecipeOptions = McodeRecipeCompatibilityOptions;
 
 export interface McodeControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
+  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun" | "dynamicWorkflow"> {}
 
 export interface McodeControllerIngredientsV1 {
   readonly modes: AgentControllerMode[];
@@ -188,6 +188,7 @@ export interface McodeControllerProjection {
   readonly agents: ToolkitAgents;
   readonly tools: {
     readonly command_run: McodeRecipeOptions["commandRun"];
+    readonly dynamic_workflow: NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
   };
   readonly controller: McodeControllerIngredientsV1;
   readonly capability: McodeCapabilityDescriptorV1;
@@ -228,18 +229,23 @@ function createControllerProjection(
       });
     },
   });
+  // Agents are the only allowlisted dispatch targets, so an authored graph can
+  // never reach a role this projection did not construct.
+  const dynamicWorkflow = contract.tools.createDynamicWorkflow({ agents: contract.roles.ids });
   const agents = contract.roles.createAgents({
     ...options,
     commandRun,
+    dynamicWorkflow,
     profile: contract.runtime.profile,
   });
   const modes = createCodeModes(agents, contract.runtime.profile);
+  // Leaves receive command_run only, so a delegated agent cannot author a graph.
   const subagents = createCodeSubagents(contract.runtime.profile, { command_run: commandRun });
   return {
     version: MCODE_CONTROLLER_PROJECTION_VERSION,
     binding,
     agents,
-    tools: { command_run: commandRun },
+    tools: { command_run: commandRun, dynamic_workflow: dynamicWorkflow },
     controller: { modes, subagents },
     capability: createMcodeCapabilityDescriptor(
       contract.runtime.profile,

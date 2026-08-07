@@ -26,6 +26,13 @@ export const TOOLKIT_DELEGATED_RUN_CONTEXT_KEY = "mastraToolkitDelegatedRun";
 export interface ToolkitAgentsOptions {
   readonly browser: boolean;
   readonly commandRun: NonNullable<ToolsInput[string]>;
+  /**
+   * Durable multi-agent orchestration. Injected by the host, like `commandRun`,
+   * so this package keeps owning role policy rather than tool construction.
+   * Attached to Cortex and Zen only: Flux is the exploration role and keeps
+   * `adhd_run`, which needs no approval.
+   */
+  readonly dynamicWorkflow?: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
   readonly additionalTools?: ToolkitAdditionalTools;
@@ -49,10 +56,13 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
   const commandRun = options.commandRun;
   let flux!: Agent<"flux">;
   const adhdRun = createAdhdTool(() => flux);
+  const orchestration = options.dynamicWorkflow
+    ? { dynamic_workflow: options.dynamicWorkflow }
+    : {};
   const cortex = createAgent(
     CORTEX_ROLE,
     profile,
-    { command_run: commandRun },
+    { command_run: commandRun, ...orchestration },
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -68,7 +78,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
   const zen = createAgent(
     ZEN_ROLE,
     profile,
-    { command_run: commandRun },
+    { command_run: commandRun, ...orchestration },
     options.additionalTools,
     browser(options),
     options.hooks,
