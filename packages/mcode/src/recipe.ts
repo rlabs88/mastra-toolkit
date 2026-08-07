@@ -19,6 +19,14 @@ Establish the project boundary, current evidence, constraints, risks, and the sm
 
 export const CANONICAL_AGENT_IDS = ["cortex", "flux", "zen"] as const;
 export const CODE_MODE_NAMES = ["scope", "build"] as const;
+export const NATIVE_WORKSPACE_TOOL_IDS = [
+  "view",
+  "write_file",
+  "string_replace_lsp",
+  "find_files",
+  "search_content",
+  "execute_command",
+] as const;
 
 export type CanonicalAgentId = (typeof CANONICAL_AGENT_IDS)[number];
 export type CodeModeId = (typeof CODE_MODE_NAMES)[number];
@@ -93,7 +101,6 @@ function capitalize(value: string): string {
 
 export function createCodeSubagents(
   profile: ModelProfile,
-  tools: ToolsInput,
 ): AgentControllerSubagent[] {
   return ROLE_IDS.map(id => {
     const archetype = ARCHETYPES[id];
@@ -102,7 +109,6 @@ export function createCodeSubagents(
       name: archetype.name,
       description: archetype.description,
       instructions: composePrompt(archetype),
-      tools,
       defaultModelId: resolveProxyGatewayModelId(profile, profile.roles[id]),
       maxSteps: archetype.model.steps,
     };
@@ -134,7 +140,7 @@ interface McodeRecipeCompatibilityOptions extends Omit<ToolkitAgentsOptions, "pr
 export type McodeRecipeOptions = McodeRecipeCompatibilityOptions;
 
 export interface McodeControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
+  extends Omit<ToolkitAgentsOptions, "profile"> {}
 
 export interface McodeControllerIngredientsV1 {
   readonly modes: AgentControllerMode[];
@@ -150,9 +156,9 @@ export interface McodeCapabilityDescriptorV1 {
   readonly contractDigest: `sha256:${string}`;
   readonly modes: readonly string[];
   readonly subagents: readonly string[];
-  readonly requiredTools: readonly ["command_run"];
+  readonly requiredTools: typeof NATIVE_WORKSPACE_TOOL_IDS;
   readonly behavior: {
-    readonly toolContract: "command-run/v1";
+    readonly toolContract: "mastra-workspace-tools/v1";
     readonly modeInstructionDigests: Readonly<Record<string, `sha256:${string}`>>;
     readonly subagentInstructionDigests: Readonly<Record<string, `sha256:${string}`>>;
     readonly subagentMaxSteps: Readonly<Record<string, number>>;
@@ -186,9 +192,6 @@ export interface McodeControllerProjection {
   readonly version: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
   readonly binding: ToolkitRuntimeBinding;
   readonly agents: ToolkitAgents;
-  readonly tools: {
-    readonly command_run: McodeRecipeOptions["commandRun"];
-  };
   readonly controller: McodeControllerIngredientsV1;
   readonly capability: McodeCapabilityDescriptorV1;
 }
@@ -218,28 +221,17 @@ function createControllerProjection(
   contract: ToolkitRuntimeContract,
   binding: ToolkitRuntimeBinding,
   options: McodeControllerProjectionOptions,
-  compatibilityCommandRun?: McodeRecipeOptions["commandRun"],
 ): McodeControllerProjection {
-  const commandRun = compatibilityCommandRun ?? contract.tools.createCommandRun({
-    authorize: async context => {
-      await binding.commandExecution.authorize({
-        requestContext: context.requestContext,
-        ...(context.workspace ? { workspace: context.workspace } : {}),
-      });
-    },
-  });
   const agents = contract.roles.createAgents({
     ...options,
-    commandRun,
     profile: contract.runtime.profile,
   });
   const modes = createCodeModes(agents, contract.runtime.profile);
-  const subagents = createCodeSubagents(contract.runtime.profile, { command_run: commandRun });
+  const subagents = createCodeSubagents(contract.runtime.profile);
   return {
     version: MCODE_CONTROLLER_PROJECTION_VERSION,
     binding,
     agents,
-    tools: { command_run: commandRun },
     controller: { modes, subagents },
     capability: createMcodeCapabilityDescriptor(
       contract.runtime.profile,
@@ -253,13 +245,12 @@ function createControllerProjection(
 
 export function createMcodeRecipe(options: McodeRecipeOptions): McodeRecipeV1 {
   const contract = createToolkitRuntimeContract({ profile: options.profile });
-  const { commandRun, profile: _profile, ...projectionOptions } = options;
+  const { profile: _profile, ...projectionOptions } = options;
   return createControllerProjection(
     "mcode",
     contract,
     compatibilityBinding(),
     projectionOptions,
-    commandRun,
   );
 }
 
@@ -278,9 +269,9 @@ export function createMcodeCapabilityDescriptor(
     contractDigest,
     modes: modes.map(mode => mode.id),
     subagents: subagents.map(subagent => subagent.id),
-    requiredTools: ["command_run"],
+    requiredTools: NATIVE_WORKSPACE_TOOL_IDS,
     behavior: {
-      toolContract: "command-run/v1",
+      toolContract: "mastra-workspace-tools/v1",
       modeInstructionDigests: Object.fromEntries(modes.map(mode => [mode.id, digestInstructions(mode.instructions)])),
       subagentInstructionDigests: Object.fromEntries(subagents.map(subagent => [subagent.id, digestInstructions(subagent.instructions)])),
       subagentMaxSteps: Object.fromEntries(subagents.flatMap(subagent =>

@@ -1,6 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { RequestContext } from "@mastra/core/request-context";
-import { vi } from "vitest";
 import {
   createMcodeCapabilityDescriptor,
   createMcodeControllerProjection,
@@ -10,7 +8,6 @@ import {
 } from "@rlabs/mcode";
 import { createToolkitRuntimeContract, type ToolkitRuntimeBinding } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile } from "@rlabs/runtime-config";
-import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 describe("canonical MCode recipe", () => {
   test("projects one shared contract into MCode and Studio without owning a controller", async () => {
@@ -18,12 +15,11 @@ describe("canonical MCode recipe", () => {
     const contract = createToolkitRuntimeContract({ profile });
     const workspace = { id: "local-project" };
     const sandbox = { provider: "local" };
-    const authorize = vi.fn();
     const binding = {
       identity: { projectId: "local-project", userId: "local-user", sessionId: "local-session" },
       workspace: { resolve: () => workspace },
       sandbox: { resolve: () => sandbox },
-      commandExecution: { authorize },
+      commandExecution: { authorize: () => undefined },
       approval: { context: { host: "local" } },
     } satisfies ToolkitRuntimeBinding<typeof workspace, typeof sandbox>;
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
@@ -39,28 +35,11 @@ describe("canonical MCode recipe", () => {
     expect(mcode).not.toHaveProperty("agentController");
     expect(studio).not.toHaveProperty("agentController");
 
-    const requestContext = new RequestContext();
-    const executionWorkspace = {
-      resolveFilesystem: async () => ({ basePath: "/workspace/project" }),
-      resolveSandbox: async () => ({
-        executeCommand: async () => ({ exitCode: 0, stdout: "ok\n", stderr: "" }),
-      }),
-    };
-    const projectedCommandRun = mcode.tools.command_run as {
-      execute?: (input: unknown, context: unknown) => Promise<unknown>;
-    };
-    await projectedCommandRun.execute?.({
-      description: "verify binding authorization",
-      commands: [{ command_type: "shell", command_line: "true", step: 1 }],
-    }, { requestContext, workspace: executionWorkspace } as never);
-    expect(authorize).toHaveBeenCalledWith({ requestContext, workspace: executionWorkspace });
   });
 
-  test("owns the shared agents, modes, subagents, and sandbox tool projection", async () => {
-    const commandRun = createSandboxCommandRunTool();
+  test("projects native workspace tools without legacy command tools", async () => {
     const recipe = createMcodeRecipe({
       profile: loadModelProfile(),
-      commandRun,
       browser: false,
     });
 
@@ -75,16 +54,20 @@ describe("canonical MCode recipe", () => {
       "zen/build",
     ]);
     expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
-    expect(recipe.controller.subagents.every(subagent => subagent.tools?.command_run === commandRun)).toBe(true);
+    expect(recipe).not.toHaveProperty("tools.command_run");
+    expect(recipe.capability.requiredTools).toContain("execute_command");
+    expect(recipe.controller.subagents.every(subagent =>
+      !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run" || tool === "adhd_run")
+    )).toBe(true);
     for (const agent of Object.values(recipe.agents)) {
-      expect((await agent.listTools()).command_run).toBe(commandRun);
+      expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
     }
   });
 
   test("publishes a deterministic, serializable, secret-free compatibility descriptor", () => {
     const profile = loadModelProfile();
-    const first = createMcodeRecipe({ profile, commandRun: createSandboxCommandRunTool(), browser: false });
-    const second = createMcodeRecipe({ profile, commandRun: createSandboxCommandRunTool(), browser: false });
+    const first = createMcodeRecipe({ profile, browser: false });
+    const second = createMcodeRecipe({ profile, browser: false });
 
     expect(first.capability).toEqual(second.capability);
     expect(first.capability.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -107,12 +90,10 @@ describe("canonical MCode recipe", () => {
 
     const original = createMcodeRecipe({
       profile,
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
     const changed = createMcodeRecipe({
       profile: changedProfile,
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
 
@@ -126,12 +107,10 @@ describe("canonical MCode recipe", () => {
     changedMemory.memory.observationThresholdTokens = 70_000;
     const original = createMcodeRecipe({
       profile,
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
     const changed = createMcodeRecipe({
       profile: changedMemory,
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
 
@@ -143,7 +122,6 @@ describe("canonical MCode recipe", () => {
     const profile = loadModelProfile();
     const recipe = createMcodeRecipe({
       profile,
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
     const changedModes = recipe.controller.modes.map((mode, index) =>
@@ -165,7 +143,6 @@ describe("canonical MCode recipe", () => {
     });
     const recipe = createMcodeRecipe({
       profile: loadModelProfile(),
-      commandRun: createSandboxCommandRunTool(),
       browser: false,
     });
 

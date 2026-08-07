@@ -8,7 +8,7 @@ The [Executive Direction](docs/executive-direction.md) defines the project-runti
 
 - Node.js 22.19 or newer
 - Infisical CLI authenticated to project `0b0f6354-029f-45a7-9c1c-b65968b5f46c`
-- `rg` and `git` for local Command Run
+- `rg` and `git` inside the local workspace sandbox
 - Docker when using the Docker sandbox
 - Chrome for visible computer-use
 
@@ -57,7 +57,7 @@ For authenticated GitHub operation, populate the WorkOS and `GITHUB_APP_*` names
 
 Factory uses `ToolkitFactoryIntegration` to add `delegate_cortex`, `delegate_flux`, `delegate_zen`, and `project_workflow` to its native controller. Delegated agents cannot invoke delegation tools recursively. Because loading a workflow module can execute its top-level code, `project_workflow` requires approval before either listing or running project workflows. It publishes only workflows with explicit `agentTool` metadata, forwards output live and cancellation cooperatively, validates Standard Schema input/output, and refuses any workspace whose filesystem is not sandbox-backed. Factory host request context is intentionally not serialized into project code because it may contain authentication and controller objects; sandbox workflows receive explicit validated input instead.
 
-Local MCode, Studio, and Factory consume the same versioned, secret-free [`ToolkitRuntimeContract`](docs/mcode-factory-compatibility.md) through host-local controller projections and bindings. `McodeRecipeV1` remains a deprecated compatibility alias rather than the canonical composition seam. The executable `command_run` tool is owned by `@rlabs/sandbox`, requires an active workspace sandbox, and is available to canonical agents, native subagents, delegated children, and project specialists. Factory currently reports canonical mode/native-subagent controller construction as `upstream-blocked`; no dependency patch, second controller, or Mastra fork is used.
+Local MCode, Studio, and Factory consume the same versioned, secret-free [`ToolkitRuntimeContract`](docs/mcode-factory-compatibility.md) through host-local controller projections and bindings. `McodeRecipeV1` remains a deprecated compatibility alias rather than the canonical composition seam. Canonical agents, native subagents, delegated children, and project specialists use Mastra's workspace file/search tools and sandbox-backed `execute_command`; the retained Command Run and ADHD implementations are compatibility libraries and are not agent-visible. Factory currently reports canonical mode/native-subagent controller construction as `upstream-blocked`; no dependency patch, second controller, or Mastra fork is used.
 
 For the A1 custom provider, Mastra Code stores IDs such as `a1-proxy/code-frontier-high`. Local Factory startup idempotently seeds the provider in Factory's credential store and migrates legacy raw-model references to `a1-proxy/code-workhorse-high`. API keys are never written to `settings.json` or the sandbox specification.
 
@@ -85,7 +85,7 @@ Provider errors are fatal; Docker and Platform never silently fall back to Local
 
 ## Human gates
 
-Command Run dynamically requests approval when a batch contains shell execution, patch application, or a download. Reads, search, extraction, and task status remain read-only. Visible Stagehand Chrome automatically allows observation, extraction, screenshots, and tab listing; navigation, acting, closing, or mutating tabs require approval.
+MCode and Studio require approval for native workspace command execution, file writes, edits, and deletion. Factory applies the Code SDK's workspace policy to the persisted project/session sandbox. Visible Stagehand Chrome automatically allows observation, extraction, screenshots, and tab listing; navigation, acting, closing, or mutating tabs require approval.
 
 ## Infisical
 

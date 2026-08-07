@@ -6,7 +6,6 @@ import type { AnyWorkspace } from "@mastra/core/workspace";
 import type { StagehandBrowser } from "@mastra/stagehand";
 import {
   browserActionRequiresApproval,
-  createAdhdTool,
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
@@ -25,7 +24,6 @@ export const TOOLKIT_DELEGATED_RUN_CONTEXT_KEY = "mastraToolkitDelegatedRun";
 
 export interface ToolkitAgentsOptions {
   readonly browser: boolean;
-  readonly commandRun: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
   readonly additionalTools?: ToolkitAdditionalTools;
@@ -46,21 +44,18 @@ export interface ToolkitAgents {
 
 export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgents {
   const profile = options.profile ?? loadModelProfile();
-  const commandRun = options.commandRun;
-  let flux!: Agent<"flux">;
-  const adhdRun = createAdhdTool(() => flux);
   const cortex = createAgent(
     CORTEX_ROLE,
     profile,
-    { command_run: commandRun },
+    {},
     options.additionalTools,
     browser(options),
     options.hooks,
   );
-  flux = createAgent(
+  const flux = createAgent(
     FLUX_ROLE,
     profile,
-    { command_run: commandRun, adhd_run: adhdRun },
+    {},
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -68,7 +63,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
   const zen = createAgent(
     ZEN_ROLE,
     profile,
-    { command_run: commandRun },
+    {},
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -97,7 +92,9 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      return { ...resolvedAdditionalTools, ...tools } as ToolsInput;
+      return Object.fromEntries(Object.entries({ ...resolvedAdditionalTools, ...tools }).filter(
+        ([id]) => id !== "command_run" && id !== "adhd_run",
+      )) as ToolsInput;
     },
     workspace: ({ requestContext, mastra }) =>
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),

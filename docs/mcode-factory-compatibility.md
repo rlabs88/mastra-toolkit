@@ -31,7 +31,8 @@ flowchart TB
 | Versioned aggregate and capability digest | `mastra-primitives-export` | MCode/Studio projection | Factory projection |
 | Agent IDs, prompts, and factories | `agents-roles` | consumes through the aggregate | consumes through the aggregate |
 | Model profile and runtime defaults | `runtime-config` | resolves once at startup | resolves once at startup |
-| Executable `command_run` | `sandbox` | checkout-bound | session-workspace-bound |
+| Native workspace file/search/execute tools | Mastra workspace | checkout-bound | session-workspace-bound |
+| Command Run and ADHD compatibility libraries | `agent-tools` / `sandbox` | not agent-visible | not agent-visible |
 | Modes and native Code subagents | shared contract, host projection | mounts on its one controller | upstream-blocked; not emulated with a second controller |
 | Project specialists and workflows | `project-mounting-manager` | mounts validated generations | only explicit Factory workflow integration |
 | Authentication and persistence | host | local process | `factory-integration` |
@@ -39,6 +40,10 @@ flowchart TB
 Every host projection exposes the same contract digest. The digest is calculated only from deterministic, secret-free policy; runtime identity, workspaces, sandbox instances, command authorization, browser implementation, and approval context remain in the host-local `ToolkitRuntimeBinding`. Two Factory requests therefore share policy while resolving distinct project, user, session, and workspace values.
 
 `FactoryControllerProjection` is deliberately branded. Factory cannot accept an arbitrary object shaped like a projection, and canonical role code cannot acquire Factory clients, storage handles, project schedulers, or credentials. `createFactoryAgentBundle` and `McodeRecipeV1` remain deprecated compatibility aliases, not composition boundaries. Agent-facing API capabilities must be narrow Mastra tools backed by request-scoped ports injected by the host.
+
+## Recall extension direction
+
+Recall adherence remains an extension-only concern. Toolkit prompts and wrappers must omit unused optional recall fields and follow Mastra's visible-part cursor semantics; they must not fill optional fields with sentinel text. Any clearer schema, visible-part indexing, or direct background-task result retrieval should use supported Mastra/observational-memory extension points or be proposed upstream. This runtime does not fork or patch Mastra for recall behavior.
 
 ## Local data
 

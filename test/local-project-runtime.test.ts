@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
+import { createWorkspaceTools } from "@mastra/core/workspace";
 import { describe, expect, test } from "vitest";
 import { CODE_MODE_IDS, loadMcodeConfig, mountMcodeRuntime } from "@rlabs/mcode";
 import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mounting-manager";
@@ -47,9 +48,9 @@ describe("local project runtime", () => {
         defaultModelId: subagent.defaultModelId,
         tools: Object.keys(subagent.tools ?? {}),
       }))).toEqual([
-        { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
-        { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
-        { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: ["command_run"] },
+        { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
+        { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
+        { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
       ]);
 
       const first = await runtime.controller.createSession({ id: "first", ownerId: "test", scope: "first" });
@@ -84,13 +85,24 @@ describe("local project runtime", () => {
       expect(() => subagentTool.inputSchema.parse({ agentType: "unknown", task: "Inspect" })).toThrow();
       const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
       expect(Object.keys(agentTools)).toContain("project_specialist");
-      expect(Object.keys(agentTools)).toContain("command_run");
+      expect(Object.keys(agentTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
       expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
       expect(Object.keys(agentTools)).toContain("request_access");
-      const specialistTools = await runtime.resources.snapshot().specialistAgents
-        .get("review")!
-        .listTools({ requestContext: context });
-      expect(Object.keys(specialistTools)).toContain("command_run");
+      const activeWorkspace = await runtime.controller.getCurrentAgent(first).getWorkspace({ requestContext: context });
+      if (!activeWorkspace) throw new Error("Expected the active project workspace");
+      const nativeTools = await createWorkspaceTools(activeWorkspace, { requestContext: context, workspace: activeWorkspace });
+      expect(Object.keys(nativeTools)).toEqual(expect.arrayContaining(["view", "find_files", "write_file", "execute_command"]));
+      expect(Object.keys(nativeTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      const executeResult = await nativeTools.execute_command.execute(
+        { command: "pwd" },
+        { requestContext: context, workspace: activeWorkspace },
+      );
+      expect(JSON.stringify(executeResult)).toContain(projectRoot);
+
+      const specialist = runtime.resources.snapshot().specialistAgents.get("review")!;
+      const specialistTools = await specialist.listTools({ requestContext: context });
+      expect(Object.keys(specialistTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(await specialist.getWorkspace({ requestContext: context })).toBe(activeWorkspace);
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {
         await first.mode.switch({ modeId: `${agentId}/scope` });

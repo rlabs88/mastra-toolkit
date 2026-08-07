@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import type { ApiRoute } from "@mastra/core/server";
-import { LocalSandbox } from "@mastra/core/workspace";
+import { createWorkspaceTools, LocalSandbox } from "@mastra/core/workspace";
 import { createWorkspaceFactory, checkpointNameForSession } from "@mastra/factory/workspace";
 import type { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { buildGithubRoutes } from "@mastra/factory/integrations/github/routes";
@@ -54,7 +54,8 @@ describe("durable Factory project sessions", () => {
     });
 
     const firstWorkspace = await firstWorkspaceFactory(workspaceContext(session.sessionId, firstState));
-    const firstFilesystem = await firstWorkspace.resolveFilesystem({ requestContext: new RequestContext() });
+    const nativeRequestContext = new RequestContext();
+    const firstFilesystem = await firstWorkspace.resolveFilesystem({ requestContext: nativeRequestContext });
     const persisted = await firstStore.sourceControl.sessions.getBySessionId(session.sessionId);
 
     expect(firstFilesystem?.provider).toBe("sandbox");
@@ -77,6 +78,17 @@ describe("durable Factory project sessions", () => {
     expect(firstSandboxes[0]?.commands.some(command => command.script.includes("npm run setup:fixture"))).toBe(true);
     expect(firstSandboxes[0]?.commands.at(-1)?.script).toContain("npm run setup:fixture");
     expect(process.env.GH_TOKEN).toBeUndefined();
+    const nativeTools = await createWorkspaceTools(firstWorkspace, {
+      requestContext: nativeRequestContext,
+      workspace: firstWorkspace,
+    });
+    expect(Object.keys(nativeTools)).toEqual(expect.arrayContaining(["view", "find_files", "write_file", "execute_command"]));
+    expect(Object.keys(nativeTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+    await nativeTools.execute_command.execute(
+      { command: "pwd" },
+      { requestContext: nativeRequestContext, workspace: firstWorkspace },
+    );
+    expect(firstSandboxes[0]?.commands.at(-1)?.script).toContain("pwd");
 
     await firstStore.storage.close();
 

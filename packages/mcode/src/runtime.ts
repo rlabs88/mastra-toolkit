@@ -295,7 +295,6 @@ export async function prepareMcodeRuntime(
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
-  const commandRun = projection.tools.command_run;
   const agents = projection.agents;
   const dataDirectory = await prepareCodeSdkSettings({
     ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
@@ -367,8 +366,7 @@ export async function prepareMcodeRuntime(
           projectRoot: project.rootPath,
           modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
-          currentTools: new StaticToolSnapshot({ command_run: commandRun }),
-          requiredSpecialistTools: ["command_run"],
+          currentTools: new StaticToolSnapshot({}),
           host: new MastraProjectHostRegistry(mastra),
           workspace,
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),

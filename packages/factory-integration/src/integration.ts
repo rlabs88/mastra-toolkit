@@ -160,10 +160,6 @@ import {
   type ToolkitRuntimeBinding,
   type ToolkitRuntimeContract,
 } from "@rlabs/mastra-primitives-export";
-import {
-  createSandboxCommandRunTool,
-  type SandboxCommandRunAuthorizationContext,
-} from "@rlabs/sandbox";
 import { loadModelProfile, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { z } from "zod";
 
@@ -174,9 +170,6 @@ const FACTORY_CONTROLLER_PROJECTION = Symbol("factory-controller-projection");
 export interface FactoryControllerProjection {
   readonly agents: ToolkitAgents;
   readonly binding: ToolkitRuntimeBinding;
-  readonly tools: {
-    readonly command_run: ReturnType<typeof createSandboxCommandRunTool>;
-  };
   readonly runtime: {
     readonly defaults: RuntimeDefaultsV1;
   };
@@ -195,7 +188,7 @@ export interface FactoryControllerProjection {
 export type FactoryAgentBundle = FactoryControllerProjection;
 
 export interface FactoryControllerProjectionOptions
-  extends Omit<ToolkitAgentsOptions, "profile" | "commandRun"> {}
+  extends Omit<ToolkitAgentsOptions, "profile"> {}
 
 const delegationOutputSchema = z.object({
   agentId: z.string(),
@@ -230,7 +223,6 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       delegate_cortex: delegationTool("delegate_cortex", this.bundle.agents.cortex),
       delegate_flux: delegationTool("delegate_flux", this.bundle.agents.flux),
       delegate_zen: delegationTool("delegate_zen", this.bundle.agents.zen),
-      command_run: this.bundle.tools.command_run,
       project_workflow: createFactoryProjectWorkflowTool(),
     } as IntegrationTools;
   }
@@ -266,12 +258,8 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
   }
 }
 
-export function createFactoryCommandRunTool() {
-  return createSandboxCommandRunTool({ authorize: requireFactoryProjectSession });
-}
-
 export function createFactoryAgentBundle(
-  options: Omit<ToolkitAgentsOptions, "commandRun">,
+  options: ToolkitAgentsOptions,
 ): FactoryAgentBundle {
   const contract = createToolkitRuntimeContract({
     profile: options.profile ?? loadModelProfile(),
@@ -284,20 +272,12 @@ export function createFactoryControllerProjection(
   binding: ToolkitRuntimeBinding,
   options: FactoryControllerProjectionOptions,
 ): FactoryControllerProjection {
-  const commandRun = contract.tools.createCommandRun({
-    authorize: context => binding.commandExecution.authorize({
-      requestContext: context.requestContext,
-      ...(context.workspace ? { workspace: context.workspace } : {}),
-    }),
-  });
   return {
     binding,
     agents: contract.roles.createAgents({
       ...options,
-      commandRun,
       profile: contract.runtime.profile,
     }),
-    tools: { command_run: commandRun },
     runtime: { defaults: contract.runtime.defaults },
     capability: {
       projection: "factory",
@@ -336,7 +316,7 @@ export function createFactoryRuntimeBinding(): ToolkitRuntimeBinding {
     sandbox: {
       resolve: async context => {
         const record = asRecord(context);
-        const workspace = record?.workspace as SandboxCommandRunAuthorizationContext["workspace"];
+        const workspace = record?.workspace as FactoryProjectSessionContext["workspace"];
         const requestContext = record?.requestContext as RequestContext | undefined;
         if (!workspace || !requestContext) {
           throw new Error("Factory sandbox requires a persisted project session");
@@ -349,7 +329,7 @@ export function createFactoryRuntimeBinding(): ToolkitRuntimeBinding {
       authorize: context => requireFactoryProjectSession({
         requestContext: context?.requestContext as RequestContext,
         ...(context?.workspace ? {
-          workspace: context.workspace as NonNullable<SandboxCommandRunAuthorizationContext["workspace"]>,
+          workspace: context.workspace as NonNullable<FactoryProjectSessionContext["workspace"]>,
         } : {}),
       }),
     },
@@ -430,17 +410,31 @@ function stringField(record: Record<string, unknown> | undefined, key: string, f
 }
 
 async function requireFactoryProjectSession(
-  context: SandboxCommandRunAuthorizationContext,
+  context: FactoryProjectSessionContext,
 ): Promise<void> {
   const workspace = context.workspace;
   if (!getFactorySessionAddress(context.requestContext) || !workspace?.id.startsWith("mfw-")) {
     throw new Error("Factory execution requires a persisted Factory project session");
   }
   const [filesystem, sandbox] = await Promise.all([
-    workspace.resolveFilesystem({ requestContext: context.requestContext }),
-    workspace.resolveSandbox({ requestContext: context.requestContext }),
+    workspace.resolveFilesystem(context.requestContext ? { requestContext: context.requestContext } : {}),
+    workspace.resolveSandbox(context.requestContext ? { requestContext: context.requestContext } : {}),
   ]);
   if (filesystem?.provider !== "sandbox" || !filesystem.basePath || !sandbox?.executeCommand) {
     throw new Error("Factory execution requires a persisted Factory project session sandbox");
   }
+}
+
+interface FactoryProjectSessionContext {
+  readonly requestContext?: RequestContext;
+  readonly workspace?: {
+    readonly id: string;
+    resolveFilesystem(input: { requestContext?: RequestContext }): Promise<{
+      readonly provider?: string;
+      readonly basePath?: string;
+    } | undefined>;
+    resolveSandbox(input: { requestContext?: RequestContext }): Promise<{
+      executeCommand?: (...args: any[]) => Promise<unknown>;
+    } | undefined>;
+  };
 }

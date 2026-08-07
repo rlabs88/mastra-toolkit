@@ -20,10 +20,7 @@ import {
   type ModelProfile,
 } from "@rlabs/runtime-config";
 import { createHash } from "node:crypto";
-import {
-  createSandboxCommandRunTool,
-  createSandboxMachine,
-} from "@rlabs/sandbox";
+import { createSandboxMachine } from "@rlabs/sandbox";
 
 export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 1 as const;
 const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 1 as const;
@@ -66,7 +63,12 @@ export interface ToolkitRuntimeCapabilityDescriptorV1 {
   readonly roleMaxSteps: Readonly<Record<"cortex" | "flux" | "zen", number>>;
   readonly roleTemperatures: Readonly<Record<"cortex" | "flux" | "zen", number>>;
   readonly tools: {
-    readonly commandRun: "command-run/v1";
+    readonly agentVisible: {
+      readonly workspace: "mastra-workspace-tools/v1";
+      readonly commandRun: false;
+      readonly adhdRun: false;
+    };
+    readonly compatibilityLibraries: readonly ["command-run/v1", "adhd-run/v1"];
     readonly audit: "tool-audit/v1";
     readonly runBudget: "run-budget/v1";
     readonly browserApproval: "visible-browser-approval/v1";
@@ -109,8 +111,8 @@ export interface ToolkitRuntimeContract {
     readonly createAgents: typeof createToolkitAgents;
   };
   readonly tools: {
-    readonly commandRun: "command-run/v1";
-    readonly createCommandRun: typeof createSandboxCommandRunTool;
+    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV1["tools"]["agentVisible"];
+    readonly compatibilityLibraries: ToolkitRuntimeCapabilityDescriptorV1["tools"]["compatibilityLibraries"];
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
@@ -126,7 +128,6 @@ export interface ToolkitRuntimeContract {
   };
   readonly sandbox: {
     readonly createMachine: typeof createSandboxMachine;
-    readonly createCommandRun: typeof createSandboxCommandRunTool;
   };
   readonly workspace: {
     readonly contextKey: typeof TOOLKIT_WORKSPACE_CONTEXT_KEY;
@@ -157,7 +158,12 @@ export function createToolkitRuntimeContract(
     roleMaxSteps: mapRoles(id => ROLES[id].model.steps),
     roleTemperatures: mapRoles(id => ROLES[id].model.temperature),
     tools: {
-      commandRun: "command-run/v1",
+      agentVisible: {
+        workspace: "mastra-workspace-tools/v1",
+        commandRun: false,
+        adhdRun: false,
+      },
+      compatibilityLibraries: ["command-run/v1", "adhd-run/v1"],
       audit: "tool-audit/v1",
       runBudget: "run-budget/v1",
       browserApproval: "visible-browser-approval/v1",
@@ -199,8 +205,8 @@ export function createToolkitRuntimeContract(
       createAgents: createToolkitAgents,
     },
     tools: {
-      commandRun: "command-run/v1",
-      createCommandRun: createSandboxCommandRunTool,
+      agentVisible: capability.tools.agentVisible,
+      compatibilityLibraries: capability.tools.compatibilityLibraries,
       createRunBudgetHooks,
       createToolAuditHooks,
       createVisibleBrowser,
@@ -216,7 +222,6 @@ export function createToolkitRuntimeContract(
     },
     sandbox: {
       createMachine: createSandboxMachine,
-      createCommandRun: createSandboxCommandRunTool,
     },
     workspace: {
       contextKey: TOOLKIT_WORKSPACE_CONTEXT_KEY,

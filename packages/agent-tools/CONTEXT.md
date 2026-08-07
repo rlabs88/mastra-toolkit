@@ -13,7 +13,7 @@ Command Run, ADHD exploration, browser policy, and tool audit behavior began und
 
 ## Present
 
-This private package exposes one root facade over three deep modules: host-neutral capabilities, the Command Run contract, and Command Run execution. It owns parsing, scheduling, approval, trace, and result behavior plus ADHD, visible-browser, and audit policies. The executable Command Run tool belongs to `packages/sandbox`, where execution requires a sandbox workspace. Role packages consume the root facade; Mastra Code and Factory behavior remain outside this boundary.
+This private package exposes one root facade over three deep modules: host-neutral capabilities, the Command Run contract, and Command Run execution. It owns parsing, scheduling, approval, trace, and result behavior plus ADHD, visible-browser, and audit policies. Command Run and ADHD are retained library-only compatibility capabilities and are not projected into canonical agent maps. The executable Command Run adapter belongs to `packages/sandbox`, where execution requires a sandbox workspace. Role packages consume only the remaining host-neutral hooks and browser policy; Mastra Code and Factory behavior remain outside this boundary.
 
 ## Future
 

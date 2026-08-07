@@ -4,7 +4,7 @@ import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 describe("Mastra agents", () => {
   test("registers Cortex, Flux, and Zen with bounded delegation", async () => {
-    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: false });
+    const agents = createToolkitAgents({ browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
     expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
@@ -13,7 +13,7 @@ describe("Mastra agents", () => {
   });
 
   test("configures visible Chrome when browser support is enabled", () => {
-    const agents = createToolkitAgents({ commandRun: createSandboxCommandRunTool(), browser: true });
+    const agents = createToolkitAgents({ browser: true });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();

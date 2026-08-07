@@ -67,14 +67,22 @@ describe("canonical agent roles", () => {
     ]));
 
     expect(hashes).toEqual({
-      cortex: "f3c8a1dc79c0feed6c5842fa6b36d2133b4f6c3aaca9be4e6f36abf4e4d81538",
-      flux: "001ead187814b9efeffe5c200f2a1f78e18ca8f5edfdafb4de53e6e731757e20",
-      zen: "d4b43b960ed6a9323d9094c9cde46c2c673c56a4a9994c3cff5fdb0457490253",
+      cortex: "08aab5280ec12e4c62c8d4989b4456cf084e01043a87e77951ff759f869b7751",
+      flux: "585472db1469a48b0abd28d284871f7d7d15e381e68705225aaa883a9afa7f74",
+      zen: "411351b9d27271fe546a4cdd879947d6e2b2ee717249cc3a1c3fd2341be81188",
     });
   });
 
+  test("directs every role to native Mastra workspace tools", () => {
+    for (const id of ROLE_IDS) {
+      const prompt = composePrompt(ROLES[id]);
+      expect(prompt).not.toMatch(/command_run|adhd_run/);
+      expect(prompt).toMatch(/Mastra workspace/i);
+    }
+  });
+
   test("creates the current Mastra delegation topology", async () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
+    const agents = createToolkitAgents({ browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
     expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
@@ -82,35 +90,25 @@ describe("canonical agent roles", () => {
     expect(Object.keys(await agents.flux.listAgents())).toEqual([]);
   });
 
-  test("keeps command_run available during delegated runs", async () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: false });
-    const delegatedContext = new RequestContext<unknown>([[TOOLKIT_DELEGATED_RUN_CONTEXT_KEY, true]]);
-
-    expect(Object.keys(await agents.cortex.listTools())).toEqual(["command_run"]);
-    expect(Object.keys(await agents.flux.listTools())).toEqual(["command_run", "adhd_run"]);
-    expect(Object.keys(await agents.zen.listTools())).toEqual(["command_run"]);
-    expect(Object.keys(await agents.cortex.listTools({ requestContext: delegatedContext }))).toEqual(["command_run"]);
-  });
-
-  test("uses the command_run tool supplied by the runtime host", async () => {
-    const commandRun = createTool({
-      id: "command_run",
-      description: "sandbox command fixture",
-      inputSchema: z.object({}),
-      execute: async () => ({ ok: true }),
-    });
+  test("does not expose legacy command tools to top-level or delegated roles", async () => {
     const agents = createToolkitAgents({
       browser: false,
-      commandRun,
+      additionalTools: {
+        command_run: legacyToolFixture("command_run"),
+        adhd_run: legacyToolFixture("adhd_run"),
+      },
     });
+    const delegatedContext = new RequestContext<unknown>([[TOOLKIT_DELEGATED_RUN_CONTEXT_KEY, true]]);
 
-    expect((await agents.cortex.listTools()).command_run).toBe(commandRun);
-    expect((await agents.flux.listTools()).command_run).toBe(commandRun);
-    expect((await agents.zen.listTools()).command_run).toBe(commandRun);
+    for (const agent of Object.values(agents)) {
+      expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(await agent.listTools({ requestContext: delegatedContext })))
+        .not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+    }
   });
 
   test("configures visible browser support for every canonical agent", () => {
-    const agents = createToolkitAgents({ commandRun: commandRunFixture(), browser: true });
+    const agents = createToolkitAgents({ browser: true });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
@@ -122,7 +120,6 @@ describe("canonical agent roles", () => {
     const afterToolCall = vi.fn();
     const audit = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const agents = createToolkitAgents({
-      commandRun: commandRunFixture(),
       browser: false,
       hooks: { beforeToolCall, afterToolCall },
     });
@@ -153,9 +150,9 @@ describe("canonical agent roles", () => {
   });
 });
 
-function commandRunFixture() {
+function legacyToolFixture(id: string) {
   return createTool({
-    id: "command_run",
+    id,
     description: "command fixture",
     inputSchema: z.object({}),
     execute: async () => ({ ok: true }),
