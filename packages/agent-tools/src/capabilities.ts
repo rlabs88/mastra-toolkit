@@ -1,79 +1,10 @@
 import { RequestContext } from "@mastra/core/request-context";
 
-import { createTool, type ToolHooks } from "@mastra/core/tools";
-
-import { type Agent } from "@mastra/core/agent";
-
-import { z } from "zod";
+import { type ToolHooks } from "@mastra/core/tools";
 
 import { StagehandBrowser } from "@mastra/stagehand";
 
 
-
-const inputSchema = z.object({
-  problem: z.string().min(1).max(12_000),
-  perspectives: z.array(z.string().min(1).max(500)).min(2).max(6),
-}).superRefine((input, context) => {
-  const normalized = input.perspectives.map(perspective => perspective.trim().toLocaleLowerCase());
-  if (new Set(normalized).size !== normalized.length) {
-    context.addIssue({ code: "custom", path: ["perspectives"], message: "Perspectives must be distinct" });
-  }
-});
-
-const ADHD_MAX_CONCURRENCY = 2;
-const ADHD_MAX_WALL_CLOCK_MS = 60_000;
-const ADHD_MAX_CANDIDATE_CHARS = 8_000;
-const ADHD_MAX_RETAINED_CHARS = 24_000;
-
-export function createAdhdTool(resolveFlux: () => Agent) {
-  return createTool({
-    id: "adhd_run",
-    description: "Explore one open problem from 2–6 isolated perspectives, then return the candidate evidence for Flux to synthesize.",
-    inputSchema,
-    background: { enabled: true, timeoutMs: 180_000 },
-    mcp: { annotations: { title: "Flux ADHD", readOnlyHint: true, destructiveHint: false, openWorldHint: false } },
-    execute: async (input, context) => {
-      if (context.requestContext.get("adhdDepth") === 1) throw new Error("Nested adhd_run calls are not allowed");
-      const normalized = input.perspectives.map(perspective => perspective.trim().toLocaleLowerCase());
-      if (new Set(normalized).size !== normalized.length) throw new Error("Perspectives must be distinct");
-      const flux = resolveFlux();
-      const budgetSignal = context.abortSignal
-        ? AbortSignal.any([context.abortSignal, AbortSignal.timeout(ADHD_MAX_WALL_CLOCK_MS)])
-        : AbortSignal.timeout(ADHD_MAX_WALL_CLOCK_MS);
-      const candidates = new Array<{ perspective: string; text: string }>(input.perspectives.length);
-      let nextIndex = 0;
-      let retainedChars = 0;
-      const runCandidate = async () => {
-        while (nextIndex < input.perspectives.length) {
-          const index = nextIndex++;
-          const perspective = input.perspectives[index]!;
-          if (budgetSignal.aborted) throw budgetSignal.reason;
-          const requestContext = new RequestContext(context.requestContext.entries());
-          requestContext.set("adhdDepth", 1);
-          const result = await flux.generate(
-            `Independently investigate this framing. Do not call adhd_run.\n\nProblem: ${input.problem}\n\nPerspective: ${perspective}`,
-            { maxSteps: 8, modelSettings: { temperature: 0.9 }, requestContext, abortSignal: budgetSignal },
-          );
-          const remaining = Math.max(0, ADHD_MAX_RETAINED_CHARS - retainedChars);
-          const text = compactCandidate(result.text, Math.min(ADHD_MAX_CANDIDATE_CHARS, remaining));
-          retainedChars += text.length;
-          candidates[index] = { perspective, text };
-        }
-      };
-      await Promise.all(Array.from(
-        { length: Math.min(ADHD_MAX_CONCURRENCY, input.perspectives.length) },
-        runCandidate,
-      ));
-      return { problem: input.problem, candidates };
-    },
-  });
-}
-
-function compactCandidate(value: string, maximum: number): string {
-  if (value.length <= maximum) return value;
-  if (maximum <= 1) return "…".slice(0, maximum);
-  return `${value.slice(0, maximum - 1)}…`;
-}
 
 export interface ToolAuditEvent {
   readonly phase: "start" | "complete" | "failed";
@@ -181,7 +112,6 @@ function toolRequestContext(value: unknown): RequestContext | undefined {
 
 function isDeduplicatedTool(toolName: string): boolean {
   return isDelegationTool(toolName)
-    || toolName === "adhd_run"
     || isExternalWriteTool(toolName);
 }
 

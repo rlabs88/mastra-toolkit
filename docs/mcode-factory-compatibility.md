@@ -35,7 +35,6 @@ flowchart TB
 | Model profile and runtime defaults | `runtime-config` | resolves once at startup | resolves once at startup | resolves once at startup |
 | Delegation | host projection | AgentController-native `subagent` | generic Mastra `agents` maps; Code modes retain the native controller surface | upstream-blocked; no role-specific or neutral adapter |
 | Native workspace file/search/execute tools | Mastra workspace | checkout-bound | checkout-bound | session-workspace-bound |
-| Command Run and ADHD compatibility libraries | `agent-tools` / `sandbox` | not agent-visible | not agent-visible | not agent-visible |
 | Project specialists and workflows | `project-mounting-manager` | mounts validated generations | mounts validated generations | only explicit Factory workflow integration |
 | Authentication and persistence | host | local process | Studio server | `factory-integration` |
 

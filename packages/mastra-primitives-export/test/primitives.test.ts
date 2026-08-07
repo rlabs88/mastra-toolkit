@@ -43,10 +43,8 @@ describe("ToolkitRuntimeContract", () => {
     expect(Object.isFrozen(first.capability.runtime.backgroundTasks.agent)).toBe(true);
     expect(first.capability.tools.agentVisible).toEqual({
       workspace: "mastra-workspace-tools/v1",
-      commandRun: false,
-      adhdRun: false,
     });
-    expect(first.capability.tools.compatibilityLibraries).toEqual(["command-run/v1", "adhd-run/v1"]);
+    expect(first.capability.tools).not.toHaveProperty("compatibilityLibraries");
     expect(first.tools).not.toHaveProperty("commandRun");
     expect(first.sandbox).not.toHaveProperty("createCommandRun");
   });

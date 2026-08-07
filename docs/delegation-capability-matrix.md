@@ -25,4 +25,4 @@ The evidence is the installed public declarations and the public host contracts.
 
 ## Execution surface
 
-Top-level and delegated roles do not expose `command_run` or `adhd_run`. Workspace-bound shell and file work uses Mastra's supported workspace/sandbox execution primitives. The legacy implementations remain library-only compatibility surfaces and are not part of delegation. The canonical supervisor/leaf registry, MCode native target enumeration, Studio `agents` maps, recursion boundary, and Factory blocker all use this native workspace contract.
+Workspace-bound shell and file work uses Mastra's supported workspace/sandbox execution primitives. The toolkit retains no alternate command-loop or divergent-fan-out tool. The canonical supervisor/leaf registry, MCode native target enumeration, Studio `agents` maps, recursion boundary, and Factory blocker all use this native workspace contract. Structured orchestration may later be added only as an explicitly published Mastra workflow.

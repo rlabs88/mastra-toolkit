@@ -60,10 +60,7 @@ export interface ToolkitRuntimeCapabilityDescriptorV2 {
   readonly tools: {
     readonly agentVisible: {
       readonly workspace: "mastra-workspace-tools/v1";
-      readonly commandRun: false;
-      readonly adhdRun: false;
     };
-    readonly compatibilityLibraries: readonly ["command-run/v1", "adhd-run/v1"];
     readonly audit: "tool-audit/v1";
     readonly runBudget: "run-budget/v1";
     readonly browserApproval: "visible-browser-approval/v1";
@@ -111,7 +108,6 @@ export interface ToolkitRuntimeContract {
   };
   readonly tools: {
     readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV2["tools"]["agentVisible"];
-    readonly compatibilityLibraries: ToolkitRuntimeCapabilityDescriptorV2["tools"]["compatibilityLibraries"];
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
@@ -162,10 +158,7 @@ export function createToolkitRuntimeContract(
     tools: {
       agentVisible: {
         workspace: "mastra-workspace-tools/v1",
-        commandRun: false,
-        adhdRun: false,
       },
-      compatibilityLibraries: ["command-run/v1", "adhd-run/v1"],
       audit: "tool-audit/v1",
       runBudget: "run-budget/v1",
       browserApproval: "visible-browser-approval/v1",
@@ -209,7 +202,6 @@ export function createToolkitRuntimeContract(
     },
     tools: {
       agentVisible: capability.tools.agentVisible,
-      compatibilityLibraries: capability.tools.compatibilityLibraries,
       createRunBudgetHooks,
       createToolAuditHooks,
       createVisibleBrowser,

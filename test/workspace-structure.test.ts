@@ -97,9 +97,9 @@ describe("workspace ownership", () => {
   test("uses the approved deep-module source layout", async () => {
     const expectedSources: Record<(typeof packageNames)[number], readonly string[]> = {
       "runtime-config": ["environment.ts", "gateway.ts", "index.ts", "profile.ts"],
-      "agent-tools": ["capabilities.ts", "command-run-contract.ts", "command-run.ts", "index.ts"],
+      "agent-tools": ["capabilities.ts", "index.ts"],
       "agents-roles": ["agents.ts", "index.ts", "prompts.ts", "roles.ts"],
-      "sandbox": ["command-run.ts", "contract.ts", "index.ts", "machine.ts", "providers.ts"],
+      "sandbox": ["contract.ts", "index.ts", "machine.ts", "providers.ts"],
       "project-mounting-manager": ["contract.ts", "discovery.ts", "index.ts", "manager.ts"],
       "mastra-primitives-export": ["index.ts", "primitives.ts"],
       "mcode": ["index.ts", "project.ts", "recipe.ts", "runtime.ts"],

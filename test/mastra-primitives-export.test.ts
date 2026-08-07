@@ -25,8 +25,6 @@ describe("shared Mastra Toolkit runtime contract", () => {
     expect(first.runtime.defaults.version).toBe(1);
     expect(first.tools.agentVisible).toEqual({
       workspace: "mastra-workspace-tools/v1",
-      commandRun: false,
-      adhdRun: false,
     });
     expect(first.delegation).toEqual({
       nativeTool: "subagent",

@@ -2,10 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
-import { createTool } from "@mastra/core/tools";
 import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import { describe, expect, test, vi } from "vitest";
-import { z } from "zod";
 import {
   CORTEX_ROLE,
   FLUX_ROLE,
@@ -70,7 +68,7 @@ describe("canonical agent roles", () => {
 
     expect(hashes).toEqual({
       cortex: "08aab5280ec12e4c62c8d4989b4456cf084e01043a87e77951ff759f869b7751",
-      flux: "585472db1469a48b0abd28d284871f7d7d15e381e68705225aaa883a9afa7f74",
+      flux: "200c0e2add58ede9ec0382800ab7c33ae529a0cec505328cb6982578030c0122",
       zen: "411351b9d27271fe546a4cdd879947d6e2b2ee717249cc3a1c3fd2341be81188",
     });
   });
@@ -81,6 +79,10 @@ describe("canonical agent roles", () => {
       expect(prompt).not.toMatch(/command_run|adhd_run/);
       expect(prompt).toMatch(/Mastra workspace/i);
     }
+    const flux = composePrompt(FLUX_ROLE);
+    expect(flux).toMatch(/Use the existing native subagent surface/i);
+    expect(flux).toMatch(/Do not invent a replacement orchestration tool/i);
+    expect(flux).not.toMatch(/ADHD|out-of-process|command-line tool|skill form/i);
   });
 
   test("creates the canonical non-recursive leaf set", async () => {
@@ -158,21 +160,6 @@ describe("canonical agent roles", () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
-  test("does not expose legacy command tools to top-level or delegated roles", async () => {
-    const agents = createToolkitAgents({
-      browser: false,
-      additionalTools: {
-        command_run: legacyToolFixture("command_run"),
-        adhd_run: legacyToolFixture("adhd_run"),
-      },
-    });
-    for (const agent of Object.values(agents)) {
-      const toolIds = Object.keys(await agent.listTools());
-      expect(toolIds).not.toContain("command_run");
-      expect(toolIds).not.toContain("adhd_run");
-    }
-  });
-
   test("configures visible browser support for every canonical agent", () => {
     const agents = createToolkitAgents({ browser: true });
 
@@ -215,12 +202,3 @@ describe("canonical agent roles", () => {
     expect(source.join("\n")).not.toMatch(/agent-controller|createCodeModes|prepareAgentControllerMount/);
   });
 });
-
-function legacyToolFixture(id: string) {
-  return createTool({
-    id,
-    description: "command fixture",
-    inputSchema: z.object({}),
-    execute: async () => ({ ok: true }),
-  });
-}

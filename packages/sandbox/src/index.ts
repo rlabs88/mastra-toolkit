@@ -24,8 +24,3 @@ export {
   type PlatformSandboxMachineOptions,
 } from "./providers.js";
 export { createSandboxMachine } from "./machine.js";
-export {
-  createSandboxCommandRunTool,
-  type SandboxCommandRunAuthorizationContext,
-  type SandboxCommandRunToolOptions,
-} from "./command-run.js";

@@ -107,9 +107,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      return Object.fromEntries(Object.entries({ ...resolvedAdditionalTools }).filter(
-        ([id]) => id !== "command_run" && id !== "adhd_run",
-      )) as ToolsInput;
+      return { ...resolvedAdditionalTools } as ToolsInput;
     },
     workspace: ({ requestContext, mastra }) =>
       (requestContext.get(TOOLKIT_WORKSPACE_CONTEXT_KEY) as AnyWorkspace | undefined) ?? mastra?.getWorkspace(),

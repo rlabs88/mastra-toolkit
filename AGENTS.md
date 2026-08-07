@@ -61,7 +61,7 @@ applies_to: ["**/*"]
 
 - Add or update a failing contract test before changing production behavior.
 - Change prompt text, prompt composition, and prompt snapshot tests together.
-- Change the Command Run parser, scheduling, containment, timeout, cancellation, output, attachment, approval, and SSRF contracts together with their tests.
+- Change native workspace tool policy, workflow publication, approval, containment, cancellation, and output contracts together with their tests.
 - Change model-profile schema, environment resolution, gateway registration, Mastra Code defaults, examples, and configuration tests together.
 - Change a sandbox provider, image package layer, or environment profile together with the shared sandbox-machine contract tests.
 - Create a nested `AGENTS.md` and `CONTEXT.md` together only when a real ownership boundary exists and entrants must recalibrate there. Do not create speculative checkpoints.
