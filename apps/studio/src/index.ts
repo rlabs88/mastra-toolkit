@@ -3,6 +3,8 @@ import { prepareMcodeRuntime } from "@rlabs/mcode";
 
 export const localProject = await prepareMcodeRuntime({ cwd: process.cwd(), host: "studio" });
 export const agents = localProject.agents;
+export const contract = localProject.contract;
+export const projection = localProject.projection;
 export const mastra = new Mastra(localProject.mastraArgs);
 
 export const runtime = await localProject.finalize(mastra);

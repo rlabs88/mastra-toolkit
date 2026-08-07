@@ -8,18 +8,19 @@ flowchart TB
   Tools["agent-tools<br/>host-neutral contracts"]
   Roles["agents-roles<br/>Cortex / Flux / Zen"]
   Sandbox["sandbox<br/>workspace-bound execution"]
+  Primitives["mastra-primitives-export<br/>versioned runtime contract"]
   MCode["mcode adapter"]
   Factory["factory-integration"]
   Projects["factory-github-projects<br/>future issue #127"]
 
   Config --> Roles
   Tools --> Roles
-  Roles --> MCode
-  Roles --> Factory
-  Config --> MCode
-  Config --> Factory
-  Sandbox --> MCode
-  Sandbox --> Factory
+  Roles --> Primitives
+  Config --> Primitives
+  Tools --> Primitives
+  Sandbox --> Primitives
+  Primitives --> MCode
+  Primitives --> Factory
   Projects -. "optional control-plane input" .-> Factory
 ```
 
@@ -27,14 +28,17 @@ flowchart TB
 
 | Surface | Canonical owner | MCode | Factory |
 | --- | --- | --- | --- |
-| Agent IDs, prompts, and factories | `agents-roles` | consumes | consumes through `createFactoryAgentBundle` |
+| Versioned aggregate and capability digest | `mastra-primitives-export` | MCode/Studio projection | Factory projection |
+| Agent IDs, prompts, and factories | `agents-roles` | consumes through the aggregate | consumes through the aggregate |
 | Model profile and runtime defaults | `runtime-config` | resolves once at startup | resolves once at startup |
 | Executable `command_run` | `sandbox` | checkout-bound | session-workspace-bound |
-| Modes and native Code subagents | `mcode` | mounts | unsupported; not emulated |
+| Modes and native Code subagents | shared contract, host projection | mounts on its one controller | upstream-blocked; not emulated with a second controller |
 | Project specialists and workflows | `project-mounting-manager` | mounts validated generations | only explicit Factory workflow integration |
 | Authentication and persistence | host | local process | `factory-integration` |
 
-`createFactoryAgentBundle` is deliberately branded. Factory cannot accept an arbitrary object shaped like a role bundle, and canonical role code cannot acquire Factory clients, storage handles, project schedulers, or credentials. Agent-facing API capabilities must be narrow Mastra tools backed by request-scoped ports injected by the host.
+Every host projection exposes the same contract digest. The digest is calculated only from deterministic, secret-free policy; runtime identity, workspaces, sandbox instances, command authorization, browser implementation, and approval context remain in the host-local `ToolkitRuntimeBinding`. Two Factory requests therefore share policy while resolving distinct project, user, session, and workspace values.
+
+`FactoryControllerProjection` is deliberately branded. Factory cannot accept an arbitrary object shaped like a projection, and canonical role code cannot acquire Factory clients, storage handles, project schedulers, or credentials. `createFactoryAgentBundle` and `McodeRecipeV1` remain deprecated compatibility aliases, not composition boundaries. Agent-facing API capabilities must be narrow Mastra tools backed by request-scoped ports injected by the host.
 
 ## Local data
 
@@ -54,4 +58,4 @@ Issue #127 belongs in a future `packages/factory-github-projects` control-plane 
 
 Both hosts own their process resources and await shutdown exactly once. Factory closes its Factory instance before the shared Mastra runtime; mounted MCode closes project resources, controller timers, PubSub, and Mastra before resetting provider state.
 
-Compatibility evidence consists of the root typecheck, tests, and build plus the host flows in [host validation](host-validation.md). Factory construction does not imply MCode mode parity, and no unsupported upstream surface is patched or copied.
+Compatibility evidence consists of equivalent contract digests, binding-isolation tests, exactly-one-controller assertions, the root typecheck/tests/build, and the host flows in [host validation](host-validation.md). The current stable Factory API owns its controller construction and does not expose a supported modes/native-subagents input, so Factory reports that projection as upstream-blocked. No unsupported surface is patched or copied.

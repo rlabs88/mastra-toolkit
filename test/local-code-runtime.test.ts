@@ -30,6 +30,7 @@ describe("local Mastra Code runtime", () => {
       cwd: nestedCwd,
       dataDirectory,
       browser: false,
+      disableMcp: true,
       watch: false,
       environment: {
         ...process.env,
@@ -65,6 +66,7 @@ describe("local Mastra Code runtime", () => {
       dataDirectory,
       profile,
       browser: false,
+      disableMcp: true,
       watch: false,
       environment: {
         ...process.env,

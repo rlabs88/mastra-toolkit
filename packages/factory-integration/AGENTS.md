@@ -17,7 +17,7 @@ applies_to: ["**/*"]
 ## Operating rules
 
 - Own Factory authentication, storage, integrations, provider migration, and sandbox composition here.
-- Consume canonical agents directly from `agents-roles` and sandbox machines from `sandbox`. Do not import MCode settings, recipes, controller lifecycle, or project detection.
+- Consume the shared runtime contract from `mastra-primitives-export` and sandbox machines from `sandbox`. Supply Factory request-local values through a binding; do not import MCode settings, compatibility recipes, controller lifecycle, or project detection.
 - Report unsupported upstream controller or repository-configuration surfaces explicitly; do not patch Factory, construct a second controller, or read project settings from the Factory checkout.
 - Keep the executable Factory composition in `apps/factory` and deployment artifacts outside packages.
 - Remain the sole Factory composition owner and the sole adapter for GitHub credentials/webhook ownership. A Projects V2 control-plane extension receives verified events and governed command ports; it does not become an agent tool or a second GitHub integration owner.
@@ -27,7 +27,7 @@ applies_to: ["**/*"]
 ```text
 src/
 ├── config.ts      # validated config, auth, storage, and local provider migration
-├── integration.ts # canonical agent bundle, delegation, and project workflow tools
+├── integration.ts # Factory projection, binding, delegation, and project workflow tools
 ├── runtime.ts     # Factory and Mastra composition lifecycle
 └── index.ts       # the only public TypeScript facade
 ```

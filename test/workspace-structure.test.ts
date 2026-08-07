@@ -14,6 +14,7 @@ const packageNames = [
   "agents-roles",
   "sandbox",
   "project-mounting-manager",
+  "mastra-primitives-export",
   "mcode",
   "factory-integration",
 ] as const;
@@ -100,6 +101,7 @@ describe("workspace ownership", () => {
       "agents-roles": ["agents.ts", "index.ts", "prompts.ts", "roles.ts"],
       "sandbox": ["command-run.ts", "contract.ts", "index.ts", "machine.ts", "providers.ts"],
       "project-mounting-manager": ["contract.ts", "discovery.ts", "index.ts", "manager.ts"],
+      "mastra-primitives-export": ["index.ts", "primitives.ts"],
       "mcode": ["index.ts", "project.ts", "recipe.ts", "runtime.ts"],
       "factory-integration": ["config.ts", "index.ts", "integration.ts", "runtime.ts"],
     };
@@ -152,12 +154,21 @@ describe("workspace ownership", () => {
       "@mastra/factory",
       "@rlabs/sandbox",
     ]);
+    await expectSourceToExclude("packages/mastra-primitives-export/src", [
+      "@mastra/code-sdk",
+      "@mastra/factory",
+      "@rlabs/mcode",
+      "@rlabs/factory-integration",
+    ]);
+    await expectSourceToExclude("packages/mcode/src", ["createToolkitAgents"]);
+    await expectSourceToExclude("packages/factory-integration/src", ["createToolkitAgents"]);
   });
 
   test("keeps Factory lifecycle behind its host facade", async () => {
     const source = await readFile(join(root, "apps/factory/src/index.ts"), "utf8");
 
     expect(source).toContain("createFactoryRuntime");
+    expect(source).toContain("contract, projection, factory, mastra");
     expect(source).toContain('process.once("SIGINT"');
     expect(source).toContain('process.once("SIGTERM"');
     expect(source).toContain("runtime.close()");
@@ -171,6 +182,8 @@ describe("workspace ownership", () => {
 
     expect(manifest.dependencies).toEqual({ "@mastra/core": "1.57.0", "@rlabs/mcode": "*" });
     expect(source).toContain("prepareMcodeRuntime");
+    expect(source).toContain("localProject.contract");
+    expect(source).toContain("localProject.projection");
     expect(source).toContain("export const mastra = new Mastra(localProject.mastraArgs)");
   });
 
@@ -215,6 +228,7 @@ describe("workspace ownership", () => {
             const runtime = await createLocalMcodeRuntime({
               browser: false,
               watch: false,
+              disableMcp: true,
               environment: { ...process.env, CLI_PROXY_API_KEY: "test-only-key" },
             });
             await runtime.close();

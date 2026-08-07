@@ -93,10 +93,18 @@ interface RunBudgetState {
 }
 
 const RUN_BUDGET_CONTEXT_KEY = "mastraToolkitRunBudget";
-const RUN_MAX_TOOL_CALLS = 64;
-const RUN_MAX_DELEGATIONS = 8;
-const RUN_MAX_RETAINED_CHARS = 256_000;
-const RUN_MAX_WALL_CLOCK_MS = 20 * 60_000;
+export const RUN_CONTAINMENT_POLICY = Object.freeze({
+  maxToolCalls: 64,
+  maxDelegations: 8,
+  maxRetainedOutputChars: 256_000,
+  maxWallClockMs: 20 * 60_000,
+  duplicateScopes: "reject",
+  uncertainRemoteWrites: "reconcile-before-retry",
+} as const);
+const RUN_MAX_TOOL_CALLS = RUN_CONTAINMENT_POLICY.maxToolCalls;
+const RUN_MAX_DELEGATIONS = RUN_CONTAINMENT_POLICY.maxDelegations;
+const RUN_MAX_RETAINED_CHARS = RUN_CONTAINMENT_POLICY.maxRetainedOutputChars;
+const RUN_MAX_WALL_CLOCK_MS = RUN_CONTAINMENT_POLICY.maxWallClockMs;
 
 export function createRunBudgetHooks(now: () => number = Date.now): ToolHooks {
   return {

@@ -5,11 +5,17 @@ import type { ApiRoute } from "@mastra/core/server";
 import { RequestContext } from "@mastra/core/request-context";
 import { Mastra } from "@mastra/core/mastra";
 import { createToolkitAgents } from "@rlabs/agents-roles";
+import { createToolkitRuntimeContract } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 import { Hono } from "hono";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createToolkitFactory, loadFactoryConfig } from "../src/index.js";
+import {
+  createFactoryControllerProjection,
+  createFactoryRuntimeBinding,
+  createToolkitFactory,
+  loadFactoryConfig,
+} from "../src/index.js";
 import {
   createFactoryAgentBundle,
   ToolkitFactoryIntegration,
@@ -25,6 +31,55 @@ afterEach(async () => {
 });
 
 describe("single-project Factory composition", () => {
+  test("projects the shared contract without constructing or mutating a controller", () => {
+    const profile = loadModelProfile();
+    const contract = createToolkitRuntimeContract({ profile });
+    const projection = createFactoryControllerProjection(
+      contract,
+      createFactoryRuntimeBinding(),
+      { browser: false },
+    );
+
+    expect(projection.capability.contractDigest).toBe(contract.capability.digest);
+    expect(projection.binding).toBeDefined();
+    expect(projection.capability.projection).toBe("factory");
+    expect(projection.capability.controllerConstruction).toEqual({
+      owner: "@mastra/factory",
+      count: 1,
+      canonicalModesAndSubagents: "upstream-blocked",
+    });
+    expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
+    expect(projection).not.toHaveProperty("controller");
+  });
+
+  test("resolves project, tenant, session, and workspace bindings per Factory request", async () => {
+    const binding = createFactoryRuntimeBinding();
+    if (!("resolve" in binding.identity)) throw new Error("Expected request-scoped Factory identity");
+    const firstContext = factoryRequestContext("org-1", "project-1", "session-1");
+    const secondContext = factoryRequestContext("org-2", "project-2", "session-2");
+    const firstWorkspace = { id: "mfw-session-1" };
+    const secondWorkspace = { id: "mfw-session-2" };
+
+    expect(await binding.identity.resolve({ requestContext: firstContext })).toEqual({
+      projectId: "project-1",
+      userId: "org-1-user",
+      sessionId: "session-1",
+    });
+    expect(await binding.identity.resolve({ requestContext: secondContext })).toEqual({
+      projectId: "project-2",
+      userId: "org-2-user",
+      sessionId: "session-2",
+    });
+    expect(await binding.workspace.resolve({ workspace: firstWorkspace })).toBe(firstWorkspace);
+    expect(await binding.workspace.resolve({ workspace: secondWorkspace })).toBe(secondWorkspace);
+
+    const workosContext = factoryRequestContext("org-3", "project-3", "session-3");
+    workosContext.set("user", { workosId: "workos-user-3", organizationId: "org-3" });
+    expect(await binding.identity.resolve({ requestContext: workosContext })).toMatchObject({
+      userId: "workos-user-3",
+    });
+  });
+
   test("rejects an unbranded agent bundle without the Factory session authorization boundary", () => {
     const profile = loadModelProfile();
     const bundle = {
@@ -34,7 +89,7 @@ describe("single-project Factory composition", () => {
     expect(() => new ToolkitFactoryIntegration(
       bundle as never,
       resolveRuntimeDefaultsV1(profile),
-    )).toThrow(/createFactoryAgentBundle/);
+    )).toThrow(/createFactoryControllerProjection/);
   });
 
   test("boots without a sandbox and fails GitHub project preparation closed", async () => {
@@ -78,7 +133,8 @@ describe("single-project Factory composition", () => {
         },
       },
       agentBoundary: {
-        source: "@rlabs/agents-roles",
+        source: "@rlabs/mastra-primitives-export",
+        contractDigest: bundle.capability.contractDigest,
         controllerConstruction: "unsupported-upstream",
         repositoryConfiguration: {
           verified: ["published-workflows"],
@@ -92,6 +148,7 @@ describe("single-project Factory composition", () => {
     const commandRun = tools.command_run as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
+    expect(tools.command_run).toBe(bundle.tools.command_run);
     const delegateCortex = tools.delegate_cortex as {
       execute?: (input: unknown, context: unknown) => Promise<unknown>;
     };
@@ -134,6 +191,7 @@ describe("single-project Factory composition", () => {
         flux: bundle.agents.flux,
         zen: bundle.agents.zen,
       });
+      expect(Object.keys(prepared.agentControllers ?? {})).toEqual(["code"]);
       const composed = new Mastra(prepared);
       for (const id of ["cortex", "flux", "zen"] as const) {
         const registered = composed.getAgent(id);
@@ -274,3 +332,14 @@ describe("single-project Factory composition", () => {
     }));
   });
 });
+
+function factoryRequestContext(orgId: string, projectId: string, sessionId: string): RequestContext {
+  const requestContext = new RequestContext();
+  requestContext.set("user", { id: `${orgId}-user`, organizationId: orgId });
+  requestContext.set("controller", {
+    threadId: `${sessionId}-thread`,
+    resourceId: sessionId,
+    getState: () => ({ factoryProjectId: projectId }),
+  });
+  return requestContext;
+}

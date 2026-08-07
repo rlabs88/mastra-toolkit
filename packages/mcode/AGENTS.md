@@ -12,11 +12,11 @@ applies_to: ["**/*"]
 ## Read first
 
 - Read the root `AGENTS.md` and this package's `CONTEXT.md`.
-- Read the checkpoints for `agents-roles`, `runtime-config`, `sandbox`, and `project-mounting-manager` before changing their projections.
+- Read the checkpoints for `mastra-primitives-export`, `sandbox`, and `project-mounting-manager` before changing their projections.
 
 ## Operating rules
 
-- Own the versioned MCode recipe plus all Mastra Code SDK configuration, project detection, modes, native subagents, controller mounting, session wiring, Code-specific MCP adaptation, and reusable TUI construction here.
+- Own the MCode and Studio controller projections plus all Mastra Code SDK configuration, project detection, modes, native subagents, controller mounting, session wiring, Code-specific MCP adaptation, and reusable TUI construction here. Keep recipe names only as deprecated compatibility aliases.
 - Consume canonical roles, tools, model profiles, sandbox behavior, and project extensions only through package public exports.
 - Use published Mastra Code extension and mount APIs. Do not patch, copy, or fork upstream implementation source.
 - Keep CLI argument parsing, process lifecycle, and user-facing exit behavior in `apps/mcode`.
@@ -25,7 +25,7 @@ applies_to: ["**/*"]
 
 ```text
 src/
-├── recipe.ts  # versioned agents, modes, subagents, and capability projection
+├── recipe.ts  # controller projections and deprecated recipe compatibility
 ├── project.ts # workspace, MCP lifecycle, and project host adapters
 ├── runtime.ts # configuration, settings, mount lifecycle, session, and TUI
 └── index.ts   # package facade

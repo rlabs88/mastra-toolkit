@@ -3,7 +3,11 @@ import type { FactoryStorage } from "@mastra/core/storage";
 import { MastraFactory, type MastraArgs, type MastraFactoryConfig } from "@mastra/factory";
 import { GithubIntegration } from "@mastra/factory/integrations/github/integration";
 import { RedisStreamsPubSub } from "@mastra/redis-streams";
-import { HOST_BACKGROUND_TASK_POLICY, loadModelProfile, prepareHostDataDirectory, ProxyGateway, resolveRuntimeDefaultsV1, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import { HOST_BACKGROUND_TASK_POLICY, loadModelProfile, prepareHostDataDirectory, ProxyGateway, type RuntimeDefaultsV1 } from "@rlabs/runtime-config";
+import {
+  createToolkitRuntimeContract,
+  type ToolkitRuntimeContract,
+} from "@rlabs/mastra-primitives-export";
 import {
   createSandboxMachine,
   type CloneableSandboxMachine,
@@ -11,7 +15,12 @@ import {
 } from "@rlabs/sandbox";
 import { Mastra } from "@mastra/core/mastra";
 import { createFactoryAuth, createFactoryStorage, loadFactoryConfig, prepareLocalA1Provider, type FactoryConfig } from "./config.js";
-import { createFactoryAgentBundle, ToolkitFactoryIntegration, type FactoryAgentBundle } from "./integration.js";
+import {
+  createFactoryControllerProjection,
+  createFactoryRuntimeBinding,
+  ToolkitFactoryIntegration,
+  type FactoryControllerProjection,
+} from "./integration.js";
 
 interface A1ProviderOptions {
   readonly baseUrl: string;
@@ -21,10 +30,12 @@ interface A1ProviderOptions {
 
 export async function createToolkitFactory(
   config: FactoryConfig,
-  bundle: FactoryAgentBundle,
+  projection: FactoryControllerProjection,
   defaults: RuntimeDefaultsV1,
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<MastraFactory> {
+  config = freezeSnapshot(config);
+  defaults = projection.runtime.defaults;
   const provider = {
     baseUrl: config.runtime.proxy.baseUrl,
     models: defaults.gateway.models,
@@ -51,7 +62,7 @@ export async function createToolkitFactory(
     storage: factoryStorage,
     ...(vector ? { vector } : {}),
     ...(config.redisUrl ? { pubsub: new RedisStreamsPubSub({ url: config.redisUrl }) } : {}),
-    integrations: [new ToolkitFactoryIntegration(bundle, defaults), ...(github ? [github] : [])],
+    integrations: [new ToolkitFactoryIntegration(projection, defaults), ...(github ? [github] : [])],
     ...(config.sandbox ? {
       sandbox: {
         machine: createFactorySandboxMachine(config),
@@ -68,7 +79,7 @@ export async function createToolkitFactory(
   return new ToolkitMastraFactory(
     factoryConfig,
     factoryStorage,
-    bundle.agents,
+    projection.agents,
     config.workos ? undefined : { provider, defaults },
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
@@ -94,7 +105,7 @@ class ToolkitMastraFactory extends MastraFactory {
   constructor(
     config: MastraFactoryConfig,
     private readonly factoryStorage: FactoryStorage,
-    private readonly toolkitAgents: FactoryAgentBundle["agents"],
+    private readonly toolkitAgents: FactoryControllerProjection["agents"],
     private readonly localA1?: { provider: A1ProviderOptions; defaults: RuntimeDefaultsV1 },
     private readonly controlPlaneDirectory?: string,
     private readonly localServerHost?: string,
@@ -124,6 +135,17 @@ function loopbackServerHost(publicUrl: string): string {
   return new URL(publicUrl).hostname.replace(/^\[|\]$/g, "");
 }
 
+function freezeSnapshot<T>(value: T): T {
+  const snapshot = structuredClone(value);
+  const freeze = (current: unknown): void => {
+    if (!current || typeof current !== "object" || Object.isFrozen(current)) return;
+    for (const nested of Object.values(current as Record<string, unknown>)) freeze(nested);
+    Object.freeze(current);
+  };
+  freeze(snapshot);
+  return snapshot;
+}
+
 let workingDirectoryQueue: Promise<void> = Promise.resolve();
 
 function withWorkingDirectory<T>(directory: string, operation: () => Promise<T>): Promise<T> {
@@ -143,6 +165,8 @@ function withWorkingDirectory<T>(directory: string, operation: () => Promise<T>)
 
 export interface FactoryRuntime {
   readonly config: FactoryConfig;
+  readonly contract: ToolkitRuntimeContract;
+  readonly projection: FactoryControllerProjection;
   readonly factory: MastraFactory;
   readonly mastra: Mastra;
   close(): Promise<void>;
@@ -153,10 +177,18 @@ export async function createFactoryRuntime(
   startDirectory = process.cwd(),
 ): Promise<FactoryRuntime> {
   const profile = loadModelProfile();
-  const defaults = resolveRuntimeDefaultsV1(profile);
   const config = loadFactoryConfig(environment, startDirectory, profile);
-  const bundle = createFactoryAgentBundle({ profile, browser: false });
-  const factory = await createToolkitFactory(config, bundle, defaults, environment);
+  const contract = createToolkitRuntimeContract({
+    profile,
+    providerBaseUrl: config.runtime.proxy.baseUrl,
+  });
+  const defaults = contract.runtime.defaults;
+  const projection = createFactoryControllerProjection(
+    contract,
+    createFactoryRuntimeBinding(),
+    { browser: false },
+  );
+  const factory = await createToolkitFactory(config, projection, defaults, environment);
   let mastra: Mastra | undefined;
   try {
     const prepared = await factory.prepare();
@@ -182,7 +214,7 @@ export async function createFactoryRuntime(
     closing ??= closeFactoryRuntime(factory, mastra);
     await closing;
   };
-  return { config, factory, mastra, close };
+  return { config, contract, projection, factory, mastra, close };
 }
 
 async function closeFactoryRuntime(factory: MastraFactory, mastra: Mastra): Promise<void> {

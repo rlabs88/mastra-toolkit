@@ -6,7 +6,7 @@ import { z } from "zod";
 export const DEFAULT_ACTIVE_ALIAS = "code-frontier-high";
 export const A1_PROXY_PROVIDER_ID = "a1-proxy";
 export const A1_PROXY_PROVIDER_NAME = "A1 Proxy";
-export const HOST_BACKGROUND_TASK_POLICY = {
+export const HOST_BACKGROUND_TASK_POLICY = Object.freeze({
   enabled: true,
   mode: "full",
   globalConcurrency: 4,
@@ -14,12 +14,12 @@ export const HOST_BACKGROUND_TASK_POLICY = {
   backpressure: "reject",
   defaultTimeoutMs: 180_000,
   waitTimeoutMs: 5_000,
-} as const;
-export const AGENT_BACKGROUND_TASK_POLICY = {
+} as const);
+export const AGENT_BACKGROUND_TASK_POLICY = Object.freeze({
   tools: "all",
   concurrency: 1,
   waitTimeoutMs: 5_000,
-} as const;
+} as const);
 export const DEFAULT_OBSERVER_ALIAS = "code-workhorse-high";
 export const DEFAULT_MODEL_PROFILE_PATH = createRequire(import.meta.url).resolve("@rlabs/runtime-config/models.yaml");
 

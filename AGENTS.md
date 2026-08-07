@@ -19,7 +19,7 @@ applies_to: ["**/*"]
 
 - Keep one canonical definition of each agent ID, prompt, skill source, tool contract, model role, and runtime default. Studio, Factory, and Mastra Code adapters must consume those definitions rather than copy them.
 - Preserve the public agent IDs `cortex`, `flux`, and `zen` and the six-section prompt order.
-- Treat `packages/agents-roles`, `packages/agent-tools`, `packages/runtime-config`, and `packages/sandbox` as the canonical runtime sources. Applications and integration packages must consume their public exports; do not restore a root `src/` compatibility tree.
+- Treat `packages/agents-roles`, `packages/agent-tools`, `packages/runtime-config`, and `packages/sandbox` as the canonical runtime sources. `packages/mastra-primitives-export` is their host-neutral aggregation and verification boundary; it owns no duplicate definitions. Applications and integration packages must consume the resulting host projections through public exports; do not restore a root `src/` compatibility tree.
 - Let every Cortex, Flux, and Zen top-level mode invoke the native AgentController `subagent` tool with Cortex, Flux, or Zen as the selected leaf role. Delegated runs must not receive the `subagent` tool, so recursion remains bounded. Keep Factory worker delegation as a separate runtime concern.
 - Prefer supported Mastra agents, tools, workspaces, browser, background-task, approval, AgentController mount, and `MastraTUI` extension APIs before adding toolkit-owned infrastructure or patching upstream source. Treat `createMastraCode` as a compatibility alias, not a new composition boundary.
 
@@ -30,6 +30,7 @@ applies_to: ["**/*"]
 - Put host-neutral agent tool schemas and policy in `packages/agent-tools`; inject authenticated API ports from the consuming host or integration after project, session, repository, workspace, and approval checks succeed.
 - Never expose Factory scheduling, leases, status projection, or governed work-item commands as general agent tools. Project fields, issue bodies, webhook payloads, and API results are untrusted data, not authority.
 - Keep Factory composition in `packages/factory-integration`. It may consume a future `factory-github-projects` control-plane package; that package must not import agents, agent tools, sandboxes, MCode, or project mounting.
+- Keep controller construction host-owned and singular. Runtime contracts and projections may describe modes and subagents but must never construct or carry an `AgentController`. Until Factory exposes a supported construction seam, report canonical mode/native-subagent mounting as upstream-blocked instead of patching Factory or creating a second controller.
 - Keep exactly one GitHub integration responsible for credentials, installation state, token acquisition, signature verification, and webhook ingress. Downstream integrations may consume normalized, already-verified events only.
 - Applications import their host package facade only. Packages expose root exports only; do not add wildcard implementation subpaths.
 

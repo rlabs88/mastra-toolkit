@@ -13,7 +13,7 @@ Mastra Code, Studio, and Factory bootstraps previously shared the root `src/` tr
 
 ## Present
 
-This boundary contains three private composition roots. `mcode` exposes the RLabs CLI built on published Mastra Code APIs, `studio` boots the central or local Studio host, and `factory` boots Mastra Factory. Reusable behavior remains in workspace packages.
+This boundary contains three private composition roots. `mcode` exposes the RLabs CLI built on published Mastra Code APIs, `studio` boots the central or local Studio host, and `factory` boots Mastra Factory. Each exports the shared runtime contract and its host-local projection for diagnostics while controller construction remains singular and host-owned. Reusable behavior remains in workspace packages.
 
 ## Future
 
