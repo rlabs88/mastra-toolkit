@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
+import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -12,7 +13,9 @@ import {
   ROLES,
   ZEN_ROLE,
   TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
+  TOOLKIT_WORKSPACE_CONTEXT_KEY,
   composePrompt,
+  createToolkitAgentRegistry,
   createToolkitAgents,
 } from "../src/index.js";
 
@@ -81,13 +84,31 @@ describe("canonical agent roles", () => {
     }
   });
 
-  test("creates the current Mastra delegation topology", async () => {
+  test("creates the canonical non-recursive leaf set", async () => {
     const agents = createToolkitAgents({ browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
-    expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
-    expect(Object.keys(await agents.cortex.listAgents())).toEqual([]);
-    expect(Object.keys(await agents.flux.listAgents())).toEqual([]);
+    for (const agent of Object.values(agents)) expect(await agent.listAgents()).toEqual({});
+  });
+
+  test("creates canonical supervisors over non-recursive canonical leaves", async () => {
+    const registry = createToolkitAgentRegistry({ browser: false });
+    const workspace = new Workspace({
+      id: "bound-workspace",
+      filesystem: new LocalFilesystem({ basePath: process.cwd(), contained: true }),
+    });
+    const requestContext = new RequestContext<unknown>([[TOOLKIT_WORKSPACE_CONTEXT_KEY, workspace]]);
+
+    for (const supervisor of Object.values(registry.supervisors)) {
+      const targets = await supervisor.listAgents();
+      expect(Object.keys(targets)).toEqual(["cortex", "flux", "zen"]);
+      expect(targets).toEqual(registry.leaves);
+      expect(await supervisor.getWorkspace({ requestContext })).toBe(workspace);
+    }
+    for (const leaf of Object.values(registry.leaves)) {
+      expect(await leaf.listAgents()).toEqual({});
+      expect(await leaf.getWorkspace({ requestContext })).toBe(workspace);
+    }
   });
 
   test("does not expose legacy command tools to top-level or delegated roles", async () => {

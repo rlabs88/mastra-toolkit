@@ -1,8 +1,10 @@
 export {
   TOOLKIT_DELEGATED_RUN_CONTEXT_KEY,
   TOOLKIT_WORKSPACE_CONTEXT_KEY,
+  createToolkitAgentRegistry,
   createToolkitAgents,
   type ToolkitAdditionalTools,
+  type ToolkitAgentRegistry,
   type ToolkitAgents,
   type ToolkitAgentsOptions,
 } from "./agents.js";

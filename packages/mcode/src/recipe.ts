@@ -222,10 +222,13 @@ function createControllerProjection(
   binding: ToolkitRuntimeBinding,
   options: McodeControllerProjectionOptions,
 ): McodeControllerProjection {
-  const agents = contract.roles.createAgents({
+  const agentOptions = {
     ...options,
     profile: contract.runtime.profile,
-  });
+  };
+  const agents = projection === "studio"
+    ? contract.roles.createAgentRegistry(agentOptions).supervisors
+    : contract.roles.createAgents(agentOptions);
   const modes = createCodeModes(agents, contract.runtime.profile);
   const subagents = createCodeSubagents(contract.runtime.profile);
   return {

@@ -42,7 +42,24 @@ export interface ToolkitAgents {
   readonly zen: Agent<"zen">;
 }
 
+export interface ToolkitAgentRegistry {
+  readonly supervisors: ToolkitAgents;
+  readonly leaves: ToolkitAgents;
+}
+
+export function createToolkitAgentRegistry(options: ToolkitAgentsOptions): ToolkitAgentRegistry {
+  const leaves = createToolkitAgents(options);
+  return {
+    leaves,
+    supervisors: createAgentSet(options, leaves),
+  };
+}
+
 export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgents {
+  return createAgentSet(options);
+}
+
+function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): ToolkitAgents {
   const profile = options.profile ?? loadModelProfile();
   const cortex = createAgent(
     CORTEX_ROLE,
@@ -51,6 +68,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
     options.additionalTools,
     browser(options),
     options.hooks,
+    agents,
   );
   const flux = createAgent(
     FLUX_ROLE,
@@ -59,6 +77,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
     options.additionalTools,
     browser(options),
     options.hooks,
+    agents,
   );
   const zen = createAgent(
     ZEN_ROLE,
@@ -67,7 +86,7 @@ export function createToolkitAgents(options: ToolkitAgentsOptions): ToolkitAgent
     options.additionalTools,
     browser(options),
     options.hooks,
-    { cortex, flux },
+    agents,
   );
   return { cortex, flux, zen };
 }
@@ -79,7 +98,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
   additionalTools?: ToolkitAdditionalTools,
   agentBrowser?: StagehandBrowser,
   additionalHooks?: ToolHooks,
-  agents?: Record<string, Agent>,
+  agents?: ToolkitAgents,
 ): Agent<TId> {
   const hooks = composeToolHooks(additionalHooks);
   return new Agent({
@@ -107,7 +126,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       requireToolApproval: ({ toolName, args }) => browserActionRequiresApproval(toolName, args),
     },
     ...(agentBrowser ? { browser: agentBrowser } : {}),
-    ...(agents ? { agents } : {}),
+    ...(agents ? { agents: { ...agents } } : {}),
   });
 }
 

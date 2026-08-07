@@ -7,6 +7,7 @@ import {
 } from "@rlabs/agent-tools";
 import {
   composePrompt,
+  createToolkitAgentRegistry,
   createToolkitAgents,
   ROLE_IDS,
   ROLES,
@@ -77,6 +78,9 @@ export interface ToolkitRuntimeCapabilityDescriptorV1 {
     readonly nativeTool: "subagent";
     readonly targets: readonly ["cortex", "flux", "zen"];
     readonly delegatedLeavesReceiveSubagent: false;
+    readonly supervisorSurface: "agents-map";
+    readonly supervisorTargets: readonly ["cortex", "flux", "zen"];
+    readonly supervisorLeavesReceiveAgents: false;
   };
   readonly containment: typeof RUN_CONTAINMENT_POLICY;
   readonly runtime: {
@@ -108,6 +112,7 @@ export interface ToolkitRuntimeContract {
     readonly ids: typeof ROLE_IDS;
     readonly definitions: typeof ROLES;
     readonly composePrompt: typeof composePrompt;
+    readonly createAgentRegistry: typeof createToolkitAgentRegistry;
     readonly createAgents: typeof createToolkitAgents;
   };
   readonly tools: {
@@ -148,6 +153,9 @@ export function createToolkitRuntimeContract(
     nativeTool: "subagent",
     targets: ROLE_IDS,
     delegatedLeavesReceiveSubagent: false,
+    supervisorSurface: "agents-map",
+    supervisorTargets: ROLE_IDS,
+    supervisorLeavesReceiveAgents: false,
   } as const);
   const payload = {
     schemaVersion: TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION,
@@ -202,6 +210,7 @@ export function createToolkitRuntimeContract(
       ids: ROLE_IDS,
       definitions: ROLES,
       composePrompt,
+      createAgentRegistry: createToolkitAgentRegistry,
       createAgents: createToolkitAgents,
     },
     tools: {

@@ -3,13 +3,11 @@ import { createToolkitAgents } from "@rlabs/agents-roles";
 import { createSandboxCommandRunTool } from "@rlabs/sandbox";
 
 describe("Mastra agents", () => {
-  test("registers Cortex, Flux, and Zen with bounded delegation", async () => {
+  test("registers Cortex, Flux, and Zen as non-recursive leaves", async () => {
     const agents = createToolkitAgents({ browser: false });
 
     expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
-    expect(Object.keys(await agents.zen.listAgents())).toEqual(["cortex", "flux"]);
-    expect(Object.keys(await agents.cortex.listAgents())).toEqual([]);
-    expect(Object.keys(await agents.flux.listAgents())).toEqual([]);
+    for (const agent of Object.values(agents)) expect(await agent.listAgents()).toEqual({});
   });
 
   test("configures visible Chrome when browser support is enabled", () => {

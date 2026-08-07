@@ -31,7 +31,11 @@ describe("shared Mastra Toolkit runtime contract", () => {
       nativeTool: "subagent",
       targets: ["cortex", "flux", "zen"],
       delegatedLeavesReceiveSubagent: false,
+      supervisorSurface: "agents-map",
+      supervisorTargets: ["cortex", "flux", "zen"],
+      supervisorLeavesReceiveAgents: false,
     });
+    expect(first.roles.createAgentRegistry).toBeTypeOf("function");
     expect(first.containment).toEqual({
       maxToolCalls: 64,
       maxDelegations: 8,

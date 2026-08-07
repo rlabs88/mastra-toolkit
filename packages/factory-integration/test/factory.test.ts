@@ -8,7 +8,7 @@ import { createToolkitAgents } from "@rlabs/agents-roles";
 import { createToolkitRuntimeContract } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { Hono } from "hono";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   createFactoryControllerProjection,
   createFactoryRuntimeBinding,
@@ -46,6 +46,7 @@ describe("single-project Factory composition", () => {
       owner: "@mastra/factory",
       count: 1,
       canonicalModesAndSubagents: "upstream-blocked",
+      missingConstructionInputs: ["modes", "subagents", "controller-construction callback"],
     });
     expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
     expect(projection).not.toHaveProperty("tools.command_run");
@@ -53,6 +54,20 @@ describe("single-project Factory composition", () => {
       expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
     }
     expect(projection).not.toHaveProperty("controller");
+  });
+
+  test("leaves canonical delegation unavailable when Factory cannot mount it safely", async () => {
+    const profile = loadModelProfile();
+    const bundle = createFactoryAgentBundle({ profile, browser: false });
+    const tools = await new ToolkitFactoryIntegration(
+      bundle,
+      resolveRuntimeDefaultsV1(profile),
+    ).agentTools();
+
+    expect(tools).toHaveProperty("project_workflow");
+    expect(Object.keys(tools).filter(toolName =>
+      toolName === "subagent" || /^(?:use|delegate)_(?:cortex|flux|zen)$/.test(toolName),
+    )).toEqual([]);
   });
 
   test("resolves project, tenant, session, and workspace bindings per Factory request", async () => {
@@ -149,29 +164,12 @@ describe("single-project Factory composition", () => {
     const tools = await new ToolkitFactoryIntegration(bundle, defaults).agentTools();
     expect(tools).not.toHaveProperty("command_run");
     expect(tools).not.toHaveProperty("adhd_run");
-    const delegateCortex = tools.delegate_cortex as {
-      execute?: (input: unknown, context: unknown) => Promise<unknown>;
-    };
-    let sandboxInvoked = false;
-    const unboundContext = {
-      requestContext: new RequestContext(),
-      workspace: {
-        id: "control-plane-fallback",
-        resolveFilesystem: async () => ({ provider: "local", basePath: dataDirectory }),
-        resolveSandbox: async () => ({
-          executeCommand: async () => {
-            sandboxInvoked = true;
-            return { exitCode: 0, stdout: dataDirectory, stderr: "" };
-          },
-        }),
-      },
-    };
-    await expect(delegateCortex.execute?.({ task: "must not delegate on the Factory host", maxSteps: 1 }, unboundContext))
-      .rejects.toThrow(/persisted Factory project session/i);
+    expect(tools).not.toHaveProperty("delegate_cortex");
+    expect(tools).not.toHaveProperty("delegate_flux");
+    expect(tools).not.toHaveProperty("delegate_zen");
     for (const agent of Object.values(bundle.agents)) {
       expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
     }
-    expect(sandboxInvoked).toBe(false);
     const factory = await createToolkitFactory(config, bundle, defaults, environment);
 
     try {
@@ -244,83 +242,6 @@ describe("single-project Factory composition", () => {
     }
   }, 30_000);
 
-  test("returns delegated command results when a canonical agent ends on a tool step", async () => {
-    const profile = loadModelProfile();
-    const bundle = createFactoryAgentBundle({ profile, browser: false });
-    const commandResult = {
-      version: 1,
-      description: "show the bound checkout",
-      results: [{ status: "completed", output: "/sandbox/project\n/sandbox/project\n" }],
-      attachments: [],
-    };
-    const oversizedResult = { output: "x".repeat(5_000) };
-    const generate = vi.spyOn(bundle.agents.cortex, "generate").mockResolvedValue({
-      text: "",
-      runId: "delegated-run-1",
-      steps: [{
-        toolResults: [{
-          type: "tool-result",
-          payload: {
-            toolCallId: "command-call-1",
-            toolName: "execute_command",
-            result: commandResult,
-          },
-        }, {
-          type: "tool-result",
-          payload: {
-            toolCallId: "command-call-2",
-            toolName: "execute_command",
-            result: oversizedResult,
-          },
-        }],
-      }],
-    } as never);
-    const delegate = (await new ToolkitFactoryIntegration(
-      bundle,
-      resolveRuntimeDefaultsV1(profile),
-    ).agentTools()).delegate_cortex as {
-      execute?: (input: unknown, context: unknown) => Promise<unknown>;
-    };
-    const requestContext = new RequestContext();
-    const abortController = new AbortController();
-    requestContext.set("user", { id: "user-1", organizationId: "org-1" });
-    requestContext.set("controller", {
-      threadId: "thread-1",
-      resourceId: "session-1",
-      getState: () => ({ factoryProjectId: "project-1" }),
-    });
-
-    const result = await delegate.execute?.({ task: "show the bound checkout", maxSteps: 4 }, {
-      requestContext,
-      abortSignal: abortController.signal,
-      workspace: {
-        id: "mfw-session-1",
-        resolveFilesystem: async () => ({ provider: "sandbox", basePath: "/sandbox/project" }),
-        resolveSandbox: async () => ({ executeCommand: async () => ({ exitCode: 0, stdout: "", stderr: "" }) }),
-      },
-    });
-
-    expect(result).toEqual({
-      agentId: "cortex",
-      text: "",
-      runId: "delegated-run-1",
-      toolResults: [{
-        toolCallId: "command-call-1",
-        toolName: "execute_command",
-        output: JSON.stringify(commandResult),
-        truncated: false,
-      }, {
-        toolCallId: "command-call-2",
-        toolName: "execute_command",
-        output: JSON.stringify(oversizedResult).slice(0, 4_000),
-        truncated: true,
-      }],
-    });
-    expect(generate).toHaveBeenCalledWith("show the bound checkout", expect.objectContaining({
-      abortSignal: abortController.signal,
-      maxSteps: 4,
-    }));
-  });
 });
 
 function factoryRequestContext(orgId: string, projectId: string, sessionId: string): RequestContext {

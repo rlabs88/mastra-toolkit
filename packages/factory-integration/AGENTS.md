@@ -27,7 +27,7 @@ applies_to: ["**/*"]
 ```text
 src/
 ├── config.ts      # validated config, auth, storage, and local provider migration
-├── integration.ts # Factory projection, binding, delegation, and project workflow tools
+├── integration.ts # Factory projection, binding, delegation availability, and project workflow tools
 ├── runtime.ts     # Factory and Mastra composition lifecycle
 └── index.ts       # the only public TypeScript facade
 ```

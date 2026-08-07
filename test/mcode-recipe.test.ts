@@ -37,6 +37,32 @@ describe("canonical MCode recipe", () => {
 
   });
 
+  test("projects Studio supervisors over canonical non-recursive leaves while MCode stays controller-native", async () => {
+    const contract = createToolkitRuntimeContract({ profile: loadModelProfile() });
+    const binding = {
+      identity: { projectId: "project", userId: "user", sessionId: "session" },
+      workspace: { resolve: () => ({ id: "workspace" }) },
+      sandbox: { resolve: () => ({ provider: "local" }) },
+      commandExecution: { authorize: () => undefined },
+      approval: { context: { host: "test" } },
+    } satisfies ToolkitRuntimeBinding;
+    const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
+    const studio = createStudioControllerProjection(contract, binding, { browser: false });
+
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    for (const subagent of mcode.controller.subagents) {
+      expect(Object.keys(subagent.tools ?? {}).filter(isRoleSpecificDelegationTool)).toEqual([]);
+    }
+    for (const supervisor of Object.values(studio.agents)) {
+      const leaves = await supervisor.listAgents();
+      expect(Object.keys(leaves)).toEqual(["cortex", "flux", "zen"]);
+    }
+    for (const agent of Object.values(mcode.agents)) {
+      expect(await agent.listAgents()).toEqual({});
+      expect(Object.keys(await agent.listTools()).filter(isRoleSpecificDelegationTool)).toEqual([]);
+    }
+  });
+
   test("projects native workspace tools without legacy command tools", async () => {
     const recipe = createMcodeRecipe({
       profile: loadModelProfile(),
@@ -162,3 +188,7 @@ describe("canonical MCode recipe", () => {
     }, process.cwd(), profile).runtime.proxy.model).toBe("startup-only");
   });
 });
+
+function isRoleSpecificDelegationTool(toolName: string): boolean {
+  return /^(?:use|delegate)_(?:cortex|flux|zen)$/.test(toolName);
+}

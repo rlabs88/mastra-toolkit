@@ -12,7 +12,7 @@ Run `npm run code:infisical` in a private interactive tmux session. Wait up to 1
 
 ## Factory
 
-Run `npm run dev:factory:infisical` as a named persistent tmux job and discover its URL from logs. Open the URL in a dedicated headed `agent-browser` session, capture an accessibility snapshot and screenshot, and verify there are no fatal page or console errors. Create or open an isolated Factory project/session, request `FACTORY_E2E_OK`, verify exactly one response and the expected project/repository binding, refresh to prove persistence, then repeat the critical path with visual CUA mouse/keyboard interaction. Send `SIGTERM`, require shutdown within 30 seconds, verify the port closes, and confirm no Factory worker remains.
+Run `npm run dev:factory:infisical` as a named persistent tmux job and discover its URL from logs. Open the URL in a dedicated headed `agent-browser` session, capture an accessibility snapshot and screenshot, and verify there are no fatal page or console errors. Create or open an isolated Factory project/session, request `FACTORY_E2E_OK`, verify exactly one response and the expected project/repository binding, and confirm diagnostics report canonical delegation as upstream-blocked with no role-specific delegation tools. Refresh to prove persistence, then repeat the critical path with visual CUA mouse/keyboard interaction. Send `SIGTERM`, require shutdown within 30 seconds, verify the port closes, and confirm no Factory worker remains.
 
 ## Studio
 
