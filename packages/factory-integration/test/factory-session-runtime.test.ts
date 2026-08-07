@@ -83,7 +83,8 @@ describe("durable Factory project sessions", () => {
       workspace: firstWorkspace,
     });
     expect(Object.keys(nativeTools)).toEqual(expect.arrayContaining(["view", "find_files", "write_file", "execute_command"]));
-    expect(Object.keys(nativeTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+    expect(Object.keys(nativeTools)).not.toContain("command_run");
+    expect(Object.keys(nativeTools)).not.toContain("adhd_run");
     await nativeTools.execute_command.execute(
       { command: "pwd" },
       { requestContext: nativeRequestContext, workspace: firstWorkspace },

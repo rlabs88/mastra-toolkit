@@ -51,7 +51,8 @@ describe("single-project Factory composition", () => {
     expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
     expect(projection).not.toHaveProperty("tools.command_run");
     for (const agent of Object.values(projection.agents)) {
-      expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(await agent.listTools())).not.toContain("command_run");
+      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
     expect(projection).not.toHaveProperty("controller");
   });
@@ -153,7 +154,7 @@ describe("single-project Factory composition", () => {
       agentBoundary: {
         source: "@rlabs/mastra-primitives-export",
         contractDigest: bundle.capability.contractDigest,
-        controllerConstruction: "unsupported-upstream",
+        controllerConstruction: bundle.capability.controllerConstruction,
         repositoryConfiguration: {
           verified: ["published-workflows"],
           upstreamUnverified: ["skills"],
@@ -168,7 +169,8 @@ describe("single-project Factory composition", () => {
     expect(tools).not.toHaveProperty("delegate_flux");
     expect(tools).not.toHaveProperty("delegate_zen");
     for (const agent of Object.values(bundle.agents)) {
-      expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(await agent.listTools())).not.toContain("command_run");
+      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
     const factory = await createToolkitFactory(config, bundle, defaults, environment);
 
@@ -184,7 +186,8 @@ describe("single-project Factory composition", () => {
       for (const id of ["cortex", "flux", "zen"] as const) {
         const registered = composed.getAgent(id);
         expect(registered.id).toBe(id);
-        expect(Object.keys(await registered.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+        expect(Object.keys(await registered.listTools())).not.toContain("command_run");
+        expect(Object.keys(await registered.listTools())).not.toContain("adhd_run");
       }
       expect(composed.getAgentController("code")).toBeDefined();
       expect(prepared.server?.host).toBe("127.0.0.1");

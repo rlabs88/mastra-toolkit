@@ -162,6 +162,30 @@ describe("agent tool policies", () => {
     expect(() => hooks.beforeToolCall?.({ toolName: "subagent", input: { task: "scope-9" }, context }))
       .toThrow(/delegation limit/);
 
+    const supervisorHooks = createRunBudgetHooks(() => 1_000);
+    const supervisorContext = { requestContext: new RequestContext() };
+    const supervisorCall = {
+      toolName: "agent-cortex",
+      input: { task: "inspect the canonical registry" },
+      context: supervisorContext,
+    };
+    await supervisorHooks.beforeToolCall?.(supervisorCall);
+    expect(() => supervisorHooks.beforeToolCall?.(supervisorCall)).toThrow(/Duplicate in-flight scope/);
+    await supervisorHooks.afterToolCall?.({ ...supervisorCall, output: "done" });
+    expect(() => supervisorHooks.beforeToolCall?.(supervisorCall)).toThrow(/No progress detected/);
+
+    const supervisorBudgetContext = { requestContext: new RequestContext() };
+    for (let index = 0; index < 8; index += 1) {
+      const call = { toolName: "agent-flux", input: { task: `scope-${index}` }, context: supervisorBudgetContext };
+      await supervisorHooks.beforeToolCall?.(call);
+      await supervisorHooks.afterToolCall?.({ ...call, output: "done" });
+    }
+    expect(() => supervisorHooks.beforeToolCall?.({
+      toolName: "agent-zen",
+      input: { task: "scope-9" },
+      context: supervisorBudgetContext,
+    })).toThrow(/delegation limit/);
+
     const retainedContext = { requestContext: new RequestContext() };
     const retainedCall = {
       toolName: "read",

@@ -120,7 +120,7 @@ export function createRunBudgetHooks(now: () => number = Date.now): ToolHooks {
       if (state.calls > RUN_MAX_TOOL_CALLS) {
         throw new Error("Run budget exhausted: aggregate tool-call limit reached");
       }
-      if (context.toolName === "subagent") {
+      if (isDelegationTool(context.toolName)) {
         state.delegations += 1;
         if (state.delegations > RUN_MAX_DELEGATIONS) {
           throw new Error("Run budget exhausted: aggregate delegation limit reached");
@@ -180,9 +180,13 @@ function toolRequestContext(value: unknown): RequestContext | undefined {
 }
 
 function isDeduplicatedTool(toolName: string): boolean {
-  return toolName === "subagent"
+  return isDelegationTool(toolName)
     || toolName === "adhd_run"
     || isExternalWriteTool(toolName);
+}
+
+function isDelegationTool(toolName: string): boolean {
+  return toolName === "subagent" || /^agent-[a-z0-9][a-z0-9_-]*$/i.test(toolName);
 }
 
 function isExternalWriteTool(toolName: string): boolean {

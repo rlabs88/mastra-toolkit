@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
-import { createWorkspaceTools } from "@mastra/core/workspace";
-import { describe, expect, test } from "vitest";
+import { createWorkspaceTools, LocalFilesystem, Workspace } from "@mastra/core/workspace";
+import { describe, expect, test, vi } from "vitest";
 import { CODE_MODE_IDS, loadMcodeConfig, mountMcodeRuntime } from "@rlabs/mcode";
 import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mounting-manager";
 
@@ -83,16 +84,98 @@ describe("local project runtime", () => {
         expect(subagentTool.inputSchema.parse({ agentType, task: "Inspect the runtime" }).agentType).toBe(agentType);
       }
       expect(() => subagentTool.inputSchema.parse({ agentType: "unknown", task: "Inspect" })).toThrow();
-      const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
-      expect(Object.keys(agentTools)).toContain("project_specialist");
-      expect(Object.keys(agentTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
-      expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
-      expect(Object.keys(agentTools)).toContain("request_access");
       const activeWorkspace = await runtime.controller.getCurrentAgent(first).getWorkspace({ requestContext: context });
       if (!activeWorkspace) throw new Error("Expected the active project workspace");
+
+      const isolatedRoot = await mkdtemp(join(tmpdir(), "mastra-isolated-subagent-"));
+      const isolatedWorkspace = new Workspace({
+        id: "isolated-subagent-workspace",
+        filesystem: new LocalFilesystem({ basePath: isolatedRoot, contained: true }),
+      });
+      const observedRuns: Array<{ id: string; workspaceId: string; toolIds: string[] }> = [];
+      const stream = vi.spyOn(Agent.prototype, "stream").mockImplementation((async function (
+        this: Agent,
+        ...args: unknown[]
+      ) {
+        const messages = args[0];
+        const options = args[1] as { requestContext?: RequestContext; abortSignal?: AbortSignal } | undefined;
+        const requestContext = options?.requestContext as RequestContext;
+        const workspace = await this.getWorkspace({ requestContext });
+        if (!workspace) throw new Error("Expected the delegated workspace");
+        const toolIds = Object.keys(await this.listTools({ requestContext }));
+        observedRuns.push({ id: this.id, workspaceId: workspace.id, toolIds });
+        const abortSignal = options?.abortSignal;
+        if (String(messages).includes("wait for cancellation")) {
+          return {
+            fullStream: (async function*() {
+              await new Promise<void>(resolve => {
+                if (abortSignal?.aborted) resolve();
+                else abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+              });
+            })(),
+            getFullOutput: async () => ({ text: "should-not-complete" }),
+          } as never;
+        }
+        return {
+          fullStream: (async function*() {})(),
+          getFullOutput: async () => ({ text: `${this.id}:ok` }),
+        } as never;
+      }) as never);
+      const executeSubagent = (subagentTool as unknown as {
+        execute?: (input: unknown, context: unknown) => Promise<{ content: string; isError: boolean }>;
+      }).execute;
+      if (!executeSubagent) throw new Error("Expected the native AgentController subagent executor");
+
+      try {
+        for (const [agentType, workspace] of [
+          ["cortex", activeWorkspace],
+          ["flux", isolatedWorkspace],
+          ["zen", activeWorkspace],
+        ] as const) {
+          const result = await executeSubagent(
+            { agentType, task: `Run ${agentType}` },
+            { requestContext: context, workspace, agent: { toolCallId: `${agentType}-call` } },
+          );
+          expect(result).toEqual({ content: `subagent-${agentType}:ok`, isError: false });
+        }
+
+        const abortController = new AbortController();
+        const controllerState = context.get("controller") as Record<string, unknown>;
+        const cancellationContext = new RequestContext(context.entries());
+        cancellationContext.set("controller", { ...controllerState, abortSignal: abortController.signal });
+        const cancelled = executeSubagent(
+          { agentType: "cortex", task: "wait for cancellation" },
+          { requestContext: cancellationContext, workspace: activeWorkspace, agent: { toolCallId: "cancel-call" } },
+        );
+        await Promise.resolve();
+        abortController.abort();
+        await expect(cancelled).resolves.toEqual({ content: "[Aborted by user]", isError: false });
+      } finally {
+        stream.mockRestore();
+      }
+
+      expect(observedRuns.map(({ id, workspaceId }) => ({ id, workspaceId }))).toEqual([
+        { id: "subagent-cortex", workspaceId: activeWorkspace.id },
+        { id: "subagent-flux", workspaceId: isolatedWorkspace.id },
+        { id: "subagent-zen", workspaceId: activeWorkspace.id },
+        { id: "subagent-cortex", workspaceId: activeWorkspace.id },
+      ]);
+      for (const run of observedRuns) {
+        expect(run.toolIds).not.toContain("subagent");
+        expect(run.toolIds).not.toContain("command_run");
+        expect(run.toolIds).not.toContain("adhd_run");
+      }
+
+      const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
+      expect(Object.keys(agentTools)).toContain("project_specialist");
+      expect(Object.keys(agentTools)).not.toContain("command_run");
+      expect(Object.keys(agentTools)).not.toContain("adhd_run");
+      expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
+      expect(Object.keys(agentTools)).toContain("request_access");
       const nativeTools = await createWorkspaceTools(activeWorkspace, { requestContext: context, workspace: activeWorkspace });
       expect(Object.keys(nativeTools)).toEqual(expect.arrayContaining(["view", "find_files", "write_file", "execute_command"]));
-      expect(Object.keys(nativeTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(nativeTools)).not.toContain("command_run");
+      expect(Object.keys(nativeTools)).not.toContain("adhd_run");
       const executeResult = await nativeTools.execute_command.execute(
         { command: "pwd" },
         { requestContext: context, workspace: activeWorkspace },
@@ -101,7 +184,8 @@ describe("local project runtime", () => {
 
       const specialist = runtime.resources.snapshot().specialistAgents.get("review")!;
       const specialistTools = await specialist.listTools({ requestContext: context });
-      expect(Object.keys(specialistTools)).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(specialistTools)).not.toContain("command_run");
+      expect(Object.keys(specialistTools)).not.toContain("adhd_run");
       expect(await specialist.getWorkspace({ requestContext: context })).toBe(activeWorkspace);
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {

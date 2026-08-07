@@ -228,7 +228,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
       agentBoundary: {
         source: "@rlabs/mastra-primitives-export",
         contractDigest: this.bundle.capability.contractDigest,
-        controllerConstruction: "unsupported-upstream",
+        controllerConstruction: this.bundle.capability.controllerConstruction,
         repositoryConfiguration: {
           verified: ["published-workflows"],
           upstreamUnverified: ["skills"],
@@ -306,14 +306,6 @@ export function createFactoryRuntimeBinding(): ToolkitRuntimeBinding {
         await requireFactoryProjectSession({ requestContext, workspace });
         return workspace.resolveSandbox({ requestContext });
       },
-    },
-    commandExecution: {
-      authorize: context => requireFactoryProjectSession({
-        requestContext: context?.requestContext as RequestContext,
-        ...(context?.workspace ? {
-          workspace: context.workspace as NonNullable<FactoryProjectSessionContext["workspace"]>,
-        } : {}),
-      }),
     },
     approval: { context: { host: "factory", scope: "project-user-session" } },
   };

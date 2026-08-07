@@ -20,7 +20,6 @@ import { CORTEX_ROLE, FLUX_ROLE, ZEN_ROLE, type RoleDefinition } from "./roles.j
 import { composePrompt } from "./prompts.js";
 
 export const TOOLKIT_WORKSPACE_CONTEXT_KEY = "mastraToolkitWorkspace";
-export const TOOLKIT_DELEGATED_RUN_CONTEXT_KEY = "mastraToolkitDelegatedRun";
 
 export interface ToolkitAgentsOptions {
   readonly browser: boolean;
@@ -48,10 +47,11 @@ export interface ToolkitAgentRegistry {
 }
 
 export function createToolkitAgentRegistry(options: ToolkitAgentsOptions): ToolkitAgentRegistry {
-  const leaves = createToolkitAgents(options);
+  const resolvedOptions = options.profile ? options : { ...options, profile: loadModelProfile() };
+  const leaves = createAgentSet(resolvedOptions);
   return {
     leaves,
-    supervisors: createAgentSet(options, leaves),
+    supervisors: createAgentSet(resolvedOptions, leaves),
   };
 }
 
@@ -64,7 +64,6 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
   const cortex = createAgent(
     CORTEX_ROLE,
     profile,
-    {},
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -73,7 +72,6 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
   const flux = createAgent(
     FLUX_ROLE,
     profile,
-    {},
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -82,7 +80,6 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
   const zen = createAgent(
     ZEN_ROLE,
     profile,
-    {},
     options.additionalTools,
     browser(options),
     options.hooks,
@@ -94,7 +91,6 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
 function createAgent<TId extends RoleDefinition["id"]>(
   role: RoleDefinition<TId>,
   profile: ModelProfile,
-  tools: ToolsInput,
   additionalTools?: ToolkitAdditionalTools,
   agentBrowser?: StagehandBrowser,
   additionalHooks?: ToolHooks,
@@ -111,7 +107,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
         : additionalTools;
-      return Object.fromEntries(Object.entries({ ...resolvedAdditionalTools, ...tools }).filter(
+      return Object.fromEntries(Object.entries({ ...resolvedAdditionalTools }).filter(
         ([id]) => id !== "command_run" && id !== "adhd_run",
       )) as ToolsInput;
     },

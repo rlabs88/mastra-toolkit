@@ -19,7 +19,6 @@ describe("canonical MCode recipe", () => {
       identity: { projectId: "local-project", userId: "local-user", sessionId: "local-session" },
       workspace: { resolve: () => workspace },
       sandbox: { resolve: () => sandbox },
-      commandExecution: { authorize: () => undefined },
       approval: { context: { host: "local" } },
     } satisfies ToolkitRuntimeBinding<typeof workspace, typeof sandbox>;
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
@@ -43,7 +42,6 @@ describe("canonical MCode recipe", () => {
       identity: { projectId: "project", userId: "user", sessionId: "session" },
       workspace: { resolve: () => ({ id: "workspace" }) },
       sandbox: { resolve: () => ({ provider: "local" }) },
-      commandExecution: { authorize: () => undefined },
       approval: { context: { host: "test" } },
     } satisfies ToolkitRuntimeBinding;
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
@@ -69,7 +67,9 @@ describe("canonical MCode recipe", () => {
       browser: false,
     });
 
-    expect(recipe.version).toBe(1);
+    expect(recipe.version).toBe(2);
+    expect(recipe.capability.schemaVersion).toBe(2);
+    expect(recipe.capability.projectionVersion).toBe(2);
     expect(recipe).not.toHaveProperty("settings");
     expect(recipe.controller.modes.map(mode => mode.id)).toEqual([
       "cortex/scope",
@@ -86,7 +86,8 @@ describe("canonical MCode recipe", () => {
       !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run" || tool === "adhd_run")
     )).toBe(true);
     for (const agent of Object.values(recipe.agents)) {
-      expect(Object.keys(await agent.listTools())).not.toEqual(expect.arrayContaining(["command_run", "adhd_run"]));
+      expect(Object.keys(await agent.listTools())).not.toContain("command_run");
+      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
   });
 

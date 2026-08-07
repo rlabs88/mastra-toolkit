@@ -23,8 +23,8 @@ import {
 import { createHash } from "node:crypto";
 import { createSandboxMachine } from "@rlabs/sandbox";
 
-export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 1 as const;
-const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 1 as const;
+export const TOOLKIT_RUNTIME_CONTRACT_VERSION = 2 as const;
+const TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION = 2 as const;
 
 export interface ToolkitRuntimeIdentity {
   readonly projectId: string;
@@ -40,12 +40,6 @@ export interface ToolkitRuntimeBinding<TWorkspace = unknown, TSandbox = unknown>
   readonly identity: ToolkitRuntimeIdentity | ToolkitRuntimeResolver<ToolkitRuntimeIdentity>;
   readonly workspace: ToolkitRuntimeResolver<TWorkspace>;
   readonly sandbox: ToolkitRuntimeResolver<TSandbox>;
-  readonly commandExecution: {
-    authorize(context?: {
-      readonly requestContext?: unknown;
-      readonly workspace?: TWorkspace;
-    }): void | Promise<void>;
-  };
   readonly browser?: { readonly implementation: unknown };
   readonly approval: { readonly context: unknown };
 }
@@ -55,7 +49,7 @@ export interface ToolkitRuntimeContractOptions {
   readonly providerBaseUrl?: string;
 }
 
-export interface ToolkitRuntimeCapabilityDescriptorV1 {
+export interface ToolkitRuntimeCapabilityDescriptorV2 {
   readonly schemaVersion: typeof TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION;
   readonly contractVersion: typeof TOOLKIT_RUNTIME_CONTRACT_VERSION;
   readonly roles: readonly ["cortex", "flux", "zen"];
@@ -116,14 +110,14 @@ export interface ToolkitRuntimeContract {
     readonly createAgents: typeof createToolkitAgents;
   };
   readonly tools: {
-    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV1["tools"]["agentVisible"];
-    readonly compatibilityLibraries: ToolkitRuntimeCapabilityDescriptorV1["tools"]["compatibilityLibraries"];
+    readonly agentVisible: ToolkitRuntimeCapabilityDescriptorV2["tools"]["agentVisible"];
+    readonly compatibilityLibraries: ToolkitRuntimeCapabilityDescriptorV2["tools"]["compatibilityLibraries"];
     readonly createRunBudgetHooks: typeof createRunBudgetHooks;
     readonly createToolAuditHooks: typeof createToolAuditHooks;
     readonly createVisibleBrowser: typeof createVisibleBrowser;
     readonly browserActionRequiresApproval: typeof browserActionRequiresApproval;
   };
-  readonly delegation: ToolkitRuntimeCapabilityDescriptorV1["delegation"];
+  readonly delegation: ToolkitRuntimeCapabilityDescriptorV2["delegation"];
   readonly containment: typeof RUN_CONTAINMENT_POLICY;
   readonly runtime: {
     readonly profile: ModelProfile;
@@ -138,7 +132,7 @@ export interface ToolkitRuntimeContract {
     readonly contextKey: typeof TOOLKIT_WORKSPACE_CONTEXT_KEY;
     readonly ProjectMountingManager: typeof ProjectMountingManager;
   };
-  readonly capability: ToolkitRuntimeCapabilityDescriptorV1;
+  readonly capability: ToolkitRuntimeCapabilityDescriptorV2;
 }
 
 export function createToolkitRuntimeContract(
@@ -202,7 +196,7 @@ export function createToolkitRuntimeContract(
   const capability = deepFreeze({
     ...payload,
     digest: digest(stableJson(payload)),
-  }) as ToolkitRuntimeCapabilityDescriptorV1;
+  }) as ToolkitRuntimeCapabilityDescriptorV2;
 
   return deepFreeze({
     version: TOOLKIT_RUNTIME_CONTRACT_VERSION,
@@ -255,7 +249,7 @@ function deepFreeze<T>(value: T): T {
 
 export function verifyToolkitRuntimeCapability(
   contract: ToolkitRuntimeContract,
-  capability: ToolkitRuntimeCapabilityDescriptorV1 | string,
+  capability: ToolkitRuntimeCapabilityDescriptorV2 | string,
 ): boolean {
   if (typeof capability === "string") return capability === contract.capability.digest;
   const { digest: candidateDigest, ...payload } = capability;

@@ -272,13 +272,6 @@ export async function prepareMcodeRuntime(
     },
     workspace: { resolve: () => workspace },
     sandbox: { resolve: () => workspace.resolveSandbox({ requestContext: new RequestContext() }) },
-    commandExecution: {
-      authorize: context => {
-        if (context?.workspace !== workspace) {
-          throw new Error("MCode command execution requires the bound project workspace");
-        }
-      },
-    },
     approval: { context: { host: options.host ?? "mcode" } },
   } satisfies ToolkitRuntimeBinding<typeof workspace, Awaited<ReturnType<typeof workspace.resolveSandbox>>>;
   let resources: ProjectMountingManager | undefined;

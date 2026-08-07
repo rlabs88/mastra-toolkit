@@ -3,7 +3,7 @@ export {
   createToolkitRuntimeContract,
   verifyToolkitRuntimeCapability,
   type ToolkitRuntimeBinding,
-  type ToolkitRuntimeCapabilityDescriptorV1,
+  type ToolkitRuntimeCapabilityDescriptorV2,
   type ToolkitRuntimeContract,
   type ToolkitRuntimeContractOptions,
   type ToolkitRuntimeIdentity,
