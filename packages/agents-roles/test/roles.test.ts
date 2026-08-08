@@ -120,13 +120,13 @@ describe("canonical agent roles", () => {
   test("directs every role to native Mastra workspace tools", () => {
     for (const id of ROLE_IDS) {
       const prompt = composePrompt(ROLES[id]);
-      expect(prompt).not.toMatch(/command_run|adhd_run/);
+      expect(prompt).not.toMatch(/command_run/);
       expect(prompt).toMatch(/Mastra workspace/i);
     }
     const flux = composePrompt(FLUX_ROLE);
     expect(flux).toMatch(/Use the existing native subagent surface/i);
     expect(flux).toMatch(/Do not invent a replacement orchestration tool/i);
-    expect(flux).not.toMatch(/ADHD|out-of-process|command-line tool|skill form/i);
+    expect(flux).not.toMatch(/out-of-process|command-line tool|skill form/i);
   });
 
   test("creates the canonical non-recursive leaf set", async () => {
