@@ -23,12 +23,173 @@ roles:
   cortex: code-frontier-high
   flux: code-frontier-high
   zen: code-frontier-high
+  # Ayra provisions domain-focused agents toward a goal and is the primary
+  # author of dynamic workflows. Orchestration-heavy, so it stays on the
+  # frontier tier rather than a cheaper one.
+  ayra: code-frontier-high
   specialist: code-frontier-high
   observer: code-workhorse-high
   reflector: code-workhorse-high
 code:
   defaultAgent: cortex
   defaultMode: build
+
+# Profile-level fallback budget. It applies only to an alias that declares no
+# card below, so a custom or newly added alias inherits a conservative floor
+# instead of a frontier model's budget.
 memory:
   contextBudgetTokens: 120000
   observationThresholdTokens: 60000
+
+# Model preset cards, keyed by an alias declared above. Every field is
+# optional; anything omitted falls back to `memory` and to the upstream
+# defaults mirrored in src/profile.ts. Cards are what make the context window
+# and the observational-memory budgets per-model properties instead of global
+# constants, and what lets a consumer select a model by capability
+# (`selectModelAlias`) rather than by a hardcoded alias name.
+#
+# Observation field wiring — only ONE of the three is shippable today:
+#
+#   observation.messageTokens   WIRED. Resolved for the default agent's card,
+#                               projected as the Mastra Code SDK
+#                               `omObservationThreshold`, and read upstream as
+#                               `observation.messageTokens`
+#                               (@mastra/code-sdk/dist/agents/memory.js:93,
+#                               via `obsThreshold` on memory.js:68).
+#
+#   observation.bufferTokens    UPSTREAM-BLOCKED. Hardcoded literal
+#                               `isResourceScope ? false : 1 / 5` at
+#                               @mastra/code-sdk/dist/agents/memory.js:90 with
+#                               no settings key anywhere in the package.
+#
+#   observation.bufferActivation
+#                               UPSTREAM-BLOCKED. Hardcoded literal
+#                               `isResourceScope ? void 0 : 2e3` at
+#                               @mastra/code-sdk/dist/agents/memory.js:91.
+#
+# The two blocked values are recorded here as declared intent so the target is
+# reviewable and ready the moment upstream exposes the extension point. They
+# are deliberately NOT projected into any host contract — see
+# UPSTREAM_BLOCKED_OBSERVATION_SETTINGS in src/profile.ts.
+#
+# reflection.observationTokens is WIRED and is a separate upstream setting
+# (`reflection.observationTokens`, memory.js:104). It is NOT the same knob as
+# observation.bufferTokens; do not collapse the two.
+modelCards:
+  primary:
+    contextWindowTokens: 200000
+    capabilities: [general, reasoning]
+    observation:
+      messageTokens: 120000
+      bufferTokens: 24000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 40000
+  gpt-4o:
+    contextWindowTokens: 128000
+    capabilities: [general, vision]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  secondary:
+    contextWindowTokens: 128000
+    capabilities: [general]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  third:
+    contextWindowTokens: 128000
+    capabilities: [general]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  code-frontier-max:
+    contextWindowTokens: 400000
+    capabilities: [code, reasoning, long-context]
+    observation:
+      messageTokens: 180000
+      bufferTokens: 30000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 60000
+  code-frontier-high:
+    contextWindowTokens: 400000
+    capabilities: [code, reasoning, long-context]
+    observation:
+      messageTokens: 180000
+      bufferTokens: 30000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 60000
+  code-frontier-low:
+    contextWindowTokens: 200000
+    capabilities: [code, reasoning]
+    observation:
+      messageTokens: 120000
+      bufferTokens: 24000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 40000
+  code-workhorse-high:
+    contextWindowTokens: 200000
+    capabilities: [code, reasoning]
+    observation:
+      messageTokens: 120000
+      bufferTokens: 24000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 40000
+  code-workhorse-low:
+    contextWindowTokens: 200000
+    capabilities: [code]
+    observation:
+      messageTokens: 120000
+      bufferTokens: 24000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 40000
+  code-economic:
+    contextWindowTokens: 128000
+    capabilities: [code, economical]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  fast:
+    contextWindowTokens: 128000
+    capabilities: [general, fast]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  fast-high:
+    contextWindowTokens: 128000
+    capabilities: [code, fast]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
+  fast-low:
+    contextWindowTokens: 128000
+    capabilities: [economical, fast]
+    observation:
+      messageTokens: 90000
+      bufferTokens: 18000
+      bufferActivation: 0.8
+    reflection:
+      observationTokens: 30000
