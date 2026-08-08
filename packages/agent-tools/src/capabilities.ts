@@ -115,8 +115,40 @@ function isDeduplicatedTool(toolName: string): boolean {
     || isExternalWriteTool(toolName);
 }
 
+/**
+ * Tools whose cost is exactly one delegation per call.
+ *
+ * `dynamic_workflow` is deliberately absent. Its cost is the number of agents
+ * its graph dispatches, which is one for a single agent entry and up to the
+ * fan-out ceiling for a `foreach`, and that number is known only after the
+ * graph has been validated and clamped inside the tool. It charges itself
+ * through `chargeRunDelegations` instead of being counted once here.
+ */
 function isDelegationTool(toolName: string): boolean {
   return toolName === "subagent" || /^agent-[a-z0-9][a-z0-9_-]*$/i.test(toolName);
+}
+
+/**
+ * Charges delegations against the live run budget from outside the tool hook.
+ *
+ * `beforeToolCall` sees a tool's name and its authored input, so it can only
+ * charge a fixed cost per call. A tool that dispatches a variable number of
+ * agents knows its real cost only once it has validated its own request, and
+ * the agents it dispatches never pass back through the hook — a workflow's
+ * agent steps invoke the agent directly rather than through a tool. Such a
+ * tool is the only thing that can report its own cost, so it charges here.
+ *
+ * No-ops when the host installed no run budget, matching the hook: an
+ * unmetered host stays unmetered rather than gaining state from a charge.
+ */
+export function chargeRunDelegations(requestContext: RequestContext, count: number): void {
+  if (count <= 0) return;
+  const state = requestContext.get(RUN_BUDGET_CONTEXT_KEY) as RunBudgetState | undefined;
+  if (!state) return;
+  state.delegations += count;
+  if (state.delegations > RUN_MAX_DELEGATIONS) {
+    throw new Error("Run budget exhausted: aggregate delegation limit reached");
+  }
 }
 
 function isExternalWriteTool(toolName: string): boolean {
