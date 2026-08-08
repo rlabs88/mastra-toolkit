@@ -28,8 +28,10 @@ roles:
   # frontier tier rather than a cheaper one.
   ayra: code-frontier-high
   specialist: code-frontier-high
-  observer: code-workhorse-high
-  reflector: code-workhorse-high
+  # Observation and reflection run after tool-heavy turns and are latency-
+  # sensitive, so both memory roles use the economical tier.
+  observer: code-economic
+  reflector: code-economic
 code:
   defaultAgent: cortex
   defaultMode: build

@@ -86,7 +86,7 @@ describe("model profile", () => {
       },
       reflection: { observationTokens: 60_000 },
     });
-    expect(resolveModelCard(profile, DEFAULT_OBSERVER_ALIAS).contextWindowTokens).toBe(200_000);
+    expect(resolveModelCard(profile, DEFAULT_OBSERVER_ALIAS).contextWindowTokens).toBe(128_000);
     expect(() => resolveModelCard(profile, "openai/gpt-5.6-sol")).toThrow(/unknown model alias/i);
 
     // Per-model, not global: smaller tiers carry smaller budgets.
@@ -166,10 +166,25 @@ describe("model profile", () => {
     expect(() => resolveAliasModelId(profile, "openai/gpt-5.6-sol")).toThrow(/unknown model alias/i);
   });
 
-  test("projects observation and reflection thresholds from the default agent's card", () => {
+  test("caps the observation threshold at the selected Observer's input budget", () => {
     expect(resolveObservationalMemoryThresholds(loadModelProfile())).toEqual({
-      observationThreshold: 180_000,
+      observationThreshold: 90_000,
       reflectionThreshold: 60_000,
+    });
+  });
+
+  test("projects economical observation and reflection models to both hosts", () => {
+    const defaults = resolveRuntimeDefaultsV1(loadModelProfile());
+
+    expect(defaults.codeSdk).toMatchObject({
+      observerModelId: "a1-proxy/code-economic",
+      reflectorModelId: "a1-proxy/code-economic",
+      observationThreshold: 90_000,
+    });
+    expect(defaults.factory).toMatchObject({
+      observerModelId: "a1-proxy/code-economic",
+      reflectorModelId: "a1-proxy/code-economic",
+      observationThreshold: 90_000,
     });
   });
 
@@ -225,8 +240,8 @@ describe("model profile", () => {
             gatewayModelId: "proxy/a1-proxy/code-frontier-high",
           },
           observer: {
-            alias: "code-workhorse-high",
-            providerModelId: "a1-proxy/code-workhorse-high",
+            alias: "code-economic",
+            providerModelId: "a1-proxy/code-economic",
           },
         },
       },
@@ -236,15 +251,15 @@ describe("model profile", () => {
       },
       codeSdk: {
         activeModelId: "a1-proxy/code-frontier-high",
-        observerModelId: "a1-proxy/code-workhorse-high",
-        reflectorModelId: "a1-proxy/code-workhorse-high",
-        observationThreshold: 180_000,
+        observerModelId: "a1-proxy/code-economic",
+        reflectorModelId: "a1-proxy/code-economic",
+        observationThreshold: 90_000,
         reflectionThreshold: 60_000,
       },
       factory: {
-        observerModelId: "a1-proxy/code-workhorse-high",
-        reflectorModelId: "a1-proxy/code-workhorse-high",
-        observationThreshold: 180_000,
+        observerModelId: "a1-proxy/code-economic",
+        reflectorModelId: "a1-proxy/code-economic",
+        observationThreshold: 90_000,
         reflectionThreshold: 60_000,
       },
       gateway: { models: profile.aliases },
@@ -285,7 +300,7 @@ describe("model profile", () => {
     expect(JSON.stringify(defaults)).not.toMatch(/apiKey|secret|credential/i);
   });
 
-  test("derives host thresholds from the default agent's card, not a global budget", () => {
+  test("caps the active agent's observation cadence to the Observer card", () => {
     const profile = structuredClone(loadModelProfile());
     const card = profile.modelCards[DEFAULT_ACTIVE_ALIAS]!;
     card.contextWindowTokens = 300_000;
@@ -299,11 +314,11 @@ describe("model profile", () => {
       secondaryInputTokens: 40_000,
     });
     expect(defaults.codeSdk).toMatchObject({
-      observationThreshold: 150_000,
+      observationThreshold: 90_000,
       reflectionThreshold: 40_000,
     });
     expect(defaults.factory).toMatchObject({
-      observationThreshold: 150_000,
+      observationThreshold: 90_000,
       reflectionThreshold: 40_000,
     });
   });

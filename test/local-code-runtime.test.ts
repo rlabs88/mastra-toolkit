@@ -48,7 +48,7 @@ describe("local Mastra Code runtime", () => {
       // Retuned to 180k in #174; upstream reads this as
       // `observation.messageTokens`. reflectionThreshold is a separate
       // upstream setting (`reflection.observationTokens`) and is unchanged.
-      observationThreshold: 180_000,
+      observationThreshold: 90_000,
       reflectionThreshold: 60_000,
     });
     expect(runtime.mastra.getAgent("cortex").id).toBe(runtime.agents.cortex.id);

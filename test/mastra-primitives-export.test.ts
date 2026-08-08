@@ -64,13 +64,11 @@ describe("shared Mastra Toolkit runtime contract", () => {
     expect(createToolkitRuntimeContract({ profile: changedProfile }).capability.digest)
       .not.toBe(first.capability.digest);
 
-    // Preset cards are behaviour, not annotation: the default agent's card sets
-    // the observational-memory thresholds every host resolves, so a card edit
-    // must move the shared capability digest. This replaces the older
-    // `memory.contextBudgetTokens` probe, which now only reaches an alias that
-    // declares no card and therefore no longer perturbs the digest.
+    // Preset cards are behaviour, not annotation: the selected Observer's card
+    // caps the batch every host resolves, so a card edit must move the shared
+    // capability digest.
     const changedCard = structuredClone(profile);
-    changedCard.modelCards["code-frontier-high"]!.observation!.messageTokens = 170_000;
+    changedCard.modelCards[profile.roles.observer]!.observation!.messageTokens = 80_000;
     expect(createToolkitRuntimeContract({ profile: changedCard }).capability.digest)
       .not.toBe(first.capability.digest);
 

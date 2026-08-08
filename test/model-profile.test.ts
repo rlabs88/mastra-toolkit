@@ -72,7 +72,7 @@ describe("model profile", () => {
     expect(card.observation.bufferActivation).toBe(0.8);
     expect(card.reflection.observationTokens).toBe(60_000);
     expect(resolveObservationalMemoryThresholds(profile)).toEqual({
-      observationThreshold: 180_000,
+      observationThreshold: 90_000,
       reflectionThreshold: 60_000,
     });
   });

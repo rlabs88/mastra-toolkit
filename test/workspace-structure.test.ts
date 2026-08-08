@@ -280,6 +280,22 @@ describe("workspace ownership", () => {
     expect(factorySources).not.toMatch(/from "@rlabs\/[^"/]+\//);
   });
 
+  test("requires refreshed MCode and both local Factory instances in end-user acceptance", async () => {
+    const policy = await readFile(join(root, "vault/acceptance-test-before-merge.md"), "utf8");
+    const normalizedPolicy = policy.replace(/\s+/g, " ");
+
+    expect(normalizedPolicy).toContain(
+      "Refresh the local `ax mcode` installation from the branch under test before launching the PTY.",
+    );
+    expect(normalizedPolicy).toContain(
+      "`ax mcode` resolves to the refreshed executable built from the source commit under test.",
+    );
+    expect(normalizedPolicy).toContain("Run both the **Alpha Factory** and the **Agent Factory**.");
+    expect(normalizedPolicy).toContain(
+      "Each Factory instance must pass both a user-created session and a ticket session.",
+    );
+  });
+
   test("packs every canonical MCode recipe source", async () => {
     const { stdout } = await execFileAsync(
       "npm",
