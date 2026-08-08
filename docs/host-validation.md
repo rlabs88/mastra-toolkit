@@ -8,7 +8,7 @@ Run typecheck, focused tests, and build first. Confirm `agent-browser` and its C
 
 ## MCode
 
-Run `npm run code:infisical` in a private interactive tmux session. Wait up to 120 seconds for the TUI, capture the initial pane and a CUA screenshot, submit a deterministic request for `MCODE_E2E_OK`, and require the response within 180 seconds. Run one native workspace read and one sandbox-backed `execute_command` operation, verify both resolve the isolated checkout, and confirm `command_run` and `adhd_run` are absent. Exercise one rendered mode or agent switch, exit normally, require exit within 30 seconds, verify the MCode database, and confirm no owned child process remains. When CUA is unavailable, repeat with literal tmux keystrokes and record the CUA gate as blocked.
+Run `npm run code:infisical` in a private interactive tmux session. Wait up to 120 seconds for the TUI, capture the initial pane and a CUA screenshot, submit a deterministic request for `MCODE_E2E_OK`, and require the response within 180 seconds. Run one native workspace read and one sandbox-backed `execute_command` operation, verify both resolve the isolated checkout, and confirm `command_run` is absent. Exercise one rendered mode or agent switch, exit normally, require exit within 30 seconds, verify the MCode database, and confirm no owned child process remains. When CUA is unavailable, repeat with literal tmux keystrokes and record the CUA gate as blocked.
 
 ## Factory
 

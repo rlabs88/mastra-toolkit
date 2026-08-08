@@ -84,14 +84,13 @@ describe("canonical MCode recipe", () => {
     expect(recipe).toHaveProperty("tools.dynamic_workflow");
     expect(recipe.capability.requiredTools).toContain("execute_command");
     expect(recipe.controller.subagents.every(subagent =>
-      !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run" || tool === "adhd_run")
+      !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run")
     )).toBe(true);
     expect(Object.keys(await recipe.agents.cortex.listTools())).toContain("dynamic_workflow");
     expect(Object.keys(await recipe.agents.zen.listTools())).toContain("dynamic_workflow");
     expect(Object.keys(await recipe.agents.flux.listTools())).toContain("dynamic_workflow");
     for (const agent of Object.values(recipe.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
-      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
   });
 

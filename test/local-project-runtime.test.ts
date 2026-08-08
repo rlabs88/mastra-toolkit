@@ -13,10 +13,10 @@ import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mou
 
 /**
  * Canonical roles that hold `dynamic_workflow` through an intentional grant in
- * the role projection (`agents-roles` passes it as a role tool). Flux is absent
- * only because that package never passes it there; on the mounted runtime it
- * was arriving through the project-mounting bridge by accident, which is the
- * path this suite closes.
+ * the role projection (`agents-roles` passes it as a role tool). Every canonical
+ * supervisor is granted it. Before that grant existed, the tool was reaching
+ * agents on the mounted runtime through the project-mounting bridge by
+ * accident, which is the path this suite closes.
  *
  * Deliberately a literal and not derived from the role registry: it records
  * which roles are *granted* the tool, which is not the same list as the roles
@@ -183,19 +183,16 @@ describe("local project runtime", () => {
       for (const run of observedRuns) {
         expect(run.toolIds).not.toContain("subagent");
         expect(run.toolIds).not.toContain("command_run");
-        expect(run.toolIds).not.toContain("adhd_run");
       }
 
       const agentTools = await runtime.controller.getCurrentAgent(first).listTools({ requestContext: context });
       expect(Object.keys(agentTools)).toContain("project_specialist");
       expect(Object.keys(agentTools)).not.toContain("command_run");
-      expect(Object.keys(agentTools)).not.toContain("adhd_run");
       expect(Object.keys(agentTools)).toContain("workflow_runtime_smoke");
       expect(Object.keys(agentTools)).toContain("request_access");
       const nativeTools = await createWorkspaceTools(activeWorkspace, { requestContext: context, workspace: activeWorkspace });
       expect(Object.keys(nativeTools)).toEqual(expect.arrayContaining(["view", "find_files", "write_file", "execute_command"]));
       expect(Object.keys(nativeTools)).not.toContain("command_run");
-      expect(Object.keys(nativeTools)).not.toContain("adhd_run");
       const executeResult = await nativeTools.execute_command.execute(
         { command: "pwd" },
         { requestContext: context, workspace: activeWorkspace },
@@ -205,7 +202,6 @@ describe("local project runtime", () => {
       const specialist = runtime.resources.snapshot().specialistAgents.get("review")!;
       const specialistTools = await specialist.listTools({ requestContext: context });
       expect(Object.keys(specialistTools)).not.toContain("command_run");
-      expect(Object.keys(specialistTools)).not.toContain("adhd_run");
       expect(await specialist.getWorkspace({ requestContext: context })).toBe(activeWorkspace);
 
       for (const agentId of ["cortex", "flux", "zen"] as const) {

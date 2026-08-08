@@ -70,7 +70,6 @@ describe("single-project Factory composition", () => {
     expect(toolId(projection.tools.dynamic_workflow)).toBe("dynamic_workflow");
     for (const agent of Object.values(projection.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
-      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
     // Canonical role policy decides which roles orchestrate; Factory only
     // decides that the capability exists and under which authority.
@@ -214,14 +213,12 @@ describe("single-project Factory composition", () => {
     });
     const tools = await new ToolkitFactoryIntegration(bundle, defaults).agentTools();
     expect(tools).not.toHaveProperty("command_run");
-    expect(tools).not.toHaveProperty("adhd_run");
     expect(tools).not.toHaveProperty("delegate_cortex");
     expect(tools).not.toHaveProperty("delegate_flux");
     expect(tools).not.toHaveProperty("delegate_zen");
     expect(toolId(tools.dynamic_workflow)).toBe("dynamic_workflow");
     for (const agent of Object.values(bundle.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
-      expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
     const factory = await createToolkitFactory(config, bundle, defaults, environment);
 
@@ -241,7 +238,6 @@ describe("single-project Factory composition", () => {
         const registered = composed.getAgent(id);
         expect(registered.id).toBe(id);
         expect(Object.keys(await registered.listTools())).not.toContain("command_run");
-        expect(Object.keys(await registered.listTools())).not.toContain("adhd_run");
       }
       expect(composed.getAgentController("code")).toBeDefined();
       expect(prepared.server?.host).toBe("127.0.0.1");
