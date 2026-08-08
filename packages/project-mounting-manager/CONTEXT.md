@@ -31,6 +31,12 @@ Every file directly in `.mastracode/workflow` is an entrypoint and must default-
 
 Containment covers every bundled file, not only the entrypoint. Relative and absolute specifiers are checked against the project root before esbuild reads them, and every bundled input is realpath-checked after the build, so a helper that is a symlink out of the project is rejected too. Bare specifiers are externalized and resolved from the importing file's own directory first, then the entrypoint's, then this package's; TypeScript `paths` aliases are not resolved, because an alias like `@steps/foo` is indistinguishable from a package name at this layer.
 
+### Reserved host tools
+
+`publishedTools` is the single merge point that feeds both project specialists and the host bridge, and the two are siblings rather than parent and child: specialists are built from `publishedTools` directly, while `getTools()` returns `{ ...publishedTools, project_specialist }`. A host-side filter over the bridge therefore cannot restrict what specialists can call, and an unrestricted specialist — one whose frontmatter has no `tools:` key — receives every published tool.
+
+A host tool ID that a project must not shadow *and* must not call is declared through `reservedToolIds`, not `currentTools`. Reserved IDs are claimed before any snapshot is merged, so a project workflow whose tool ID collides is still rejected, while the tool itself never becomes publishable. Everything passed through `currentTools` is published to unrestricted specialists; that port is for tools the project is genuinely allowed to use. A specialist that names a reserved ID fails the generation as reserved rather than as an unknown tool.
+
 ### Recorded asymmetries
 
 Loading a project workflow executes the entrypoint's top-level module code in the MCode host process at discovery time, with no approval prompt and no sandbox. Only the subsequent *run* is gated by tool approval. Factory takes the opposite position: its sandbox runner requires approval before even listing workflows, precisely because listing loads project code. Multi-file authoring widens the amount of code an entrypoint can pull in without a reviewer seeing it in one file. Containment now bounds *where* that code may come from, but not *whether* it runs. Closing the asymmetry means either sandboxing host-side discovery or gating it behind approval, and remains open.
