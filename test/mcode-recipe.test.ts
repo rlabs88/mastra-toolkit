@@ -28,7 +28,7 @@ describe("canonical MCode recipe", () => {
     expect(mcode.binding).toBe(binding);
     expect(studio.capability.contractDigest).toBe(contract.capability.digest);
     expect(mcode.controller.modes.map(mode => mode.id)).toEqual(studio.controller.modes.map(mode => mode.id));
-    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen", "ayra"]);
     expect(mcode.agents.cortex.id).toBe(contract.roles.definitions.cortex.id);
     expect(studio.agents.zen.id).toBe(contract.roles.definitions.zen.id);
     expect(mcode).not.toHaveProperty("agentController");
@@ -47,17 +47,19 @@ describe("canonical MCode recipe", () => {
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
     const studio = createStudioControllerProjection(contract, binding, { browser: false });
 
-    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen", "ayra"]);
     for (const subagent of mcode.controller.subagents) {
       expect(Object.keys(subagent.tools ?? {}).filter(isRoleSpecificDelegationTool)).toEqual([]);
     }
     for (const supervisor of Object.values(studio.agents)) {
       const leaves = await supervisor.listAgents();
-      expect(Object.keys(leaves)).toEqual(["cortex", "flux", "zen"]);
+      expect(Object.keys(leaves)).toEqual(["cortex", "flux", "zen", "ayra"]);
     }
-    expect(Object.keys(await studio.agents.cortex.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await studio.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await studio.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    // Every canonical supervisor now carries the orchestration surface; Flux's
+    // earlier exclusion was the bridge leak, not a policy.
+    for (const supervisor of Object.values(studio.agents)) {
+      expect(Object.keys(await supervisor.listTools())).toContain("dynamic_workflow");
+    }
     for (const agent of Object.values(mcode.agents)) {
       expect(await agent.listAgents()).toEqual({});
       expect(Object.keys(await agent.listTools()).filter(isRoleSpecificDelegationTool)).toEqual([]);
@@ -81,17 +83,19 @@ describe("canonical MCode recipe", () => {
       "flux/build",
       "zen/scope",
       "zen/build",
+      "ayra/scope",
+      "ayra/build",
     ]);
-    expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen", "ayra"]);
     expect(recipe).not.toHaveProperty("tools.command_run");
     expect(recipe).toHaveProperty("tools.dynamic_workflow");
     expect(recipe.capability.requiredTools).toContain("execute_command");
     expect(recipe.controller.subagents.every(subagent =>
       !Object.keys(subagent.tools ?? {}).some(tool => tool === "command_run" || tool === "adhd_run")
     )).toBe(true);
-    expect(Object.keys(await recipe.agents.cortex.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await recipe.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await recipe.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    for (const agent of Object.values(recipe.agents)) {
+      expect(Object.keys(await agent.listTools())).toContain("dynamic_workflow");
+    }
     for (const agent of Object.values(recipe.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
@@ -168,9 +172,13 @@ describe("canonical MCode recipe", () => {
 
   test("inherits runtime-memory changes through the shared contract digest", () => {
     const profile = loadModelProfile();
+    // The default agent's preset card, not the profile-level `memory` budget,
+    // now sets the observational-memory thresholds the recipe resolves. The
+    // raw budget only backs aliases that declare no card, so probing it here
+    // would no longer perturb anything the digest covers.
     const changedMemory = structuredClone(profile);
-    changedMemory.memory.contextBudgetTokens = 180_000;
-    changedMemory.memory.observationThresholdTokens = 70_000;
+    changedMemory.modelCards["code-frontier-high"]!.observation!.messageTokens = 170_000;
+    changedMemory.modelCards["code-frontier-high"]!.reflection!.observationTokens = 70_000;
     const original = createMcodeRecipe({
       profile,
       browser: false,

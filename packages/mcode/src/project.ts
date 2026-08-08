@@ -167,21 +167,29 @@ export function createMcodeWorkspace(
     specification: config.specification,
     ...(config.platform ? { platform: config.platform } : {}),
   });
+  // Home skill roots feed two settings that must agree: `skills` says where to
+  // look, and `allowedPaths` decides whether a contained filesystem may read
+  // there. Listing a path in only one silently yields no skills plus a logged
+  // permission warning, so both derive from this single list.
+  const homeSkillRoots = [
+    join(homedir(), ".agents", "skills"),
+    join(homedir(), ".claude", "skills"),
+    join(homedir(), ".mastracode", "skills"),
+  ];
   return new Workspace({
     id: "mastra-toolkit-workspace",
     name: "Mastra Toolkit Workspace",
     filesystem: new LocalFilesystem({
       basePath: workspaceRoot,
       contained: true,
-      allowedPaths: ["~/.agents/skills", "~/.mastracode/skills"],
+      allowedPaths: homeSkillRoots,
     }),
     sandbox,
     skills: [
       join(workspaceRoot, ".agents", "skills"),
       join(workspaceRoot, ".claude", "skills"),
       join(workspaceRoot, ".mastracode", "skills"),
-      join(homedir(), ".agents", "skills"),
-      join(homedir(), ".mastracode", "skills"),
+      ...homeSkillRoots,
     ],
     checkSkillFileMtime: options.hotReloadSkills ?? false,
     tools: {

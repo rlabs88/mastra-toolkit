@@ -69,6 +69,7 @@ describe("local project runtime", () => {
         { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
         { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
         { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
+        { id: "ayra", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
       ]);
 
       const first = await runtime.controller.createSession({ id: "first", ownerId: "test", scope: "first" });

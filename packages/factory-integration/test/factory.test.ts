@@ -74,9 +74,9 @@ describe("single-project Factory composition", () => {
     }
     // Canonical role policy decides which roles orchestrate; Factory only
     // decides that the capability exists and under which authority.
-    expect(Object.keys(await projection.agents.cortex.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await projection.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await projection.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    for (const agent of Object.values(projection.agents)) {
+      expect(Object.keys(await agent.listTools())).toContain("dynamic_workflow");
+    }
     expect(projection).not.toHaveProperty("controller");
   });
 
@@ -190,7 +190,10 @@ describe("single-project Factory composition", () => {
         source: "@rlabs/runtime-config/models.yaml",
         version: 1,
         factoryMemory: {
-          observationThreshold: 120_000,
+          // The default agent's preset card sets this; 180k is the retuned
+          // canonical activation threshold, and reflection is a separate
+          // upstream setting that the retune left alone.
+          observationThreshold: 180_000,
           reflectionThreshold: 60_000,
         },
         persistedPrecedence: "memory-settings-over-startup-defaults",

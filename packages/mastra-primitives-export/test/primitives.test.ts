@@ -24,8 +24,13 @@ describe("ToolkitRuntimeContract", () => {
     expect(first).not.toHaveProperty("controller");
     expect(Object.isFrozen(first.roles.definitions.cortex.model)).toBe(true);
 
+    // Preset cards are behaviour, not annotation: the default agent's card sets
+    // the observational-memory thresholds every host resolves, so a card edit
+    // must move the shared capability digest. This replaces the older
+    // `memory.contextBudgetTokens` probe, which now only reaches an alias that
+    // declares no card and therefore no longer perturbs the digest.
     const changedProfile = structuredClone(profile);
-    changedProfile.memory.contextBudgetTokens += 1;
+    changedProfile.modelCards["code-frontier-high"]!.observation!.messageTokens = 170_000;
     expect(createToolkitRuntimeContract({ profile: changedProfile }).capability.digest)
       .not.toBe(first.capability.digest);
     expect(createToolkitRuntimeContract({

@@ -16,7 +16,7 @@ import {
   resolveProxyGatewayModelId,
   type ModelProfile,
 } from "@rlabs/runtime-config";
-import { CORTEX_ROLE, FLUX_ROLE, ZEN_ROLE, type RoleDefinition } from "./roles.js";
+import { AYRA_ROLE, CORTEX_ROLE, FLUX_ROLE, ZEN_ROLE, type RoleDefinition } from "./roles.js";
 import { composePrompt } from "./prompts.js";
 
 export const TOOLKIT_WORKSPACE_CONTEXT_KEY = "mastraToolkitWorkspace";
@@ -44,6 +44,7 @@ export interface ToolkitAgents {
   readonly cortex: Agent<"cortex">;
   readonly flux: Agent<"flux">;
   readonly zen: Agent<"zen">;
+  readonly ayra: Agent<"ayra">;
 }
 
 export interface ToolkitAgentRegistry {
@@ -53,7 +54,14 @@ export interface ToolkitAgentRegistry {
 
 export function createToolkitAgentRegistry(options: ToolkitAgentsOptions): ToolkitAgentRegistry {
   const resolvedOptions = options.profile ? options : { ...options, profile: loadModelProfile() };
-  const leaves = createAgentSet(resolvedOptions);
+  // A leaf is the bottom of the delegation tree, so it never receives the
+  // orchestration surface. The tool's depth guard only trips on the
+  // request-context key its own dispatch sets, which a supervisor -> leaf hop
+  // never sets; withholding the tool is what keeps that hop from re-entering
+  // graph authoring. Hosts that mount this set as top-level agents use
+  // createToolkitAgents instead and keep the tool.
+  const { dynamicWorkflow: _supervisorOnly, ...leafOptions } = resolvedOptions;
+  const leaves = createAgentSet(leafOptions);
   return {
     leaves,
     supervisors: createAgentSet(resolvedOptions, leaves),
@@ -85,6 +93,7 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
     browser(options),
     options.hooks,
     agents,
+    orchestration,
   );
   const zen = createAgent(
     ZEN_ROLE,
@@ -95,7 +104,16 @@ function createAgentSet(options: ToolkitAgentsOptions, agents?: ToolkitAgents): 
     agents,
     orchestration,
   );
-  return { cortex, flux, zen };
+  const ayra = createAgent(
+    AYRA_ROLE,
+    profile,
+    options.additionalTools,
+    browser(options),
+    options.hooks,
+    agents,
+    orchestration,
+  );
+  return { cortex, flux, zen, ayra };
 }
 
 function createAgent<TId extends RoleDefinition["id"]>(

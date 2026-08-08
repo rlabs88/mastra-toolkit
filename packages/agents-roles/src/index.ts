@@ -9,6 +9,7 @@ export {
 } from "./agents.js";
 export {
   PROMPT_SECTION_HEADINGS,
+  ayraPrompt,
   composePrompt,
   cortexPrompt,
   fluxPrompt,
@@ -18,6 +19,7 @@ export {
 } from "./prompts.js";
 export {
   ARCHETYPES,
+  AYRA_ROLE,
   CORTEX_ROLE,
   FLUX_ROLE,
   ROLE_IDS,
