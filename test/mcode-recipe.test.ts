@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { ROLE_IDS } from "@rlabs/agents-roles";
 import {
   createMcodeCapabilityDescriptor,
   createMcodeControllerProjection,
@@ -28,7 +29,7 @@ describe("canonical MCode recipe", () => {
     expect(mcode.binding).toBe(binding);
     expect(studio.capability.contractDigest).toBe(contract.capability.digest);
     expect(mcode.controller.modes.map(mode => mode.id)).toEqual(studio.controller.modes.map(mode => mode.id));
-    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual([...ROLE_IDS]);
     expect(mcode.agents.cortex.id).toBe(contract.roles.definitions.cortex.id);
     expect(studio.agents.zen.id).toBe(contract.roles.definitions.zen.id);
     expect(mcode).not.toHaveProperty("agentController");
@@ -47,17 +48,17 @@ describe("canonical MCode recipe", () => {
     const mcode = createMcodeControllerProjection(contract, binding, { browser: false });
     const studio = createStudioControllerProjection(contract, binding, { browser: false });
 
-    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    expect(mcode.controller.subagents.map(subagent => subagent.id)).toEqual([...ROLE_IDS]);
     for (const subagent of mcode.controller.subagents) {
       expect(Object.keys(subagent.tools ?? {}).filter(isRoleSpecificDelegationTool)).toEqual([]);
     }
     for (const supervisor of Object.values(studio.agents)) {
       const leaves = await supervisor.listAgents();
-      expect(Object.keys(leaves)).toEqual(["cortex", "flux", "zen"]);
+      expect(Object.keys(leaves)).toEqual([...ROLE_IDS]);
     }
     expect(Object.keys(await studio.agents.cortex.listTools())).toContain("dynamic_workflow");
     expect(Object.keys(await studio.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await studio.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    expect(Object.keys(await studio.agents.flux.listTools())).toContain("dynamic_workflow");
     for (const agent of Object.values(mcode.agents)) {
       expect(await agent.listAgents()).toEqual({});
       expect(Object.keys(await agent.listTools()).filter(isRoleSpecificDelegationTool)).toEqual([]);
@@ -74,15 +75,11 @@ describe("canonical MCode recipe", () => {
     expect(recipe.capability.schemaVersion).toBe(3);
     expect(recipe.capability.projectionVersion).toBe(3);
     expect(recipe).not.toHaveProperty("settings");
-    expect(recipe.controller.modes.map(mode => mode.id)).toEqual([
-      "cortex/scope",
-      "cortex/build",
-      "flux/scope",
-      "flux/build",
-      "zen/scope",
-      "zen/build",
-    ]);
-    expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual(["cortex", "flux", "zen"]);
+    // Derived from the canonical role registry: two modes per role, so a new
+    // canonical role widens this list without an edit here.
+    expect(recipe.controller.modes.map(mode => mode.id))
+      .toEqual(ROLE_IDS.flatMap(role => [`${role}/scope`, `${role}/build`]));
+    expect(recipe.controller.subagents.map(subagent => subagent.id)).toEqual([...ROLE_IDS]);
     expect(recipe).not.toHaveProperty("tools.command_run");
     expect(recipe).toHaveProperty("tools.dynamic_workflow");
     expect(recipe.capability.requiredTools).toContain("execute_command");
@@ -91,7 +88,7 @@ describe("canonical MCode recipe", () => {
     )).toBe(true);
     expect(Object.keys(await recipe.agents.cortex.listTools())).toContain("dynamic_workflow");
     expect(Object.keys(await recipe.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await recipe.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    expect(Object.keys(await recipe.agents.flux.listTools())).toContain("dynamic_workflow");
     for (const agent of Object.values(recipe.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
@@ -115,7 +112,7 @@ describe("canonical MCode recipe", () => {
     // Widening any of these ceilings is an authority change, so it must be
     // visible to every digest-comparison test rather than silently landing.
     for (const widened of [
-      { agents: [...contract.roles.ids, "ayra"] },
+      { agents: [...contract.roles.ids, "project-specialist"] },
       { nestedWorkflows: ["project_release"] },
       { hostReservedToolIds: [] },
     ]) {

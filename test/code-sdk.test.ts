@@ -27,6 +27,7 @@ describe("Factory Code SDK configuration", () => {
       cortex: "proxy/a1-proxy/code-frontier-high",
       flux: "proxy/a1-proxy/code-frontier-high",
       zen: "proxy/a1-proxy/code-frontier-high",
+      ayra: "proxy/a1-proxy/code-frontier-high",
     });
     // 180k is the retuned canonical activation threshold from #174; the
     // reflection budget is a different upstream setting and is unchanged.
@@ -90,6 +91,7 @@ describe("Factory Code SDK configuration", () => {
       cortex: "openai/gpt-5.4-mini",
       flux: "proxy/a1-proxy/code-frontier-high",
       zen: "proxy/a1-proxy/code-frontier-high",
+      ayra: "proxy/a1-proxy/code-frontier-high",
     });
     expect(settings.models.omObservationThreshold).toBe(72_000);
     expect(settings.models.omReflectionThreshold).toBe(48_000);

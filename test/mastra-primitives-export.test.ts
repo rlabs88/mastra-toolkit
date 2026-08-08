@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { ROLE_IDS } from "@rlabs/agents-roles";
 import {
   createToolkitRuntimeContract,
   type ToolkitRuntimeBinding,
@@ -19,7 +20,7 @@ describe("shared Mastra Toolkit runtime contract", () => {
 
     expect(first.version).toBe(3);
     expect(first.capability.schemaVersion).toBe(3);
-    expect(first.roles.ids).toEqual(["cortex", "flux", "zen"]);
+    expect(first.roles.ids).toEqual([...ROLE_IDS]);
     expect(first.roles.definitions.cortex.id).toBe("cortex");
     expect(first.runtime.profile).toEqual(profile);
     expect(first.runtime.defaults.version).toBe(1);
@@ -29,10 +30,10 @@ describe("shared Mastra Toolkit runtime contract", () => {
     });
     expect(first.delegation).toEqual({
       nativeTool: "subagent",
-      targets: ["cortex", "flux", "zen"],
+      targets: [...ROLE_IDS],
       delegatedLeavesReceiveSubagent: false,
       supervisorSurface: "agents-map",
-      supervisorTargets: ["cortex", "flux", "zen"],
+      supervisorTargets: [...ROLE_IDS],
       supervisorLeavesReceiveAgents: false,
     });
     expect(first.roles.createAgentRegistry).toBeTypeOf("function");
@@ -121,6 +122,6 @@ describe("shared Mastra Toolkit runtime contract", () => {
       factory.capability.contractDigest,
     ])).toEqual(new Set([contract.capability.digest]));
     expect(Object.keys(mcode.agents)).toEqual(Object.keys(factory.agents));
-    expect(Object.keys(studio.agents)).toEqual(["cortex", "flux", "zen"]);
+    expect(Object.keys(studio.agents)).toEqual([...ROLE_IDS]);
   });
 });

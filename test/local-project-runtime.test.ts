@@ -20,13 +20,15 @@ import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mou
  *
  * Deliberately a literal and not derived from the role registry: it records
  * which roles are *granted* the tool, which is not the same list as the roles
- * a graph may *dispatch*. Add a role here when `agents-roles` grants it — Flux
- * and the incoming `ayra` both need that change there, not here.
+ * a graph may *dispatch*. Add a role here when `agents-roles` grants it. The
+ * two lists coincide today because every canonical supervisor is granted the
+ * tool; that is a current fact, not an invariant, so do not derive this.
  */
-const INTENTIONAL_DYNAMIC_WORKFLOW_ROLES: ReadonlyArray<"cortex" | "flux" | "zen"> = ["cortex", "zen"];
+const INTENTIONAL_DYNAMIC_WORKFLOW_ROLES: ReadonlyArray<"cortex" | "flux" | "zen" | "ayra">
+  = ["cortex", "flux", "zen", "ayra"];
 
 describe("local project runtime", () => {
-  test("mounts the six canonical modes on one caller-owned Mastra", async () => {
+  test("mounts every canonical mode on one caller-owned Mastra", async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), "mastra-local-project-"));
     const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-local-data-"));
     const workflowRoot = join(projectRoot, ".mastracode", "workflow");
@@ -69,6 +71,7 @@ describe("local project runtime", () => {
         { id: "cortex", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
         { id: "flux", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
         { id: "zen", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
+        { id: "ayra", defaultModelId: "proxy/a1-proxy/code-frontier-high", tools: [] },
       ]);
 
       const first = await runtime.controller.createSession({ id: "first", ownerId: "test", scope: "first" });
@@ -94,10 +97,10 @@ describe("local project runtime", () => {
         description: string;
         inputSchema: { parse(input: unknown): { agentType: string } };
       };
-      expect(subagentTool.description).toContain("**cortex**");
-      expect(subagentTool.description).toContain("**flux**");
-      expect(subagentTool.description).toContain("**zen**");
-      for (const agentType of ["cortex", "flux", "zen"]) {
+      for (const role of INTENTIONAL_DYNAMIC_WORKFLOW_ROLES) {
+        expect(subagentTool.description).toContain(`**${role}**`);
+      }
+      for (const agentType of ["cortex", "flux", "zen", "ayra"]) {
         expect(subagentTool.inputSchema.parse({ agentType, task: "Inspect the runtime" }).agentType).toBe(agentType);
       }
       expect(() => subagentTool.inputSchema.parse({ agentType: "unknown", task: "Inspect" })).toThrow();

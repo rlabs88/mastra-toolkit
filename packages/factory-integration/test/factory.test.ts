@@ -76,7 +76,7 @@ describe("single-project Factory composition", () => {
     // decides that the capability exists and under which authority.
     expect(Object.keys(await projection.agents.cortex.listTools())).toContain("dynamic_workflow");
     expect(Object.keys(await projection.agents.zen.listTools())).toContain("dynamic_workflow");
-    expect(Object.keys(await projection.agents.flux.listTools())).not.toContain("dynamic_workflow");
+    expect(Object.keys(await projection.agents.flux.listTools())).toContain("dynamic_workflow");
     expect(projection).not.toHaveProperty("controller");
   });
 
