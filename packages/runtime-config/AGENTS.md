@@ -15,9 +15,12 @@ applies_to: ["**/*"]
 
 ## Operating rules
 
-- Keep model aliases, role defaults, and provider metadata canonical in `config/models.yaml`.
+- Keep model aliases, role defaults, provider metadata, and per-model preset cards canonical in `config/models.yaml`.
 - Keep checked-in configuration secret-free; resolve only the environment variable named by the profile.
 - Expose host-neutral resolved configuration and keep Studio, Factory, and Code adaptation outside this package.
+- Keep `aliases` a flat `string[]`. Put per-model properties on the `modelCards` sibling map, keyed by a declared alias, with every field optional and a documented fallback. Reject a card whose alias the catalog never declared.
+- Never name a host package inside `src/`. `test/workspace-structure.test.ts` enforces this; record host-specific upstream provenance in `config/models.yaml` and `CONTEXT.md` instead.
+- Do not add a profile field that no host can honour. If a value is upstream-blocked, record it on the card as declared intent, name it in `UPSTREAM_BLOCKED_OBSERVATION_SETTINGS` with file:line evidence, and keep it out of every host projection.
 
 ## Structure and extension
 
