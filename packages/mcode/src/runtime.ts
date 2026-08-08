@@ -3,6 +3,7 @@ import {
   createBackgroundTaskTelemetryTerminal,
   startDynamicWorkflowBackgroundTaskObserver,
 } from "./background-task-observer.js";
+import { startForegroundToolFeedbackObserver } from "./tool-feedback-observer.js";
 import {
   CANONICAL_AGENT_IDS,
   CODE_MODE_IDS,
@@ -558,6 +559,10 @@ export async function createLocalMcodeRuntime(
     waitForActivation: true,
     emit: event => session.emit(event),
   });
+  const toolFeedbackObserver = startForegroundToolFeedbackObserver({
+    session,
+    emit: event => session.emit(event),
+  });
   const observedController = new Proxy(mounted.controller, {
     get(target, property) {
       if (property === "setResourceId") {
@@ -584,6 +589,7 @@ export async function createLocalMcodeRuntime(
   let localClosePromise: Promise<void> | undefined;
   const closeRuntime = async () => {
     localClosePromise ??= (async () => {
+      await toolFeedbackObserver.close();
       await backgroundTaskObserver.close();
       tui?.stop();
       releaseAllThreadLocks();

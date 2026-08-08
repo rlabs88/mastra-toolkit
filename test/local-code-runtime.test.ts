@@ -56,6 +56,26 @@ describe("local Mastra Code runtime", () => {
     expect(runtime.mastra.getAgent("zen").id).toBe(runtime.agents.zen.id);
     expect(runtime.controller.getCurrentAgent(runtime.session)).toBe(runtime.agents.cortex);
     expect(runtime.resources.snapshot().id).toBe(1);
+
+    const info: string[] = [];
+    const unsubscribe = runtime.session.subscribe(event => {
+      if (event.type === "info") info.push(event.message);
+    });
+    runtime.session.emit({
+      type: "tool_start",
+      toolCallId: "acceptance-search",
+      toolName: "search_content",
+      args: { query: "DEFAULT_OBSERVER_ALIAS" },
+    });
+    runtime.session.emit({
+      type: "tool_end",
+      toolCallId: "acceptance-search",
+      result: { matches: [] },
+      isError: false,
+    });
+    await vi.waitFor(() => expect(info).toHaveLength(1));
+    expect(info[0]).toMatch(/^Tool · search_content completed in \d+ ms · waiting for model continuation…$/);
+    unsubscribe();
   });
 
   test("uses one caller-supplied profile for CLI configuration and mounting", async () => {

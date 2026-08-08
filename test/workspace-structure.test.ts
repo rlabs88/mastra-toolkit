@@ -108,7 +108,14 @@ describe("workspace ownership", () => {
       "sandbox": ["contract.ts", "index.ts", "machine.ts", "providers.ts"],
       "project-mounting-manager": ["contract.ts", "discovery.ts", "index.ts", "manager.ts"],
       "mastra-primitives-export": ["index.ts", "primitives.ts"],
-      "mcode": ["background-task-observer.ts", "index.ts", "project.ts", "recipe.ts", "runtime.ts"],
+      "mcode": [
+        "background-task-observer.ts",
+        "index.ts",
+        "project.ts",
+        "recipe.ts",
+        "runtime.ts",
+        "tool-feedback-observer.ts",
+      ],
       "factory-integration": ["config.ts", "index.ts", "integration.ts", "runtime.ts"],
       "factory-github-projects": [
         "config.ts",
@@ -311,6 +318,7 @@ describe("workspace ownership", () => {
       "src/project.ts",
       "src/recipe.ts",
       "src/runtime.ts",
+      "src/tool-feedback-observer.ts",
     ]);
   }, 60_000);
 });
