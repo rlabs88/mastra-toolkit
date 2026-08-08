@@ -64,12 +64,20 @@ launcher behaviour that has already broken in production: credential wrapping, b
 and the environment `ax` builds. Testing the inner command proves nothing about the one a person
 types. #decision/testing/foundational
 
+Refresh the local `ax mcode` installation from the branch under test before launching the PTY.
+#requirement/testing/critical
+
+Record the resolved executable path and its source commit. The evidence must prove that `ax mcode`
+resolves to the refreshed executable built from the source commit under test. A successful run of a
+stale local installation is not evidence for the proposed change. #validation/testing/inspection
+
 Steps:
 
-1. Open a terminal through CUA and run `ax mcode` in the repository under test.
-2. Wait for the TUI to draw. The status line, the mode indicator, and the input box must be visible.
-3. Send an acceptance prompt and confirm the agent answers in the TUI.
-4. Where the change engineers a specific tool or task, drive *that* capability in the same session
+1. Refresh the local installation, then verify the executable path and source commit.
+2. Open a terminal through CUA and run `ax mcode` in the repository under test.
+3. Wait for the TUI to draw. The status line, the mode indicator, and the input box must be visible.
+4. Send an acceptance prompt and confirm the agent answers in the TUI.
+5. Where the change engineers a specific tool or task, drive *that* capability in the same session
    rather than only exchanging a greeting.
 
 Evidence: a screenshot or captured pane showing the rendered TUI and the agent's reply.
@@ -82,12 +90,24 @@ A boot that reaches "no fatal error" but never renders is a failure, not a pass.
 
 Boot the Factory and drive it through the browser GUI. #requirement/testing/critical
 
+Run both the **Alpha Factory** and the **Agent Factory**. #requirement/testing/critical
+
+Each Factory instance must pass both a user-created session and a ticket session.
+#requirement/testing/high
+
+These deployments exercise the same Factory runtime through different persisted projects, model
+settings, repositories, and session histories. Passing one does not establish that the other can
+create a sandbox, route its configured model, or resume an existing session.
+#decision/testing/structural
+
 Steps:
 
-1. Start the Factory and open it in a browser.
-2. Send an acceptance prompt in a **user-created session** and confirm the agent answers.
-3. Send an acceptance prompt in a **ticket session** — one bound to an issue or pull request — and
-   confirm the agent answers.
+1. Start the Alpha Factory and Agent Factory, then open each in a browser.
+2. In the Alpha Factory, send an acceptance prompt in a **user-created session** and confirm the
+   agent answers.
+3. In the Alpha Factory, send an acceptance prompt in a **ticket session** — one bound to an issue
+   or pull request — and confirm the agent answers.
+4. Repeat the user-created and ticket-session checks in the Agent Factory.
 
 Both session kinds are required. #requirement/testing/high
 
