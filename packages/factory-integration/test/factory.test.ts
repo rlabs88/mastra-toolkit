@@ -193,7 +193,7 @@ describe("single-project Factory composition", () => {
           // The default agent's preset card sets this; 180k is the retuned
           // canonical activation threshold, and reflection is a separate
           // upstream setting that the retune left alone.
-          observationThreshold: 180_000,
+          observationThreshold: 90_000,
           reflectionThreshold: 60_000,
         },
         persistedPrecedence: "memory-settings-over-startup-defaults",

@@ -21,8 +21,8 @@ describe("Factory Code SDK configuration", () => {
     expect(parsed.onboarding).toMatchObject({ version: 1, completedAt: new Date(0).toISOString() });
     expect(Object.keys(parsed.models.modeDefaults)).toEqual(CODE_MODE_IDS);
     expect(new Set(Object.values(parsed.models.modeDefaults))).toEqual(new Set(["a1-proxy/code-frontier-high"]));
-    expect(parsed.models.observerModelOverride).toBe("a1-proxy/code-workhorse-high");
-    expect(parsed.models.reflectorModelOverride).toBe("a1-proxy/code-workhorse-high");
+    expect(parsed.models.observerModelOverride).toBe("a1-proxy/code-economic");
+    expect(parsed.models.reflectorModelOverride).toBe("a1-proxy/code-economic");
     expect(parsed.models.subagentModels).toEqual({
       cortex: "proxy/a1-proxy/code-frontier-high",
       flux: "proxy/a1-proxy/code-frontier-high",
@@ -31,7 +31,7 @@ describe("Factory Code SDK configuration", () => {
     });
     // 180k is the retuned canonical activation threshold from #174; the
     // reflection budget is a different upstream setting and is unchanged.
-    expect(parsed.models.omObservationThreshold).toBe(180_000);
+    expect(parsed.models.omObservationThreshold).toBe(90_000);
     expect(parsed.models.omReflectionThreshold).toBe(60_000);
     expect(parsed.customProviders).toEqual([{
       name: "A1 Proxy",
@@ -73,6 +73,7 @@ describe("Factory Code SDK configuration", () => {
         modeDefaults: { "cortex/build": "a1-proxy/code-frontier-max" },
         subagentModels: { cortex: "openai/gpt-5.4-mini" },
         observerModelOverride: "a1-proxy/fast-high",
+        reflectorModelOverride: "a1-proxy/fast-low",
         omObservationThreshold: 72_000,
         omReflectionThreshold: 48_000,
       },
@@ -87,6 +88,7 @@ describe("Factory Code SDK configuration", () => {
 
     expect(settings.models.modeDefaults["cortex/build"]).toBe("a1-proxy/code-frontier-max");
     expect(settings.models.observerModelOverride).toBe("a1-proxy/fast-high");
+    expect(settings.models.reflectorModelOverride).toBe("a1-proxy/fast-low");
     expect(settings.models.subagentModels).toEqual({
       cortex: "openai/gpt-5.4-mini",
       flux: "proxy/a1-proxy/code-frontier-high",
@@ -103,8 +105,8 @@ describe("Factory Code SDK configuration", () => {
     const profile = structuredClone(loadModelProfile());
     profile.roles.observer = "fast-high";
     profile.roles.reflector = "fast-low";
-    // Budgets are per-model now: they come from the default agent's card, not
-    // from the profile-level fallback, which every declared alias overrides.
+    // The active agent proposes the cadence, while the selected Observer's
+    // card caps the raw message batch it must accept.
     profile.modelCards["code-frontier-high"]!.observation!.messageTokens = 150_000;
     profile.modelCards["code-frontier-high"]!.reflection!.observationTokens = 110_000;
 
@@ -114,7 +116,7 @@ describe("Factory Code SDK configuration", () => {
     expect(settings.models).toMatchObject({
       observerModelOverride: "a1-proxy/fast-high",
       reflectorModelOverride: "a1-proxy/fast-low",
-      omObservationThreshold: 150_000,
+      omObservationThreshold: 90_000,
       omReflectionThreshold: 110_000,
     });
   });

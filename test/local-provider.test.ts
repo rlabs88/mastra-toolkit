@@ -106,12 +106,12 @@ describe("local A1 provider migration", () => {
       patch: {
         // Canonical activation threshold retuned to 180k in #174. The
         // reflection budget is a separate upstream setting and is unchanged.
-        observationThreshold: 180_000,
+        observationThreshold: 90_000,
         reflectionThreshold: 60_000,
       },
       fillIfUnset: {
-        observerModelId: "a1-proxy/code-workhorse-high",
-        reflectorModelId: "a1-proxy/code-workhorse-high",
+        observerModelId: "a1-proxy/code-economic",
+        reflectorModelId: "a1-proxy/code-economic",
       },
     });
   });
@@ -196,8 +196,8 @@ describe("local A1 provider migration", () => {
     expect(memoryPatch).toEqual({
       orgId: "local-org",
       userId: "local-user",
-      patch: { observationThreshold: 180_000 },
-      fillIfUnset: { reflectorModelId: "a1-proxy/code-workhorse-high" },
+      patch: { observationThreshold: 90_000 },
+      fillIfUnset: { reflectorModelId: "a1-proxy/code-economic" },
     });
   });
 
@@ -255,9 +255,9 @@ describe("local A1 provider migration", () => {
 
     expect(memoryPatches).toHaveLength(1);
     expect(memory).toEqual({
-      observerModelId: "a1-proxy/code-workhorse-high",
-      reflectorModelId: "a1-proxy/code-workhorse-high",
-      observationThreshold: 180_000,
+      observerModelId: "a1-proxy/code-economic",
+      reflectorModelId: "a1-proxy/code-economic",
+      observationThreshold: 90_000,
       reflectionThreshold: 60_000,
     });
   });

@@ -20,7 +20,7 @@ export const AGENT_BACKGROUND_TASK_POLICY = Object.freeze({
   concurrency: 1,
   waitTimeoutMs: 5_000,
 } as const);
-export const DEFAULT_OBSERVER_ALIAS = "code-workhorse-high";
+export const DEFAULT_OBSERVER_ALIAS = "code-economic";
 export const DEFAULT_MODEL_PROFILE_PATH = createRequire(import.meta.url).resolve("@rlabs/runtime-config/models.yaml");
 
 /**
@@ -343,13 +343,18 @@ export function resolveRuntimeDefaultsV1(profile: ModelProfile): RuntimeDefaults
       gatewayModelId: resolveProxyGatewayModelId(profile, alias),
     })]),
   ) as RuntimeDefaultsV1["models"]["roles"]);
-  // The conversation the Observer actually watches belongs to the default
-  // agent, so its card — not a global budget — sets both host thresholds.
-  // Upstream consumes them as two distinct settings: observationThreshold
-  // becomes `observation.messageTokens` (memory.js:93) and reflectionThreshold
-  // becomes `reflection.observationTokens` (memory.js:104).
+  // The Observer receives the active conversation as one model input, so the
+  // effective threshold must fit both the active agent's cadence and the
+  // Observer's declared input budget. This leaves the Observer card's context
+  // reserve available for its prompt and prior observations.
   const activeCard = resolveCard(profile, profile.roles[profile.code.defaultAgent]);
-  const observationThreshold = activeCard.observation.messageTokens;
+  const observerCard = resolveCard(profile, profile.roles.observer);
+  const observationThreshold = Math.min(
+    activeCard.observation.messageTokens,
+    observerCard.observation.messageTokens,
+  );
+  // Reflection observes the Observer's compacted output rather than the raw
+  // active conversation, so it retains the active conversation's cadence.
   const reflectionThreshold = activeCard.reflection.observationTokens;
   const observerModelId = roles.observer.providerModelId;
   const reflectorModelId = roles.reflector.providerModelId;
