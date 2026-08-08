@@ -8,9 +8,13 @@ import { z } from "zod";
 import {
   createDynamicWorkflowTool,
   createRunBudgetHooks,
+  DYNAMIC_WORKFLOW_CEILING_POLICY,
+  DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH,
   DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY,
   DYNAMIC_WORKFLOW_ORIGIN,
+  DYNAMIC_WORKFLOW_TIME_BOUNDS,
   reconcileDynamicWorkflowDefinitions,
+  timeBoundsInvariant,
 } from "../src/index.js";
 
 const helper = createWorkflow({
@@ -35,22 +39,58 @@ const largeOutput = createWorkflow({
   execute: async () => ({ value: `head-${"x".repeat(40_000)}-tail` }),
 })).commit();
 
+/** Suspends until resumed, so the durable resume path can be exercised end to end. */
+const pausing = createWorkflow({
+  id: "pausing",
+  inputSchema: z.object({ task: z.string() }),
+  outputSchema: z.object({ done: z.string() }),
+}).then(createStep({
+  id: "await-approval",
+  inputSchema: z.object({ task: z.string() }),
+  outputSchema: z.object({ done: z.string() }),
+  resumeSchema: z.object({ approved: z.string() }),
+  suspendSchema: z.object({}),
+  execute: async ({ inputData, resumeData, suspend }) => {
+    if (!resumeData) return await suspend({});
+    return { done: `${resumeData.approved}:${inputData.task}` };
+  },
+})).commit();
+
+/** Streams a chunk through the tool writer so the writer bridge is observable. */
+const streaming = createWorkflow({
+  id: "streaming",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ done: z.string() }),
+}).then(createStep({
+  id: "emit",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ done: z.string() }),
+  execute: async ({ writer }) => {
+    await writer?.write({ note: "streamed" });
+    return { done: "streamed" };
+  },
+})).commit();
+
 function harness() {
   const flux = new Agent({ id: "flux", name: "flux", instructions: "test", model: "openai/gpt-4o-mini" });
   const mastra = new Mastra({
     agents: { flux },
-    workflows: { helper, largeOutput },
+    workflows: { helper, largeOutput, pausing, streaming },
     storage: new InMemoryStore(),
     logger: false as never,
   });
   const tool = createDynamicWorkflowTool({
     agents: ["flux"],
-    nestedWorkflows: ["helper", "large-output"],
+    nestedWorkflows: ["helper", "large-output", "pausing", "streaming"],
   });
-  const invoke = (input: unknown, requestContext = new RequestContext()) =>
+  const invoke = (
+    input: unknown,
+    requestContext = new RequestContext(),
+    extra: Record<string, unknown> = {},
+  ) =>
     (tool as unknown as {
       execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
-    }).execute(input, { mastra, requestContext });
+    }).execute(input, { mastra, requestContext, ...extra });
   return { mastra, flux, tool, invoke };
 }
 
@@ -793,6 +833,368 @@ describe("dynamic_workflow", () => {
     expect(result.truncated).toBe(true);
     expect(result.resumable).toBe(true);
     expect((result.runs as Array<{ suspended?: string[][] }>)[0]?.suspended).toEqual([["paused"]]);
+  });
+
+  test("suspends a durable run and resumes it to completion", async () => {
+    const { invoke } = harness();
+    const definition = {
+      inputSchema: objectSchema,
+      outputSchema: doneSchema,
+      graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+    };
+
+    const started = await invoke({
+      action: "run",
+      description: "await approval",
+      definition,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+
+    expect(started.status).toBe("suspended");
+    expect(started.resumable).toBe(true);
+    const suspended = started.suspended as Array<{ path: string[] }>;
+    expect(suspended.length).toBeGreaterThan(0);
+
+    const resumed = await invoke({
+      action: "resume",
+      description: "approve",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      step: suspended[0]?.path,
+      resumeData: { approved: "yes" },
+      timeoutMs: 30_000,
+    });
+
+    expect(resumed.status).toBe("success");
+    expect(resumed.output).toEqual({ done: "yes:ship" });
+  });
+
+  test("refuses to resume a run id that does not belong to the workflow", async () => {
+    const { invoke } = harness();
+    const started = await invoke({
+      action: "run",
+      description: "await approval",
+      definition: {
+        inputSchema: objectSchema,
+        outputSchema: doneSchema,
+        graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+      },
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(started.status).toBe("suspended");
+
+    const result = await invoke({
+      action: "resume",
+      description: "resume a stranger",
+      workflowId: started.workflowId,
+      runId: "never-existed",
+      resumeData: { approved: "yes" },
+      timeoutMs: 1_000,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/does not exist/i);
+  });
+
+  test("names the ceiling policy when a suspended run outlives it", async () => {
+    const { mastra, invoke } = harness();
+    const started = await invoke({
+      action: "run",
+      description: "await approval",
+      definition: {
+        inputSchema: objectSchema,
+        outputSchema: doneSchema,
+        graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+      },
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(started.status).toBe("suspended");
+
+    const store = await (mastra.getStorage() as unknown as {
+      getStore(name: string): Promise<{
+        get(id: string): Promise<Record<string, unknown> | null>;
+        upsert(input: Record<string, unknown>): Promise<unknown>;
+      }>;
+    }).getStore("workflowDefinitions");
+    const stored = await store.get(started.workflowId as string);
+    // Stands in for a runtime that lowered a ceiling while the run was
+    // suspended, and did so without remembering to bump the policy version.
+    await store.upsert({
+      ...stored,
+      status: "archived",
+      metadata: {
+        ...(stored?.metadata as Record<string, unknown>),
+        ceilingPolicy: { ...DYNAMIC_WORKFLOW_CEILING_POLICY, maxFanOut: 64 },
+      },
+    });
+
+    const result = await invoke({
+      action: "resume",
+      description: "approve",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      resumeData: { approved: "yes" },
+      timeoutMs: 1_000,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain(DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH);
+    expect(result.error).toContain("maxFanOut");
+    // The opaque content mismatch was what orphaned suspended runs before.
+    expect(result.error).not.toMatch(/digest does not match/i);
+  });
+
+  test("runs a conditional branch and a parallel fan-out over authored agents", async () => {
+    const { flux, invoke } = harness();
+    const stream = stubAgentStream(flux);
+    const predicate = { op: "truthy", value: { literal: true } };
+
+    const conditional = await invoke({
+      action: "run",
+      description: "conditional",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: { prompt: "go" },
+      definition: {
+        inputSchema: promptSchema,
+        outputSchema: { type: "object" },
+        graph: [{
+          type: "conditional",
+          steps: [{ type: "agent", id: "branch", agentId: "flux" }],
+          predicates: [predicate],
+        }],
+      },
+    });
+
+    expect(conditional.status).toBe("success");
+    expect(stream.calls).toBe(1);
+
+    const parallel = await invoke({
+      action: "run",
+      description: "parallel",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: { prompt: "go" },
+      definition: {
+        inputSchema: promptSchema,
+        outputSchema: { type: "object" },
+        graph: [{
+          type: "parallel",
+          steps: [
+            { type: "agent", id: "left", agentId: "flux" },
+            { type: "agent", id: "right", agentId: "flux" },
+          ],
+        }],
+      },
+    });
+
+    expect(parallel.status).toBe("success");
+    expect(stream.calls).toBe(3);
+  });
+
+  test("bridges workflow chunks to the caller's writer", async () => {
+    const { invoke } = harness();
+    const chunks: unknown[] = [];
+
+    const result = await invoke({
+      action: "run",
+      description: "stream",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: {},
+      definition: {
+        inputSchema: { type: "object" },
+        outputSchema: doneSchema,
+        graph: [{ type: "workflow", id: "s", workflowId: "streaming" }],
+      },
+    }, new RequestContext(), {
+      writer: { write: async (chunk: unknown) => { chunks.push(chunk); } },
+    });
+
+    expect(result.status).toBe("success");
+    // Chunks arrive in the workflow's own step-output envelope, not raw.
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "workflow-step-output",
+      payload: expect.objectContaining({ stepName: "emit", output: { note: "streamed" } }),
+    }));
+  });
+
+  test("cancels when the caller aborts rather than when the timeout expires", async () => {
+    const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
+    let cancellations = 0;
+    const host = {
+      addStoredWorkflow: async () => undefined,
+      getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
+      getWorkflow: () => ({
+        createRun: async () => ({
+          runId: "aborted-run",
+          start: async () => new Promise(() => undefined),
+          cancel: async () => { cancellations += 1; },
+        }),
+      }),
+      removeWorkflow: () => true,
+    };
+    const controller = new AbortController();
+    const pending = (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({
+      action: "run",
+      description: "caller abort",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      // Far beyond the abort, so a timeout cannot be mistaken for the cause.
+      timeoutMs: 300_000,
+    }, { mastra: host, requestContext: new RequestContext(), abortSignal: controller.signal });
+
+    controller.abort();
+    const result = await pending;
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/cancelled/i);
+    expect(cancellations).toBe(1);
+  });
+
+  test("refuses a graph with more entries than the ceiling allows", () => {
+    const { tool } = harness();
+    const schema = (tool as unknown as {
+      inputSchema: { safeParse(value: unknown): { success: boolean } };
+    }).inputSchema;
+    const graphOf = (entries: number) => Array.from({ length: entries }, (_, index) => ({
+      type: "agent",
+      id: `a${index}`,
+      agentId: "flux",
+    }));
+    const parse = (entries: number) => schema.safeParse({
+      action: "run",
+      description: "d",
+      definition: { ...nestedGraph, graph: graphOf(entries) },
+    }).success;
+
+    expect(parse(16)).toBe(true);
+    expect(parse(17)).toBe(false);
+  });
+
+  test("truncates a single oversized step row and still reports later rows", async () => {
+    const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
+    const host = {
+      addStoredWorkflow: async () => undefined,
+      getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
+      getWorkflow: () => ({
+        createRun: async () => ({
+          runId: "wide-rows",
+          start: async () => ({
+            status: "success",
+            result: {},
+            steps: {
+              wide: { status: "success", output: { value: "w".repeat(5_000) } },
+              narrow: { status: "success", output: { value: "n" } },
+            },
+          }),
+          cancel: async () => undefined,
+        }),
+      }),
+      removeWorkflow: () => true,
+    };
+
+    const result = await (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({
+      action: "run",
+      description: "wide rows",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    }, { mastra: host, requestContext: new RequestContext() });
+
+    const steps = result.steps as Array<{ id: string; output?: string }>;
+    const wide = steps.find(step => step.id === "wide");
+    const narrow = steps.find(step => step.id === "narrow");
+
+    expect(result.truncated).toBe(true);
+    expect(wide?.output?.length).toBeLessThanOrEqual(2_000);
+    expect(wide?.output).toContain("output truncated");
+    // The per-row cap must not consume the aggregate budget of later rows.
+    expect(narrow?.output).toBe(JSON.stringify({ value: "n" }));
+  });
+
+  test("stops spending step-row output once the aggregate budget is exhausted", async () => {
+    const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
+    const host = {
+      addStoredWorkflow: async () => undefined,
+      getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
+      getWorkflow: () => ({
+        createRun: async () => ({
+          runId: "budget",
+          start: async () => ({
+            status: "success",
+            result: {},
+            steps: Object.fromEntries(Array.from({ length: 20 }, (_, index) => [
+              `step-${index}`,
+              { status: "success", output: { value: "x".repeat(3_000) } },
+            ])),
+          }),
+          cancel: async () => undefined,
+        }),
+      }),
+      removeWorkflow: () => true,
+    };
+
+    const result = await (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({
+      action: "run",
+      description: "aggregate budget",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    }, { mastra: host, requestContext: new RequestContext() });
+
+    const steps = result.steps as Array<{ id: string; output?: string }>;
+    const spent = steps.reduce((total, step) => total + (step.output?.length ?? 0), 0);
+
+    expect(result.truncated).toBe(true);
+    expect(steps).toHaveLength(20);
+    expect(spent).toBeLessThanOrEqual(24_000);
+    // Every row is still reported by id and status once the budget runs out.
+    expect(steps.at(-1)?.output ?? "").toBe("");
+  });
+
+  test("pins the tool timeout inside the harness deadline and the run budget", () => {
+    expect(timeBoundsInvariant()).toBe(true);
+    expect(DYNAMIC_WORKFLOW_TIME_BOUNDS.maxTimeoutMs)
+      .toBeLessThan(DYNAMIC_WORKFLOW_TIME_BOUNDS.backgroundTimeoutMs);
+    expect(DYNAMIC_WORKFLOW_TIME_BOUNDS.backgroundTimeoutMs)
+      .toBeLessThanOrEqual(DYNAMIC_WORKFLOW_TIME_BOUNDS.runBudgetWallClockMs);
+  });
+
+  test("leaves an active definition this tool did not author alone", async () => {
+    const { mastra } = harness();
+    const store = await (mastra.getStorage() as unknown as {
+      getStore(name: string): Promise<{
+        upsert(input: Record<string, unknown>): Promise<unknown>;
+        list(args?: { status?: string }): Promise<{ definitions: Array<{ id: string }> }>;
+      }>;
+    }).getStore("workflowDefinitions");
+    await store.upsert({
+      id: "dyn_0000000000000000",
+      inputSchema: objectSchema,
+      outputSchema: doneSchema,
+      graph: [],
+      metadata: { origin: "external" },
+    });
+
+    await expect(reconcileDynamicWorkflowDefinitions(mastra)).resolves.toBe(0);
+    expect((await store.list({ status: "active" })).definitions.map(row => row.id))
+      .toEqual(["dyn_0000000000000000"]);
   });
 
   test("archives a stray active definition at boot", async () => {

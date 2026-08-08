@@ -683,13 +683,14 @@ async function resume(
   // digest of every graph clamped under the old one. Without this the run
   // would fail as a content mismatch, which reads as corruption rather than as
   // a deliberate policy change nobody can resume across.
-  const storedVersion = ceilingPolicyVersion(definition.metadata.ceilingPolicy);
-  if (storedVersion !== CEILING_POLICY_VERSION) {
+  const drift = ceilingPolicyDrift(definition.metadata.ceilingPolicy);
+  if (drift) {
     return fail(
       "resume",
       `${DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH}: run was suspended under ceiling policy `
-      + `v${storedVersion ?? "unversioned"}, and this runtime enforces v${CEILING_POLICY_VERSION}. `
-      + "Ceilings changed while the run was suspended, so it cannot be resumed. Author the graph again.",
+      + `v${drift.storedVersion ?? "unversioned"}, and this runtime enforces v${CEILING_POLICY_VERSION} `
+      + `(${drift.changed.join(", ")}). Ceilings changed while the run was suspended, so it cannot be `
+      + "resumed under them. Author the graph again.",
     );
   }
   const prepared = prepare(parsed.data, allowedAgents, allowedWorkflows);
@@ -723,10 +724,23 @@ async function resume(
   }
 }
 
-function ceilingPolicyVersion(value: unknown): number | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const version = (value as { version?: unknown }).version;
-  return typeof version === "number" ? version : undefined;
+/**
+ * Compares the whole stored policy rather than its version alone, so lowering
+ * a ceiling without remembering to bump `CEILING_POLICY_VERSION` still yields
+ * the named error instead of an opaque digest mismatch. Returns `undefined`
+ * when the stored policy matches this runtime's exactly.
+ */
+function ceilingPolicyDrift(
+  value: unknown,
+): { storedVersion: number | undefined; changed: string[] } | undefined {
+  const stored = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const storedVersion = typeof stored.version === "number" ? stored.version : undefined;
+  const changed = Object.entries(CEILING_POLICY)
+    .filter(([key, current]) => stored[key] !== current)
+    .map(([key, current]) => `${key}: ${String(stored[key] ?? "absent")} -> ${String(current)}`);
+  const extra = Object.keys(stored).filter(key => !(key in CEILING_POLICY));
+  if (changed.length === 0 && extra.length === 0) return undefined;
+  return { storedVersion, changed: [...changed, ...extra.map(key => `${key}: removed`)] };
 }
 
 /**
