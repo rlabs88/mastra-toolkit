@@ -116,11 +116,14 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readdir, realpath, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const RESULT_PREFIX = "__RLABS_PROJECT_WORKFLOW_RESULT__";
 const STREAM_PREFIX = "__RLABS_PROJECT_WORKFLOW_STREAM__";
+const WORKFLOW_LAYOUT_HINT = "Every file directly in .mastracode/workflow is loaded as a workflow entrypoint;"
+  + " keep shared helpers in a subdirectory such as .mastracode/workflow/steps/ and import them"
+  + " from the entrypoint with a relative specifier.";
 
 async function validate(schema, value, label) {
   const standard = assertStandardSchema(schema, label);
@@ -154,9 +157,44 @@ function publishedAgentTool(value) {
 function committedWorkflow(value, source) {
   if (!value || typeof value !== "object" || value.component !== "WORKFLOW" || value.committed !== true
     || typeof value.id !== "string" || typeof value.createRun !== "function") {
-    throw new Error("Project workflow must default-export a committed Mastra Workflow: " + source);
+    throw new Error("Project workflow must default-export a committed Mastra Workflow: " + source + ". " + WORKFLOW_LAYOUT_HINT);
   }
   return value;
+}
+
+function isUnderRoot(roots, target) {
+  return roots.some(root => target === root || target.startsWith(root + sep));
+}
+
+async function isContainedPath(roots, target) {
+  if (isUnderRoot(roots, target)) return true;
+  try {
+    return isUnderRoot(roots, await realpath(target));
+  } catch {
+    return false;
+  }
+}
+
+async function assertBundleContained(roots, metafile, sourcePath) {
+  for (const input of Object.keys(metafile.inputs)) {
+    const absolute = resolve(process.cwd(), input);
+    let real;
+    try {
+      real = await realpath(absolute);
+    } catch {
+      throw new Error("Project workflow escapes the project root: " + absolute + " bundled into " + sourcePath);
+    }
+    if (isUnderRoot(roots, real)) continue;
+    throw new Error("Project workflow escapes the project root: " + real + " bundled into " + sourcePath);
+  }
+}
+
+function requireForDirectory(directory, cache) {
+  const existing = cache.get(directory);
+  if (existing) return existing;
+  const created = createRequire(join(directory, "package.json"));
+  cache.set(directory, created);
+  return created;
 }
 
 function runtimePackageRequires() {
@@ -168,8 +206,8 @@ function runtimePackageRequires() {
   return { projectRequire, runtimeRequires };
 }
 
-function resolvePackage(packageName, projectRequire, runtimeRequires) {
-  for (const candidate of [projectRequire, ...runtimeRequires]) {
+function resolvePackage(packageName, requires) {
+  for (const candidate of requires) {
     try {
       return candidate.resolve(packageName);
     } catch {}
@@ -177,10 +215,15 @@ function resolvePackage(packageName, projectRequire, runtimeRequires) {
   throw new Error("Project workflow dependency is unavailable in the project or mcode-runtime layer: " + packageName);
 }
 
-async function compileWorkflow(sourcePath) {
+// Mirrors the host loader: bundled files stay inside the project, and each file resolves bare
+// specifiers from its own directory first so a workflow may span a helper subdirectory.
+async function compileWorkflow(sourcePath, roots) {
   const { projectRequire, runtimeRequires } = runtimePackageRequires();
-  const esbuildPath = resolvePackage("esbuild", projectRequire, runtimeRequires);
+  const esbuildPath = resolvePackage("esbuild", [projectRequire, ...runtimeRequires]);
   const { build } = await import(pathToFileURL(esbuildPath).href);
+  const entryDirectory = dirname(sourcePath);
+  const scopedRequires = new Map();
+  const containment = {};
   const result = await build({
     entryPoints: [sourcePath],
     bundle: true,
@@ -189,17 +232,30 @@ async function compileWorkflow(sourcePath) {
     target: "node22",
     write: false,
     sourcemap: "inline",
+    metafile: true,
     plugins: [{
-      name: "factory-runtime-package-imports",
+      name: "factory-project-workflow-imports",
       setup(builder) {
-        builder.onResolve({ filter: /^[^./]|^@/ }, args => {
+        builder.onResolve({ filter: /.*/ }, async args => {
           if (args.path.startsWith("node:")) return { path: args.path, external: true };
-          const resolved = resolvePackage(args.path, projectRequire, runtimeRequires);
+          if (isAbsolute(args.path) || args.path.startsWith(".")) {
+            const target = isAbsolute(args.path)
+              ? resolve(args.path)
+              : resolve(args.resolveDir || entryDirectory, args.path);
+            if (await isContainedPath(roots, target)) return undefined;
+            containment.violation = containment.violation
+              ?? new Error("Project workflow escapes the project root: " + target
+                + (args.importer ? " imported by " + args.importer : ""));
+            return { errors: [{ text: containment.violation.message }] };
+          }
+          const scope = requireForDirectory(args.resolveDir || entryDirectory, scopedRequires);
+          const resolved = resolvePackage(args.path, [scope, projectRequire, ...runtimeRequires]);
           return { path: pathToFileURL(resolved).href, external: true };
         });
       },
     }],
-  });
+  }).catch(error => { throw containment.violation ?? error; });
+  await assertBundleContained(roots, result.metafile, sourcePath);
   const output = result.outputFiles?.[0];
   if (!output) throw new Error("Project workflow compiler produced no output: " + sourcePath);
   const generation = createHash("sha256").update(output.contents).digest("hex").slice(0, 16);
@@ -212,6 +268,8 @@ async function compileWorkflow(sourcePath) {
 
 async function loadWorkflows() {
   const projectRoot = await realpath(process.cwd());
+  const declaredRoot = resolve(process.cwd());
+  const roots = declaredRoot === projectRoot ? [projectRoot] : [declaredRoot, projectRoot];
   const directory = resolve(projectRoot, ".mastracode", "workflow");
   let entries;
   try {
@@ -224,10 +282,10 @@ async function loadWorkflows() {
   const workflowIds = new Set();
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
     if (entry.isSymbolicLink()) throw new Error("Project workflow cannot be a symbolic link: " + entry.name);
-    if (!entry.isFile() || !/\.(?:[cm]?[jt]s)$/.test(entry.name) || entry.name.endsWith(".d.ts")) continue;
+    if (!entry.isFile() || !/\.(?:[cm]?[jt]s)$/.test(entry.name) || /\.d\.[cm]?ts$/.test(entry.name)) continue;
     const sourcePath = await realpath(resolve(directory, entry.name));
     if (!sourcePath.startsWith(projectRoot + sep)) throw new Error("Project workflow escapes the project root: " + entry.name);
-    const compiledPath = await compileWorkflow(sourcePath);
+    const compiledPath = await compileWorkflow(sourcePath, roots);
     const loaded = await import(pathToFileURL(compiledPath).href + "?factory=" + Date.now());
     const workflow = committedWorkflow(loaded.default, entry.name);
     assertStandardSchema(workflow.inputSchema, workflow.id + " input");
