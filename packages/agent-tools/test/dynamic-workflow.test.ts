@@ -113,6 +113,35 @@ function stubAgentStream(agent: Agent): { calls: number } {
   return state;
 }
 
+/** One runtime shared by several tenant-scoped tools, so isolation is observable. */
+function scopedHarness() {
+  const flux = new Agent({ id: "flux", name: "flux", instructions: "test", model: "openai/gpt-4o-mini" });
+  const mastra = new Mastra({
+    agents: { flux },
+    workflows: { helper, largeOutput, pausing, streaming },
+    storage: new InMemoryStore(),
+    logger: false as never,
+  });
+  const toolFor = (scope?: string | (() => string)) => createDynamicWorkflowTool({
+    agents: ["flux"],
+    nestedWorkflows: ["helper", "large-output", "pausing", "streaming"],
+    ...(scope ? { scope: typeof scope === "function" ? scope : () => scope } : {}),
+  });
+  const invokeWith = (tool: ReturnType<typeof toolFor>, input: unknown) =>
+    (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute(input, { mastra, requestContext: new RequestContext() });
+  return { mastra, flux, toolFor, invokeWith };
+}
+
+const definitionsStoreOf = (mastra: Mastra) => (mastra.getStorage() as unknown as {
+  getStore(name: string): Promise<{
+    get(id: string): Promise<Record<string, unknown> | null>;
+    upsert(input: Record<string, unknown>): Promise<unknown>;
+    list(args?: { status?: string }): Promise<{ definitions: Array<{ id: string; metadata?: Record<string, unknown> }> }>;
+  }>;
+}).getStore("workflowDefinitions");
+
 interface StubRun {
   readonly runId: string;
   readonly snapshot: unknown;
@@ -1333,6 +1362,212 @@ describe("dynamic_workflow", () => {
     enter("dynamic_workflow", { action: "inspect" });
     const inspected = await invoke({ action: "inspect" }, requestContext);
     expect(inspected.runs).toEqual([]);
+  });
+
+  test("derives a different id for the same graph under a different scope", async () => {
+    const { toolFor, invokeWith } = scopedHarness();
+    const validate = (tool: ReturnType<typeof toolFor>) => invokeWith(tool, {
+      action: "run",
+      description: "d",
+      definition: nestedGraph,
+      input: {},
+      dryRun: true,
+      timeoutMs: 1_000,
+    });
+
+    const a = await validate(toolFor("project-a"));
+    const b = await validate(toolFor("project-b"));
+    const againA = await validate(toolFor("project-a"));
+
+    expect(a.workflowId).toMatch(/^dyn_[0-9a-f]{16}$/);
+    // Two tenants authoring the same graph must not collapse onto one id.
+    expect(b.workflowId).not.toBe(a.workflowId);
+    expect(b.graphDigest).not.toBe(a.graphDigest);
+    // Still content-addressed within a scope.
+    expect(againA.workflowId).toBe(a.workflowId);
+  });
+
+  test("keeps an unscoped host byte-identical to its pre-scope behaviour", async () => {
+    const { mastra, invoke } = harness();
+
+    const validated = await invoke({
+      action: "run",
+      description: "d",
+      definition: nestedGraph,
+      input: {},
+      dryRun: true,
+      timeoutMs: 1_000,
+    });
+    // Pinned literal: a host that supplies no scope must derive exactly the id
+    // it derived before scoping existed, or every MCode and Studio run in
+    // flight is orphaned by this change.
+    expect(validated.workflowId).toBe("dyn_7a37e1229cc6d39f");
+
+    const ran = await invoke({
+      action: "run",
+      description: "d",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    const store = await definitionsStoreOf(mastra);
+    const stored = await store.get(ran.workflowId as string);
+
+    expect(ran.workflowId).toBe("dyn_7a37e1229cc6d39f");
+    expect(stored?.metadata).not.toHaveProperty("scopeDigest");
+  });
+
+  test("never lists another scope's runs from inspect", async () => {
+    const { toolFor, invokeWith } = scopedHarness();
+    const toolA = toolFor("project-a");
+    const toolB = toolFor("project-b");
+    const run = (tool: ReturnType<typeof toolFor>) => invokeWith(tool, {
+      action: "run",
+      description: "shared graph",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+
+    const ranA = await run(toolA);
+    const ranB = await run(toolB);
+    expect(ranA.status).toBe("success");
+    expect(ranB.status).toBe("success");
+
+    const seenByA = await invokeWith(toolA, { action: "inspect" });
+    const seenByB = await invokeWith(toolB, { action: "inspect" });
+
+    expect((seenByA.runs as Array<{ workflowId: string }>).map(run => run.workflowId))
+      .toEqual([ranA.workflowId]);
+    expect((seenByB.runs as Array<{ workflowId: string }>).map(run => run.workflowId))
+      .toEqual([ranB.workflowId]);
+  });
+
+  test("rejects a resume whose caller scope differs from the stored one", async () => {
+    const { toolFor, invokeWith } = scopedHarness();
+    const toolA = toolFor("project-a");
+    const toolB = toolFor("project-b");
+
+    const started = await invokeWith(toolA, {
+      action: "run",
+      description: "await approval",
+      definition: {
+        inputSchema: objectSchema,
+        outputSchema: doneSchema,
+        graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+      },
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(started.status).toBe("suspended");
+
+    const stolen = await invokeWith(toolB, {
+      action: "resume",
+      description: "resume another tenant's run",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      resumeData: { approved: "yes" },
+      timeoutMs: 1_000,
+    });
+
+    expect(stolen.status).toBe("failed");
+    expect(stolen.error).toContain("scope_mismatch");
+    // A cross-tenant attempt is not a ceiling change and not corruption.
+    expect(stolen.error).not.toContain("ceiling_policy_mismatch");
+    expect(stolen.error).not.toMatch(/digest does not match/i);
+    // The owning scope's key must not leak to the caller that guessed the id.
+    expect(stolen.error).not.toContain("project-a");
+
+    // The rightful owner is unaffected.
+    const resumed = await invokeWith(toolA, {
+      action: "resume",
+      description: "approve",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      resumeData: { approved: "yes" },
+      timeoutMs: 30_000,
+    });
+    expect(resumed.status).toBe("success");
+  });
+
+  test("hides a legacy unscoped definition from every scoped caller", async () => {
+    const { mastra, toolFor, invokeWith } = scopedHarness();
+    const unscoped = await invokeWith(toolFor(), {
+      action: "run",
+      description: "legacy row",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(unscoped.status).toBe("success");
+
+    const scoped = toolFor("project-a");
+    const seen = await invokeWith(scoped, { action: "inspect" });
+    // A row written before scoping existed carries no scopeDigest, and must
+    // not become readable from every scope by default.
+    expect(seen.runs).toEqual([]);
+
+    const resumed = await invokeWith(scoped, {
+      action: "resume",
+      description: "resume a legacy row",
+      workflowId: unscoped.workflowId,
+      runId: unscoped.runId,
+      resumeData: {},
+      timeoutMs: 1_000,
+    });
+    expect(resumed.status).toBe("failed");
+    expect(resumed.error).toContain("scope_mismatch");
+  });
+
+  test("fails closed when the host cannot derive a scope", async () => {
+    const { toolFor, invokeWith } = scopedHarness();
+    const unbound = toolFor(() => { throw new Error("no project session bound"); });
+
+    await expect(invokeWith(unbound, {
+      action: "run",
+      description: "unbound",
+      definition: nestedGraph,
+      input: {},
+      dryRun: true,
+      timeoutMs: 1_000,
+    })).rejects.toThrow("no project session bound");
+
+    const empty = toolFor(() => "");
+    await expect(invokeWith(empty, { action: "inspect" })).rejects.toThrow(/scope/i);
+  });
+
+  test("archives every scope's stray definitions at boot", async () => {
+    const { mastra, toolFor, invokeWith } = scopedHarness();
+    const store = await definitionsStoreOf(mastra);
+    const validated = await Promise.all(["project-a", "project-b"].map(scope =>
+      invokeWith(toolFor(scope), {
+        action: "run",
+        description: "d",
+        definition: nestedGraph,
+        input: {},
+        dryRun: true,
+        timeoutMs: 1_000,
+      })));
+    // Stand in for definitions left active by a crash between write and archive.
+    for (const row of validated) {
+      await store.upsert({
+        id: row.workflowId,
+        inputSchema: objectSchema,
+        outputSchema: doneSchema,
+        graph: [],
+        metadata: { origin: DYNAMIC_WORKFLOW_ORIGIN },
+      });
+    }
+    expect((await store.list({ status: "active" })).definitions).toHaveLength(2);
+
+    // Boot recovery is host-wide. Scoping it would strand one tenant's
+    // crashed definition auto-mounting at startWorkers().
+    await expect(reconcileDynamicWorkflowDefinitions(mastra)).resolves.toBe(2);
+    expect((await store.list({ status: "active" })).definitions).toHaveLength(0);
   });
 
   test("archives a stray active definition at boot", async () => {
