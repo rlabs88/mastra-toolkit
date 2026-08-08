@@ -4,17 +4,20 @@ import { join } from "node:path";
 import type { ApiRoute } from "@mastra/core/server";
 import { RequestContext } from "@mastra/core/request-context";
 import { Mastra } from "@mastra/core/mastra";
+import { InMemoryStore } from "@mastra/core/storage";
 import { createToolkitAgents } from "@rlabs/agents-roles";
 import { createToolkitRuntimeContract } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { Hono } from "hono";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createFactoryControllerProjection,
   createFactoryRuntimeBinding,
   createProjectsManagedFactoryRules,
   createToolkitFactory,
   loadFactoryConfig,
+  FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS,
+  type FactoryControllerProjection,
 } from "../src/index.js";
 import {
   createFactoryAgentBundle,
@@ -62,7 +65,7 @@ describe("single-project Factory composition", () => {
     });
     expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
     expect(projection).not.toHaveProperty("tools.command_run");
-    expect(projection).not.toHaveProperty("tools.dynamic_workflow");
+    expect(toolId(projection.tools.dynamic_workflow)).toBe("dynamic_workflow");
     for (const agent of Object.values(projection.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
@@ -70,7 +73,7 @@ describe("single-project Factory composition", () => {
     expect(projection).not.toHaveProperty("controller");
   });
 
-  test("leaves canonical delegation unavailable when Factory cannot mount it safely", async () => {
+  test("contributes dynamic_workflow through the supported tool seam while delegation stays blocked", async () => {
     const profile = loadModelProfile();
     const bundle = createFactoryAgentBundle({ profile, browser: false });
     const tools = await new ToolkitFactoryIntegration(
@@ -79,7 +82,9 @@ describe("single-project Factory composition", () => {
     ).agentTools();
 
     expect(tools).toHaveProperty("project_workflow");
-    expect(tools).not.toHaveProperty("dynamic_workflow");
+    expect(toolId(tools.dynamic_workflow)).toBe("dynamic_workflow");
+    // The upstream blocker gates controller ingredients, not this tool seam.
+    expect(bundle.capability.controllerConstruction.canonicalModesAndSubagents).toBe("upstream-blocked");
     expect(Object.keys(tools).filter(toolName =>
       toolName === "subagent" || /^(?:use|delegate)_(?:cortex|flux|zen)$/.test(toolName),
     )).toEqual([]);
@@ -203,7 +208,7 @@ describe("single-project Factory composition", () => {
     expect(tools).not.toHaveProperty("delegate_cortex");
     expect(tools).not.toHaveProperty("delegate_flux");
     expect(tools).not.toHaveProperty("delegate_zen");
-    expect(tools).not.toHaveProperty("dynamic_workflow");
+    expect(toolId(tools.dynamic_workflow)).toBe("dynamic_workflow");
     for (const agent of Object.values(bundle.agents)) {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
@@ -284,6 +289,152 @@ describe("single-project Factory composition", () => {
   }, 30_000);
 
 });
+
+describe("Factory dynamic workflow authority", () => {
+  test("fails closed without an active Factory project session binding", async () => {
+    const projection = factoryProjection();
+    const mastra = orchestrationHost();
+    const unbound = new RequestContext();
+
+    // No Factory session address at all.
+    await expect(runDynamicWorkflow(projection, mastra, dryRunGraph("cortex"), {
+      requestContext: unbound,
+    })).rejects.toThrow(/Factory project session/i);
+
+    // A Factory session address, but no persisted session workspace.
+    await expect(runDynamicWorkflow(projection, mastra, dryRunGraph("cortex"), {
+      requestContext: factoryRequestContext("org-1", "project-1", "session-1"),
+    })).rejects.toThrow(/Factory project session/i);
+
+    // A workspace that is not the persisted, sandbox-backed Factory one.
+    await expect(runDynamicWorkflow(projection, mastra, dryRunGraph("cortex"), {
+      requestContext: factoryRequestContext("org-1", "project-1", "session-1"),
+      workspace: {
+        id: "scratch-workspace",
+        resolveFilesystem: async () => undefined,
+        resolveSandbox: async () => undefined,
+      },
+    })).rejects.toThrow(/Factory project session/i);
+
+    // Rejection happens before any action dispatch, so inspect is gated too.
+    await expect(runDynamicWorkflow(projection, mastra, { action: "inspect" }, {
+      requestContext: unbound,
+    })).rejects.toThrow(/Factory project session/i);
+  });
+
+  test("rejects resuming a run named by another Factory project before reading the store", async () => {
+    const projection = factoryProjection();
+    const mastra = orchestrationHost();
+    const storage = vi.spyOn(mastra, "getStorage");
+
+    const result = await runDynamicWorkflow(projection, mastra, {
+      action: "resume",
+      description: "resume a run owned by project-1",
+      workflowId: "dyn_0123456789abcdef",
+      runId: "run-owned-by-project-1",
+      resumeData: {},
+      timeoutMs: 1_000,
+    }, factorySession("org-2", "project-2", "session-2"));
+
+    expect(result.status).toBe("failed");
+    // Factory pins resumable:false, so no cross-project definition or run row is read.
+    expect(storage).not.toHaveBeenCalled();
+    storage.mockRestore();
+  });
+
+  // Blocked on a host scope seam in @rlabs/agent-tools: `dynamic_workflow`
+  // content-addresses its id over graph bytes alone and its stored definition
+  // and run rows carry no tenant column, so nothing distinguishes project-2
+  // from project-1 once `resumable` is true. The `authorize` hook cannot close
+  // it because it receives neither the parsed input nor a post-run hook.
+  // Required seam: `DynamicWorkflowToolOptions.scope?: (context:
+  // DynamicWorkflowAuthorizationContext) => Promise<string> | string`, mixed
+  // into the content-addressed id and stamped as `metadata.scopeDigest`.
+  test.todo("scopes resume to the owning Factory project once agent-tools accepts a host scope");
+
+  // Same seam. `inspect` lists every archived dynamic definition and its runs
+  // across the whole store, so an authorized session in project-2 can enumerate
+  // workflow ids, run ids, and statuses belonging to project-1.
+  test.todo("scopes inspect run listing to the calling Factory project once agent-tools accepts a host scope");
+
+  test("bounds a Factory graph to the deliberately enumerated canonical agents", async () => {
+    const projection = factoryProjection();
+    const mastra = orchestrationHost();
+    const session = factorySession("org-1", "project-1", "session-1");
+
+    expect(FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS).toEqual(["cortex", "flux", "zen"]);
+
+    for (const agentId of FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS) {
+      const allowed = await runDynamicWorkflow(projection, mastra, dryRunGraph(agentId), session);
+      expect(allowed.status, agentId).toBe("validated");
+    }
+
+    // Factory's own controller agent, project specialists, and any canonical
+    // role added later stay out until someone adds them deliberately.
+    for (const agentId of ["code", "specialist", "ayra"]) {
+      const rejected = await runDynamicWorkflow(projection, mastra, dryRunGraph(agentId), session);
+      expect(rejected.status, agentId).toBe("invalid");
+      expect((rejected.issues as string[]).join(" ")).toContain(`unknown agent "${agentId}"`);
+    }
+  });
+});
+
+function factoryProjection(): FactoryControllerProjection {
+  return createFactoryControllerProjection(
+    createToolkitRuntimeContract({ profile: loadModelProfile() }),
+    createFactoryRuntimeBinding(),
+    { browser: false },
+  );
+}
+
+/** A bare Mastra: the tool only needs the stored-workflow and storage surfaces. */
+function orchestrationHost(): Mastra {
+  return new Mastra({ storage: new InMemoryStore(), logger: false as never });
+}
+
+function factorySession(orgId: string, projectId: string, sessionId: string): {
+  requestContext: RequestContext;
+  workspace: unknown;
+} {
+  return {
+    requestContext: factoryRequestContext(orgId, projectId, sessionId),
+    workspace: {
+      id: `mfw-${sessionId}`,
+      resolveFilesystem: async () => ({ provider: "sandbox", basePath: `/workspaces/${sessionId}` }),
+      resolveSandbox: async () => ({ executeCommand: async () => ({ exitCode: 0, stdout: "", stderr: "" }) }),
+    },
+  };
+}
+
+function dryRunGraph(agentId: string): Record<string, unknown> {
+  return {
+    action: "run",
+    description: `dispatch ${agentId}`,
+    dryRun: true,
+    timeoutMs: 1_000,
+    input: {},
+    definition: {
+      inputSchema: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+      outputSchema: { type: "object", properties: { done: { type: "string" } }, required: ["done"] },
+      graph: [{ type: "agent", id: "only", agentId }],
+    },
+  };
+}
+
+function runDynamicWorkflow(
+  projection: FactoryControllerProjection,
+  mastra: Mastra,
+  input: unknown,
+  context: { requestContext: RequestContext; workspace?: unknown },
+): Promise<Record<string, unknown>> {
+  return (projection.tools.dynamic_workflow as unknown as {
+    execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+  }).execute(input, { mastra, ...context });
+}
+
+function toolId(tool: unknown): string | undefined {
+  return (tool as { id?: string } | undefined)?.id;
+}
 
 function factoryRequestContext(orgId: string, projectId: string, sessionId: string): RequestContext {
   const requestContext = new RequestContext();
