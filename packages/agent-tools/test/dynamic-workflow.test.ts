@@ -1268,6 +1268,44 @@ describe("dynamic_workflow", () => {
     expect(() => enter("subagent", { task: "over" })).toThrow(/delegation limit/);
   });
 
+  test("charges a resume, which re-enters the graph under the same approval", async () => {
+    const { invoke } = harness();
+    const hooks = createRunBudgetHooks(() => 0);
+    const requestContext = new RequestContext();
+    const enter = (toolName: string, input: unknown) =>
+      hooks.beforeToolCall?.({ toolName, input, context: { requestContext } } as never);
+    const definition = {
+      inputSchema: objectSchema,
+      outputSchema: doneSchema,
+      graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+    };
+
+    enter("dynamic_workflow", { action: "run" });
+    const started = await invoke({
+      action: "run",
+      description: "await approval",
+      definition,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    }, requestContext);
+    expect(started.status).toBe("suspended");
+
+    for (let index = 0; index < 7; index += 1) {
+      enter("subagent", { task: `scope-${index}` });
+    }
+
+    enter("dynamic_workflow", { action: "resume" });
+    await expect(invoke({
+      action: "resume",
+      description: "approve",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      resumeData: { approved: "yes" },
+      timeoutMs: 1_000,
+    }, requestContext)).rejects.toThrow(/delegation limit/);
+  });
+
   test("charges nothing for actions that dispatch no agent", async () => {
     const { invoke } = harness();
     const hooks = createRunBudgetHooks(() => 0);

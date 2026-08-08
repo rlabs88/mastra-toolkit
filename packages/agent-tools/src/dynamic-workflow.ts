@@ -4,7 +4,7 @@ import type { Workspace } from "@mastra/core/workspace";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { validateStoredWorkflow } from "@mastra/core/workflows";
-import { RUN_BUDGET_CONTEXT_KEY, RUN_CONTAINMENT_POLICY } from "./capabilities.js";
+import { chargeRunDelegations, RUN_BUDGET_CONTEXT_KEY } from "./capabilities.js";
 
 /**
  * Marks a dispatched run so a delegated agent cannot author another graph.
@@ -353,6 +353,9 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
           truncated: false,
         };
       }
+      // Charged before anything is registered or started, so an over-budget
+      // graph dispatches nothing. Throws like the other containment guards.
+      chargeRunDelegations(context.requestContext, graphDelegationCost(prepared.graph, input.input));
       return run(host, prepared, input, context, childRequestContext);
     },
   });
@@ -382,6 +385,8 @@ interface PreparedDefinition {
   readonly workflowId: string;
   readonly digest: string;
   readonly stored: Record<string, unknown>;
+  /** The clamped graph, so its delegation cost is charged against the real ceilings. */
+  readonly graph: DynamicWorkflowGraphEntry[];
 }
 
 type PrepareResult = PreparedDefinition | { readonly ok: false; readonly issues: string[] };
@@ -435,6 +440,7 @@ function prepare(
     workflowId,
     digest: `sha256:${digest}`,
     stored,
+    graph,
   };
 }
 
@@ -520,6 +526,49 @@ function declaredMaxItems(schema: unknown): number | undefined {
   const record = schema as Record<string, unknown>;
   if (record.type !== "array") return undefined;
   return typeof record.maxItems === "number" ? record.maxItems : undefined;
+}
+
+/**
+ * How many agent dispatches a clamped graph authorizes.
+ *
+ * This is what one approval actually buys, and it is charged against the
+ * aggregate delegation ceiling before anything starts. Counting the tool call
+ * as a single delegation would under-count badly: `MAX_GRAPH_ENTRIES` alone
+ * lets a sequential graph dispatch sixteen agents, and a `foreach` multiplies
+ * one entry by the fan-out ceiling.
+ *
+ * Two positions are upper bounds rather than exact. A `conditional` charges
+ * every branch, because which predicates hold is a run-time fact. A `foreach`
+ * charges its real iteration count when the source is this graph's own input
+ * and that input is in hand, and the fan-out ceiling otherwise.
+ *
+ * One position under-counts and cannot do better here: a nested `workflow`
+ * charges one, though the allowlisted workflow it names may dispatch agents of
+ * its own. Those live outside this definition, and the host chose to allowlist
+ * them.
+ */
+function graphDelegationCost(
+  graph: readonly DynamicWorkflowGraphEntry[],
+  input: unknown,
+): number {
+  return graph.reduce((total, entry, index) => total + entryDelegationCost(entry, index, input), 0);
+}
+
+function entryDelegationCost(entry: DynamicWorkflowGraphEntry, index: number, input: unknown): number {
+  switch (entry.type) {
+    case "agent":
+      return 1;
+    case "workflow":
+      return 1;
+    case "parallel":
+    case "conditional":
+      return entry.steps.length;
+    case "foreach":
+      return index === 0 && Array.isArray(input) ? Math.min(input.length, MAX_FAN_OUT) : MAX_FAN_OUT;
+    case "mapping":
+    case "sleep":
+      return 0;
+  }
 }
 
 /**
@@ -691,6 +740,10 @@ async function resume(
   }
   const owned = await runBelongsToWorkflow(host, input.workflowId, input.runId);
   if (!owned.ok) return fail("resume", owned.error);
+  // The whole graph, not the unexecuted remainder: which steps already ran is
+  // a property of the snapshot, not of the definition, so this is an upper
+  // bound. Over-charging a resume is the safe direction.
+  chargeRunDelegations(context.requestContext, graphDelegationCost(prepared.graph, undefined));
   try {
     await register(host, input.workflowId, prepared.stored);
   } catch (error) {
