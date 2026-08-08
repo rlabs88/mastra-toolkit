@@ -28,7 +28,9 @@ describe("Factory Code SDK configuration", () => {
       flux: "proxy/a1-proxy/code-frontier-high",
       zen: "proxy/a1-proxy/code-frontier-high",
     });
-    expect(parsed.models.omObservationThreshold).toBe(120_000);
+    // 180k is the retuned canonical activation threshold from #174; the
+    // reflection budget is a different upstream setting and is unchanged.
+    expect(parsed.models.omObservationThreshold).toBe(180_000);
     expect(parsed.models.omReflectionThreshold).toBe(60_000);
     expect(parsed.customProviders).toEqual([{
       name: "A1 Proxy",
@@ -99,8 +101,10 @@ describe("Factory Code SDK configuration", () => {
     const profile = structuredClone(loadModelProfile());
     profile.roles.observer = "fast-high";
     profile.roles.reflector = "fast-low";
-    profile.memory.contextBudgetTokens = 150_000;
-    profile.memory.observationThresholdTokens = 40_000;
+    // Budgets are per-model now: they come from the default agent's card, not
+    // from the profile-level fallback, which every declared alias overrides.
+    profile.modelCards["code-frontier-high"]!.observation!.messageTokens = 150_000;
+    profile.modelCards["code-frontier-high"]!.reflection!.observationTokens = 110_000;
 
     await prepareCodeSdkSettings({ dataDirectory: directory, defaults: resolveRuntimeDefaultsV1(profile) });
     const settings = JSON.parse(await readFile(join(directory, "settings.json"), "utf8"));
