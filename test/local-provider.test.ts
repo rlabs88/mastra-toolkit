@@ -7,30 +7,70 @@ import {
   prepareLocalA1Provider,
 } from "@rlabs/factory-integration";
 
+// prepareLocalA1Provider is always handed the full declared alias list in production
+// (`defaults.gateway.models`). A narrower list here would make every declared alias except one
+// look unrecognised, and the migration would rewrite settings it should leave alone.
+const DECLARED_ALIASES = [...resolveRuntimeDefaultsV1(loadModelProfile()).gateway.models];
+
+const CATALOG = {
+  aliases: new Set(["code-frontier-high", "code-workhorse-high", "code-economic"]),
+  defaultModelId: "a1-proxy/code-frontier-high",
+};
+
 describe("local A1 provider migration", () => {
   test.each([
-    ["a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
-    ["mastracode/a1-proxy/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
-    ["mastracode/gpt-5.6-luna", "a1-proxy/code-workhorse-high"],
+    // A declared alias survives in whatever prefix form it already carries.
     ["a1-proxy/code-frontier-high", "a1-proxy/code-frontier-high"],
-    ["openai/gpt-5.6-luna", "openai/gpt-5.6-luna"],
+    ["proxy/a1-proxy/code-workhorse-high", "proxy/a1-proxy/code-workhorse-high"],
+    ["mastracode/a1-proxy/code-economic", "a1-proxy/code-economic"],
+    // A raw upstream id is not a declared alias, whatever prefix it wears, so it resets to the
+    // documented default. The tier is unrecoverable: gpt-5.6-luna serves both workhorse tiers and
+    // gpt-5.6-sol serves all three frontier tiers, so there is nothing faithful to map back to.
+    ["a1-proxy/gpt-5.6-luna", "a1-proxy/code-frontier-high"],
+    ["mastracode/gpt-5.6-luna", "a1-proxy/code-frontier-high"],
+    // The one that shipped the bug: an OpenAI-prefixed upstream id used to pass through untouched,
+    // then resolved against the OpenAI provider and failed on a missing OPENAI_API_KEY.
+    ["openai/gpt-5.6-sol", "a1-proxy/code-frontier-high"],
+    ["openai/gpt-5.6-luna", "a1-proxy/code-frontier-high"],
   ])("normalizes %s to %s", (input, expected) => {
-    expect(normalizeStoredModelId(input)).toBe(expected);
+    expect(normalizeStoredModelId(input, CATALOG)).toBe(expected);
   });
 
   test("migrates nested thread model references without changing unrelated metadata", () => {
     const result = normalizeModelReferences({
       currentModelId: "mastracode/a1-proxy/gpt-5.6-luna",
+      // The key shape observed live in Factory thread metadata.
+      modeModelId_build: "openai/gpt-5.6-sol",
       modes: ["a1-proxy/gpt-5.6-luna"],
       projectPath: "/workspace/a1-proxy/example",
-    });
+    }, CATALOG);
 
     expect(result).toEqual({
       changed: true,
       value: {
-        currentModelId: "a1-proxy/code-workhorse-high",
-        modes: ["a1-proxy/code-workhorse-high"],
+        currentModelId: "a1-proxy/code-frontier-high",
+        modeModelId_build: "a1-proxy/code-frontier-high",
+        modes: ["a1-proxy/code-frontier-high"],
         projectPath: "/workspace/a1-proxy/example",
+      },
+    });
+  });
+
+  test("leaves a non-model string alone even when it looks like a model id", () => {
+    // Selection is by key. Normalising by value would rewrite every unrecognised string in the
+    // object to the default model id, destroying titles, branches, and paths.
+    const result = normalizeModelReferences({
+      title: "openai/gpt-5.6-sol",
+      branch: "factory/gpt-5.6-luna",
+      resourceId: "mastracode/a1-proxy/whatever",
+    }, CATALOG);
+
+    expect(result).toEqual({
+      changed: false,
+      value: {
+        title: "openai/gpt-5.6-sol",
+        branch: "factory/gpt-5.6-luna",
+        resourceId: "mastracode/a1-proxy/whatever",
       },
     });
   });
@@ -62,7 +102,7 @@ describe("local A1 provider migration", () => {
     await prepareLocalA1Provider(storage, {
       baseUrl: "https://proxy.invalid/v1",
       apiKey: "test-only-key",
-      models: ["code-frontier-high"],
+      models: DECLARED_ALIASES,
     }, resolveRuntimeDefaultsV1(loadModelProfile()));
 
     expect(initialized).toBe(true);
@@ -97,7 +137,7 @@ describe("local A1 provider migration", () => {
     await prepareLocalA1Provider(storage, {
       baseUrl: "https://proxy.invalid/v1",
       apiKey: "test-only-key",
-      models: ["code-frontier-high"],
+      models: DECLARED_ALIASES,
     }, resolveRuntimeDefaultsV1(loadModelProfile()));
 
     expect(memoryPatch).toEqual({
@@ -150,7 +190,7 @@ describe("local A1 provider migration", () => {
     await prepareLocalA1Provider(storage, {
       baseUrl: "https://proxy.invalid/v1",
       apiKey: "test-only-key",
-      models: ["code-frontier-high"],
+      models: DECLARED_ALIASES,
     }, resolveRuntimeDefaultsV1(loadModelProfile()));
 
     expect(memoryPatch).toBeUndefined();
@@ -190,7 +230,7 @@ describe("local A1 provider migration", () => {
     await prepareLocalA1Provider(storage, {
       baseUrl: "https://proxy.invalid/v1",
       apiKey: "test-only-key",
-      models: ["code-frontier-high"],
+      models: DECLARED_ALIASES,
     }, resolveRuntimeDefaultsV1(loadModelProfile()));
 
     expect(memoryPatch).toEqual({
@@ -246,7 +286,7 @@ describe("local A1 provider migration", () => {
     const provider = {
       baseUrl: "https://proxy.invalid/v1",
       apiKey: "test-only-key",
-      models: ["code-frontier-high"],
+      models: DECLARED_ALIASES,
     };
     const defaults = resolveRuntimeDefaultsV1(loadModelProfile());
 
