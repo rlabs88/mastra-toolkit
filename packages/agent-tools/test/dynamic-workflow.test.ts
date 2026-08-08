@@ -1207,6 +1207,96 @@ describe("dynamic_workflow", () => {
       .toEqual(["dyn_0000000000000000"]);
   });
 
+  test("charges a dynamic workflow's agent fan-out against the delegation ceiling", async () => {
+    const { flux, invoke } = harness();
+    stubAgentStream(flux);
+    const hooks = createRunBudgetHooks(() => 0);
+    const requestContext = new RequestContext();
+    const enter = (toolName: string, input: unknown) =>
+      hooks.beforeToolCall?.({ toolName, input, context: { requestContext } } as never);
+
+    enter("dynamic_workflow", { action: "run" });
+    const result = await invoke({
+      action: "run",
+      description: "fan out",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: Array.from({ length: 8 }, (_, index) => ({ prompt: `p${index}` })),
+      definition: fanOutGraph,
+    }, requestContext);
+
+    expect(result.status).toBe("success");
+    // Eight agents ran under one approval. The aggregate ceiling is eight, so
+    // the run has spent it and no further delegation may follow.
+    expect(() => enter("subagent", { task: "one more" })).toThrow(/delegation limit/);
+  });
+
+  test("charges each dispatching graph position, not one per tool call", async () => {
+    const { flux, invoke } = harness();
+    stubAgentStream(flux);
+    const hooks = createRunBudgetHooks(() => 0);
+    const requestContext = new RequestContext();
+    const enter = (toolName: string, input: unknown) =>
+      hooks.beforeToolCall?.({ toolName, input, context: { requestContext } } as never);
+
+    enter("dynamic_workflow", { action: "run" });
+    const result = await invoke({
+      action: "run",
+      description: "parallel fan-out",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: { prompt: "go" },
+      definition: {
+        inputSchema: promptSchema,
+        outputSchema: { type: "object" },
+        graph: [{
+          type: "parallel",
+          steps: [
+            { type: "agent", id: "a", agentId: "flux" },
+            { type: "agent", id: "b", agentId: "flux" },
+            { type: "agent", id: "c", agentId: "flux" },
+          ],
+        }],
+      },
+    }, requestContext);
+
+    expect(result.status).toBe("success");
+    // Three agents ran, so five of the eight delegations remain.
+    for (let index = 0; index < 5; index += 1) {
+      expect(() => enter("subagent", { task: `scope-${index}` })).not.toThrow();
+    }
+    expect(() => enter("subagent", { task: "over" })).toThrow(/delegation limit/);
+  });
+
+  test("charges nothing for actions that dispatch no agent", async () => {
+    const { invoke } = harness();
+    const hooks = createRunBudgetHooks(() => 0);
+    const requestContext = new RequestContext();
+    const enter = (toolName: string, input: unknown) =>
+      hooks.beforeToolCall?.({ toolName, input, context: { requestContext } } as never);
+
+    for (let index = 0; index < 8; index += 1) {
+      enter("subagent", { task: `scope-${index}` });
+    }
+
+    // Validation and inspection run no agent, so neither may spend the last
+    // of an already-exhausted delegation budget.
+    enter("dynamic_workflow", { action: "run" });
+    const validated = await invoke({
+      action: "run",
+      description: "validate only",
+      definition: nestedGraph,
+      input: {},
+      dryRun: true,
+      timeoutMs: 1_000,
+    }, requestContext);
+    expect(validated.status).toBe("validated");
+
+    enter("dynamic_workflow", { action: "inspect" });
+    const inspected = await invoke({ action: "inspect" }, requestContext);
+    expect(inspected.runs).toEqual([]);
+  });
+
   test("archives a stray active definition at boot", async () => {
     const { mastra } = harness();
     const store = await (mastra.getStorage() as unknown as {
