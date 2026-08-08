@@ -56,6 +56,31 @@ function harness() {
 
 const objectSchema = { type: "object", properties: { task: { type: "string" } }, required: ["task"] };
 const doneSchema = { type: "object", properties: { done: { type: "string" } }, required: ["done"] };
+// `createStep(agent)` pins the step input to `{ prompt }` and its default output
+// to `{ text }`, so any fan-out array must carry that element shape.
+const promptSchema = { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] };
+const textSchema = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
+
+/** Counts real agent dispatches so a ceiling can be proven to bind before one happens. */
+function stubAgentStream(agent: Agent): { calls: number } {
+  const state = { calls: 0 };
+  vi.spyOn(agent, "getModel").mockResolvedValue({ specificationVersion: "v2" } as never);
+  vi.spyOn(agent, "stream").mockImplementation((async (...args: unknown[]) => {
+    state.calls += 1;
+    const options = args[1] as { onFinish?: (result: { text: string }) => void } | undefined;
+    const fullStream = (async function* () {
+      options?.onFinish?.({ text: "ok" } as never);
+    })();
+    return { text: Promise.resolve("ok"), fullStream } as never;
+  }) as never);
+  return state;
+}
+
+const fanOutGraph = {
+  inputSchema: { type: "array", items: promptSchema },
+  outputSchema: { type: "array", items: textSchema },
+  graph: [{ type: "foreach", step: { type: "agent", id: "fan", agentId: "flux" } }],
+};
 
 const nestedGraph = {
   inputSchema: objectSchema,
@@ -543,6 +568,106 @@ describe("dynamic_workflow", () => {
     expect((stored?.graph[0] as { opts?: { concurrency?: number } })?.opts?.concurrency).toBe(3);
     // A maxItems ceiling is the only static bound on fan-out width.
     expect(stored?.inputSchema.maxItems).toBe(8);
+  });
+
+  test("refuses a run whose input exceeds the fan-out ceiling before any agent step executes", async () => {
+    const { flux, invoke } = harness();
+    const stream = stubAgentStream(flux);
+    const run = (elements: number) => invoke({
+      action: "run",
+      description: "fan out",
+      dryRun: false,
+      timeoutMs: 30_000,
+      input: Array.from({ length: elements }, (_, index) => ({ prompt: `p${index}` })),
+      definition: fanOutGraph,
+    });
+
+    const allowed = await run(8);
+    expect(allowed.status).toBe("success");
+    expect(stream.calls).toBe(8);
+
+    const refused = await run(9);
+    expect(refused.status).toBe("invalid");
+    expect((refused.issues as string[]).join(" ")).toContain("8");
+    // The ceiling has to bind before dispatch, not by truncating mid-run.
+    expect(stream.calls).toBe(8);
+  });
+
+  test("rejects a foreach whose declared iteration source exceeds the ceiling", async () => {
+    const { invoke } = harness();
+
+    const result = await invoke({
+      action: "run",
+      description: "wide fan out",
+      dryRun: true,
+      timeoutMs: 1_000,
+      input: [],
+      definition: { ...fanOutGraph, inputSchema: { type: "array", items: promptSchema, maxItems: 50 } },
+    });
+
+    expect(result.status).toBe("invalid");
+    expect((result.issues as string[]).join(" ")).toMatch(/iterat/i);
+    expect((result.issues as string[]).join(" ")).toContain("8");
+  });
+
+  test("clamps an authored stateSchema and keeps the digest stable across identical submissions", async () => {
+    const { mastra, invoke } = harness();
+    const definition = {
+      ...nestedGraph,
+      stateSchema: {
+        type: "object",
+        properties: { seen: { type: "array", items: { type: "string" }, maxItems: 500 } },
+      },
+    };
+
+    const first = await invoke({ action: "run", description: "d", definition, input: {}, dryRun: true, timeoutMs: 1_000 });
+    const again = await invoke({ action: "run", description: "d", definition, input: {}, dryRun: true, timeoutMs: 1_000 });
+    expect(first.graphDigest).toBe(again.graphDigest);
+    expect(first.workflowId).toBe(again.workflowId);
+
+    const ran = await invoke({
+      action: "run",
+      description: "d",
+      definition,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(ran.status).toBe("success");
+
+    const store = await (mastra.getStorage() as unknown as {
+      getStore(name: string): Promise<{ get(id: string): Promise<{ stateSchema?: Record<string, unknown> } | null> }>;
+    }).getStore("workflowDefinitions");
+    const stored = await store.get(ran.workflowId as string);
+    const seen = (stored?.stateSchema?.properties as { seen?: { maxItems?: number } } | undefined)?.seen;
+
+    expect(seen?.maxItems).toBe(8);
+  });
+
+  test("refuses a nested workflow inside a conditional at the schema layer", () => {
+    const { tool } = harness();
+    const schema = (tool as unknown as {
+      inputSchema: { safeParse(value: unknown): { success: boolean } };
+    }).inputSchema;
+    const withGraph = (entry: unknown) => schema.safeParse({
+      action: "run",
+      description: "d",
+      definition: { ...nestedGraph, graph: [entry] },
+    }).success;
+    const predicate = { op: "truthy", value: { literal: true } };
+
+    // A nested workflow is a top-level entry only; admitting one here would
+    // contradict the graph checker, which has always refused it.
+    expect(withGraph({
+      type: "conditional",
+      steps: [{ type: "workflow", id: "w", workflowId: "helper" }],
+      predicates: [predicate],
+    })).toBe(false);
+    expect(withGraph({
+      type: "conditional",
+      steps: [{ type: "agent", id: "a", agentId: "flux" }],
+      predicates: [predicate],
+    })).toBe(true);
   });
 
   test("archives a stray active definition at boot", async () => {
