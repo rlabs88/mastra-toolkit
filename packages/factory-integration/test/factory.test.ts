@@ -5,7 +5,7 @@ import type { ApiRoute } from "@mastra/core/server";
 import { RequestContext } from "@mastra/core/request-context";
 import { Mastra } from "@mastra/core/mastra";
 import { InMemoryStore } from "@mastra/core/storage";
-import { createToolkitAgents } from "@rlabs/agents-roles";
+import { createToolkitAgents, ROLE_IDS } from "@rlabs/agents-roles";
 import { createToolkitRuntimeContract } from "@rlabs/mastra-primitives-export";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { Hono } from "hono";
@@ -63,7 +63,9 @@ describe("single-project Factory composition", () => {
       canonicalModesAndSubagents: "upstream-blocked",
       missingConstructionInputs: ["modes", "subagents", "controller-construction callback"],
     });
-    expect(Object.keys(projection.agents)).toEqual(["cortex", "flux", "zen"]);
+    // Derived, not literal: every canonical role is a first-class Factory
+    // agent, so a role added to the canonical set registers here untouched.
+    expect(Object.keys(projection.agents)).toEqual([...ROLE_IDS]);
     expect(projection).not.toHaveProperty("tools.command_run");
     expect(toolId(projection.tools.dynamic_workflow)).toBe("dynamic_workflow");
     for (const agent of Object.values(projection.agents)) {
@@ -181,6 +183,9 @@ describe("single-project Factory composition", () => {
     expect(bundle).not.toHaveProperty("settings");
     const diagnostics = new ToolkitFactoryIntegration(bundle, defaults).diagnostics();
     expect(diagnostics).toMatchObject({
+      // Diagnostics describe what is registered, so this list is derived and
+      // must never be a literal that can drift from the canonical role set.
+      agents: [...ROLE_IDS],
       runtimeDefaults: {
         source: "@rlabs/runtime-config/models.yaml",
         version: 1,
@@ -222,16 +227,17 @@ describe("single-project Factory composition", () => {
 
     try {
       const prepared = await factory.prepare();
-      expect(prepared.agents).toMatchObject({
-        cortex: bundle.agents.cortex,
-        flux: bundle.agents.flux,
-        zen: bundle.agents.zen,
-      });
+      // Every canonical role, not a literal three: Factory spreads the whole
+      // projection agent map, so a new canonical role is registered here with
+      // no change to this package.
+      expect(prepared.agents).toMatchObject(
+        Object.fromEntries(ROLE_IDS.map(id => [id, bundle.agents[id]])),
+      );
       expect(Object.keys(prepared.agentControllers ?? {})).toEqual(["code"]);
       const workers = prepared.workers === false ? [] : (prepared.workers ?? []);
       expect(workers.map(worker => worker.name)).toContain("github-projects-v2-scheduler");
       const composed = new Mastra(prepared);
-      for (const id of ["cortex", "flux", "zen"] as const) {
+      for (const id of ROLE_IDS) {
         const registered = composed.getAgent(id);
         expect(registered.id).toBe(id);
         expect(Object.keys(await registered.listTools())).not.toContain("command_run");
@@ -347,36 +353,64 @@ describe("Factory dynamic workflow authority", () => {
     storage.mockRestore();
   });
 
-  // Blocked on a host scope seam in @rlabs/agent-tools: `dynamic_workflow`
-  // content-addresses its id over graph bytes alone and its stored definition
-  // and run rows carry no tenant column, so nothing distinguishes project-2
-  // from project-1 once `resumable` is true. The `authorize` hook cannot close
-  // it because it receives neither the parsed input nor a post-run hook.
-  // Required seam: `DynamicWorkflowToolOptions.scope?: (context:
-  // DynamicWorkflowAuthorizationContext) => Promise<string> | string`, mixed
-  // into the content-addressed id and stamped as `metadata.scopeDigest`.
-  test.todo("scopes resume to the owning Factory project once agent-tools accepts a host scope");
+  test("gives two Factory projects different ids for an identical graph", async () => {
+    const projection = factoryProjection();
+    const mastra = orchestrationHost();
 
-  // Same seam. `inspect` lists every archived dynamic definition and its runs
-  // across the whole store, so an authorized session in project-2 can enumerate
-  // workflow ids, run ids, and statuses belonging to project-1.
-  test.todo("scopes inspect run listing to the calling Factory project once agent-tools accepts a host scope");
+    const first = await runDynamicWorkflow(
+      projection, mastra, dryRunGraph("cortex"), factorySession("org-1", "project-1", "session-1"),
+    );
+    const second = await runDynamicWorkflow(
+      projection, mastra, dryRunGraph("cortex"), factorySession("org-2", "project-2", "session-2"),
+    );
+    const again = await runDynamicWorkflow(
+      projection, mastra, dryRunGraph("cortex"), factorySession("org-1", "project-1", "session-1"),
+    );
+
+    expect(first.status).toBe("validated");
+    expect(second.status).toBe("validated");
+    // The host-injected scope is mixed into the content address, so an
+    // identical graph no longer collapses two projects onto one id, one
+    // definition row, and one refcounted registration.
+    expect(second.workflowId).not.toBe(first.workflowId);
+    // Still content-addressed within one project session.
+    expect(again.workflowId).toBe(first.workflowId);
+  });
+
+  test("never lists another Factory project's runs from inspect", async () => {
+    const projection = factoryProjection();
+    const mastra = orchestrationHost();
+    const owner = factorySession("org-1", "project-1", "session-1");
+    const other = factorySession("org-2", "project-2", "session-2");
+
+    const ran = await runDynamicWorkflow(projection, mastra, modelFreeGraph(), owner);
+    expect(ran.status, JSON.stringify(ran.issues ?? ran.error)).toBe("success");
+
+    const seenByOwner = await runDynamicWorkflow(projection, mastra, { action: "inspect" }, owner);
+    const seenByOther = await runDynamicWorkflow(projection, mastra, { action: "inspect" }, other);
+
+    expect(inspectedWorkflowIds(seenByOwner)).toEqual([ran.workflowId]);
+    expect(inspectedWorkflowIds(seenByOther)).toEqual([]);
+  });
 
   test("bounds a Factory graph to the deliberately enumerated canonical agents", async () => {
     const projection = factoryProjection();
     const mastra = orchestrationHost();
     const session = factorySession("org-1", "project-1", "session-1");
 
-    expect(FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS).toEqual(["cortex", "flux", "zen"]);
+    // A hand-maintained literal, deliberately not derived: this is a security
+    // boundary, so a fifth canonical role must not join it by the canonical
+    // list merely growing. Ayra is in it because the user widened it by hand.
+    expect(FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS).toEqual(["cortex", "flux", "zen", "ayra"]);
 
     for (const agentId of FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS) {
       const allowed = await runDynamicWorkflow(projection, mastra, dryRunGraph(agentId), session);
       expect(allowed.status, `${agentId}: ${JSON.stringify(allowed.issues)}`).toBe("validated");
     }
 
-    // Factory's own controller agent, project specialists, and any canonical
-    // role added later stay out until someone adds them deliberately.
-    for (const agentId of ["code", "specialist", "ayra"]) {
+    // Factory's own controller agent and per-project mounted specialists stay
+    // out; admitting either is a separate deliberate decision.
+    for (const agentId of ["code", "specialist"]) {
       const rejected = await runDynamicWorkflow(projection, mastra, dryRunGraph(agentId), session);
       expect(rejected.status, agentId).toBe("invalid");
       expect((rejected.issues as string[]).join(" ")).toContain(`unknown agent "${agentId}"`);
@@ -436,6 +470,23 @@ function runDynamicWorkflow(
   return (projection.tools.dynamic_workflow as unknown as {
     execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
   }).execute(input, { mastra, ...context });
+}
+
+/** A real run needs no model: a sleep step is the identity on its input. */
+function modelFreeGraph(): Record<string, unknown> {
+  const schema = { type: "object", properties: { task: { type: "string" } }, required: ["task"] };
+  return {
+    action: "run",
+    description: "pause briefly",
+    dryRun: false,
+    timeoutMs: 30_000,
+    input: { task: "ship" },
+    definition: { inputSchema: schema, outputSchema: schema, graph: [{ type: "sleep", id: "s", duration: 1 }] },
+  };
+}
+
+function inspectedWorkflowIds(result: Record<string, unknown>): string[] {
+  return (result.runs as Array<{ workflowId: string }>).map(run => run.workflowId);
 }
 
 function toolId(tool: unknown): string | undefined {
