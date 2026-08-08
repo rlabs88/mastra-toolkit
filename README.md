@@ -108,4 +108,4 @@ npm test
 npm run build
 ```
 
-Package ownership and extension rules are recorded in the [Repository Manifest](docs/repository-manifest.md). The declarative sandbox contract and its provenance are recorded in [docs/sandbox-runtime.md](docs/sandbox-runtime.md).
+Package ownership and extension rules are recorded in the [Repository Manifest](docs/repository-manifest.md). The declarative sandbox contract and its provenance are recorded in [docs/sandbox-runtime.md](docs/sandbox-runtime.md). The end-to-end model-selection path — declaration, role resolution, per-host persistence, and its known failure modes — is recorded in [Agent harness model selection](vault/agent-harness-model-selection.md).

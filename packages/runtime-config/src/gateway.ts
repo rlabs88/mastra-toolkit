@@ -63,6 +63,13 @@ export class ProxyGateway extends MastraModelGateway {
   /**
    * The catalog is exactly the declared proxy aliases, never what the proxy happens to advertise.
    *
+   * Aliases are owned by the upstream proxy, not by this repository. `code-frontier-high` and its
+   * siblings are configured on the A1 CLIProxy in `/container/cli-proxy-api/config.yaml`, where
+   * `oauth-model-alias.codex` binds the alias to an upstream Codex model and `payload.override`
+   * sets that alias's `reasoning.effort`. This toolkit's job is to *name* the alias and send it;
+   * resolving an alias to an upstream model is the proxy's job and must stay there. `models.yaml`
+   * declares which aliases we call, and nothing here needs to know what they expand to.
+   *
    * This used to union the declared list with every id from `GET /models`. That endpoint returns
    * the raw upstream model names alongside the aliases — `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.4`,
    * `deepseek-v4-pro` — so discovery made a raw upstream id selectable, and selecting one produced
