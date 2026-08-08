@@ -1,0 +1,45 @@
+name: Add issues to agent-factory project
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  add-to-project:
+    name: Add issue to agent-factory project
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add issue to project
+        id: add
+        uses: actions/add-to-project@v2
+        with:
+          project-url: https://github.com/orgs/rlabs88/projects/5
+          github-token: ${{ secrets.PROJECTS_PAT }}
+
+      - name: Set Status to Intake
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_PAT }}
+          PROJECT_ID: PVT_kwDOEL-dWs4BfoLB
+          ITEM_ID: ${{ steps.add.outputs.itemId }}
+          STATUS_FIELD_ID: PVTSSF_lADOEL-dWs4BfoLBzhZ5vSY
+          INTAKE_OPTION_ID: 334f00cc
+        run: |
+          gh api graphql \
+            -f query='
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }' \
+            -F projectId="$PROJECT_ID" \
+            -F itemId="$ITEM_ID" \
+            -F fieldId="$STATUS_FIELD_ID" \
+            -F optionId="$INTAKE_OPTION_ID"
