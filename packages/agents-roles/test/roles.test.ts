@@ -5,6 +5,7 @@ import { RequestContext } from "@mastra/core/request-context";
 import { LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import { describe, expect, test, vi } from "vitest";
 import {
+  AYRA_ROLE,
   CORTEX_ROLE,
   FLUX_ROLE,
   ROLE_IDS,
@@ -29,12 +30,18 @@ const dynamicWorkflowStub = {
 } as unknown as NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
 
 describe("canonical agent roles", () => {
-  test("exports the canonical Cortex, Flux, and Zen role definitions", () => {
-    expect(ROLE_IDS).toEqual(["cortex", "flux", "zen"]);
-    expect(ROLES).toEqual({ cortex: CORTEX_ROLE, flux: FLUX_ROLE, zen: ZEN_ROLE });
+  test("exports the canonical Cortex, Flux, Zen, and Ayra role definitions", () => {
+    expect(ROLE_IDS).toEqual(["cortex", "flux", "zen", "ayra"]);
+    expect(ROLES).toEqual({
+      cortex: CORTEX_ROLE,
+      flux: FLUX_ROLE,
+      zen: ZEN_ROLE,
+      ayra: AYRA_ROLE,
+    });
     expect(ROLES.cortex.name).toBe("Cortex");
     expect(ROLES.flux.name).toBe("Flux");
     expect(ROLES.zen.name).toBe("Zen");
+    expect(ROLES.ayra.name).toBe("Ayra");
   });
 
   test("publishes one root facade over four cohesive source modules", async () => {
@@ -70,6 +77,27 @@ describe("canonical agent roles", () => {
     expect(CORTEX_ROLE.model).toEqual({ id: "code-frontier-high", temperature: 0.2, steps: 80 });
     expect(FLUX_ROLE.model).toEqual({ id: "code-frontier-high", temperature: 0.7, steps: 80 });
     expect(ZEN_ROLE.model).toEqual({ id: "code-frontier-high", temperature: 0.1, steps: 48 });
+    expect(AYRA_ROLE.model).toEqual({ id: "code-frontier-high", temperature: 0.3, steps: 80 });
+  });
+
+  test("describes Ayra as the agent provisioner and primary dynamic-workflow author", () => {
+    const prompt = composePrompt(AYRA_ROLE);
+
+    expect(AYRA_ROLE.id).toBe("ayra");
+    expect(AYRA_ROLE.description).toMatch(/provision/i);
+    expect(prompt).toMatch(/domain-focused agents/);
+    expect(prompt).toMatch(/dynamic_workflow/);
+    expect(prompt).toMatch(/graph-engineering/);
+    expect(prompt).toMatch(/loop-engineering/);
+  });
+
+  test("teaches every role the difference between dynamic_workflow and subagent", () => {
+    for (const id of ROLE_IDS) {
+      const prompt = composePrompt(ROLES[id]);
+      expect(prompt).toMatch(/dynamic_workflow/);
+      expect(prompt).toMatch(/`subagent`/);
+      expect(prompt).toMatch(/durable/i);
+    }
   });
 
   test("preserves the exact current six-section prompts", () => {
@@ -100,7 +128,7 @@ describe("canonical agent roles", () => {
   test("creates the canonical non-recursive leaf set", async () => {
     const agents = createToolkitAgents({ browser: false });
 
-    expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
+    expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen", "ayra"]);
     for (const agent of Object.values(agents)) expect(await agent.listAgents()).toEqual({});
   });
 
@@ -114,7 +142,7 @@ describe("canonical agent roles", () => {
 
     for (const supervisor of Object.values(registry.supervisors)) {
       const targets = await supervisor.listAgents();
-      expect(Object.keys(targets)).toEqual(["cortex", "flux", "zen"]);
+      expect(Object.keys(targets)).toEqual(["cortex", "flux", "zen", "ayra"]);
       expect(targets).toEqual(registry.leaves);
       expect(await supervisor.getWorkspace({ requestContext })).toBe(workspace);
     }
@@ -200,7 +228,7 @@ describe("canonical agent roles", () => {
       backgroundTaskEnabled: false,
     });
 
-    expect(Object.keys(tools)).toEqual(["agent-cortex", "agent-flux", "agent-zen"]);
+    expect(Object.keys(tools)).toEqual(["agent-cortex", "agent-flux", "agent-zen", "agent-ayra"]);
     const result = await tools["agent-flux"]?.execute?.(
       { prompt: "Inspect the canonical runtime" },
       { requestContext, abortSignal: abortController.signal },
@@ -216,6 +244,7 @@ describe("canonical agent roles", () => {
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
     expect(agents.zen.browser).toBeDefined();
+    expect(agents.ayra.browser).toBeDefined();
   });
 
   test("runs injected tool hooks without removing audit events", async () => {

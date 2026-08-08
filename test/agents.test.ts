@@ -39,10 +39,10 @@ describe("canonical toolkit tools", () => {
 });
 
 describe("Mastra agents", () => {
-  test("registers Cortex, Flux, and Zen as non-recursive leaves", async () => {
+  test("registers Cortex, Flux, Zen, and Ayra as non-recursive leaves", async () => {
     const agents = createToolkitAgents({ browser: false });
 
-    expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen"]);
+    expect(Object.keys(agents)).toEqual(["cortex", "flux", "zen", "ayra"]);
     for (const agent of Object.values(agents)) expect(await agent.listAgents()).toEqual({});
   });
 
@@ -52,5 +52,6 @@ describe("Mastra agents", () => {
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();
     expect(agents.zen.browser).toBeDefined();
+    expect(agents.ayra.browser).toBeDefined();
   });
 });
