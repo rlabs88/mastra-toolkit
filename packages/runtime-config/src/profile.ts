@@ -116,6 +116,10 @@ const modelProfileSchema = z.object({
     cortex: z.string().min(1),
     flux: z.string().min(1),
     zen: z.string().min(1),
+    // Ayra provisions domain-focused agents toward a goal and is the primary
+    // author of dynamic workflows. Orchestration-heavy, so it shares the
+    // frontier tier with the other canonical roles.
+    ayra: z.string().min(1),
     specialist: z.string().min(1),
     observer: z.string().min(1),
     reflector: z.string().min(1),

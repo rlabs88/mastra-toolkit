@@ -34,6 +34,9 @@ describe("model profile", () => {
       cortex: DEFAULT_ACTIVE_ALIAS,
       flux: DEFAULT_ACTIVE_ALIAS,
       zen: DEFAULT_ACTIVE_ALIAS,
+      // Orchestration-heavy: Ayra provisions domain-focused agents and authors
+      // dynamic workflows, so it stays on the frontier tier.
+      ayra: DEFAULT_ACTIVE_ALIAS,
       specialist: DEFAULT_ACTIVE_ALIAS,
       observer: DEFAULT_OBSERVER_ALIAS,
       reflector: DEFAULT_OBSERVER_ALIAS,

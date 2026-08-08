@@ -52,10 +52,20 @@ describe("model profile", () => {
       cortex: DEFAULT_ACTIVE_ALIAS,
       flux: DEFAULT_ACTIVE_ALIAS,
       zen: DEFAULT_ACTIVE_ALIAS,
+      // Ayra provisions domain-focused agents and authors dynamic workflows.
+      // Orchestration-heavy, so it shares the frontier tier rather than a
+      // cheaper one.
+      ayra: DEFAULT_ACTIVE_ALIAS,
       observer: DEFAULT_OBSERVER_ALIAS,
       reflector: DEFAULT_OBSERVER_ALIAS,
     });
     expect(profile.aliases).toContain("code-frontier-max");
+  });
+
+  test("rejects an unknown alias on the ayra role like any other canonical role", async () => {
+    await expect(parseProfile(profile => {
+      profile.roles.ayra = "not-a-declared-alias";
+    })).rejects.toThrow(/unknown model alias/i);
   });
 
   test("carries per-alias capability metadata on a preset card beside the alias list", () => {
@@ -209,6 +219,11 @@ describe("model profile", () => {
             providerModelId: "a1-proxy/code-frontier-high",
             gatewayModelId: "proxy/a1-proxy/code-frontier-high",
           },
+          ayra: {
+            alias: "code-frontier-high",
+            providerModelId: "a1-proxy/code-frontier-high",
+            gatewayModelId: "proxy/a1-proxy/code-frontier-high",
+          },
           observer: {
             alias: "code-workhorse-high",
             providerModelId: "a1-proxy/code-workhorse-high",
@@ -241,6 +256,7 @@ describe("model profile", () => {
       "cortex",
       "flux",
       "zen",
+      "ayra",
       "specialist",
       "observer",
       "reflector",

@@ -23,6 +23,10 @@ roles:
   cortex: code-frontier-high
   flux: code-frontier-high
   zen: code-frontier-high
+  # Ayra provisions domain-focused agents toward a goal and is the primary
+  # author of dynamic workflows. Orchestration-heavy, so it stays on the
+  # frontier tier rather than a cheaper one.
+  ayra: code-frontier-high
   specialist: code-frontier-high
   observer: code-workhorse-high
   reflector: code-workhorse-high
