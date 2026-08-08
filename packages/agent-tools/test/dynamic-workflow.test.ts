@@ -76,6 +76,49 @@ function stubAgentStream(agent: Agent): { calls: number } {
   return state;
 }
 
+interface StubRun {
+  readonly runId: string;
+  readonly snapshot: unknown;
+}
+
+/**
+ * A runs store that honours `workflowName` the way a real one does, so a test
+ * can tell filtering-before-paging apart from paging-then-filtering.
+ */
+function inspectHarness(runsByWorkflow: Record<string, StubRun[]>) {
+  const calls: Array<{ workflowName?: string; perPage?: number }> = [];
+  const flat = Object.entries(runsByWorkflow)
+    .flatMap(([workflowName, runs]) => runs.map(run => ({ workflowName, ...run })));
+  const runsStore = {
+    listWorkflowRuns: async (args?: { workflowName?: string; perPage?: number }) => {
+      calls.push({ ...args });
+      const matching = args?.workflowName
+        ? flat.filter(run => run.workflowName === args.workflowName)
+        : flat;
+      const perPage = typeof args?.perPage === "number" ? args.perPage : matching.length;
+      return { runs: matching.slice(0, perPage), total: matching.length };
+    },
+  };
+  const definitionsStore = {
+    upsert: async () => undefined,
+    get: async () => null,
+    list: async () => ({
+      definitions: Object.keys(runsByWorkflow)
+        .filter(id => id.startsWith("dyn_"))
+        .map(id => ({ id, metadata: { origin: DYNAMIC_WORKFLOW_ORIGIN } })),
+    }),
+  };
+  const host = {
+    addStoredWorkflow: async () => undefined,
+    getWorkflow: () => { throw new Error("inspect must not execute a graph"); },
+    removeWorkflow: () => true,
+    getStorage: () => ({
+      getStore: async (name: string) => (name === "workflows" ? runsStore : definitionsStore),
+    }),
+  };
+  return { tool: createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] }), host, calls };
+}
+
 const fanOutGraph = {
   inputSchema: { type: "array", items: promptSchema },
   outputSchema: { type: "array", items: textSchema },
@@ -668,6 +711,88 @@ describe("dynamic_workflow", () => {
       steps: [{ type: "agent", id: "a", agentId: "flux" }],
       predicates: [predicate],
     })).toBe(true);
+  });
+
+  test("keeps a timed-out definition registered until its cancellation settles", async () => {
+    const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
+    const order: string[] = [];
+    let releaseCancel: (() => void) | undefined;
+    const host = {
+      addStoredWorkflow: async () => undefined,
+      getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
+      getWorkflow: () => ({
+        createRun: async () => ({
+          runId: "stuck-run",
+          start: async () => new Promise(() => undefined),
+          cancel: async () => {
+            order.push("cancel:start");
+            await new Promise<void>(resolve => {
+              releaseCancel = () => { order.push("cancel:end"); resolve(); };
+            });
+          },
+        }),
+      }),
+      removeWorkflow: () => { order.push("unregister"); return true; },
+    };
+
+    const pending = (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({
+      action: "run",
+      description: "timeout race",
+      definition: nestedGraph,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 1_000,
+    }, { mastra: host, requestContext: new RequestContext() });
+
+    await vi.waitFor(() => expect(releaseCancel).toBeTypeOf("function"), { timeout: 5_000 });
+    // The live workflow must not leave the registry while it is still running.
+    expect(order).toEqual(["cancel:start"]);
+    releaseCancel?.();
+
+    const result = await pending;
+    expect(result.status).toBe("failed");
+    expect(order).toEqual(["cancel:start", "cancel:end", "unregister"]);
+  });
+
+  test("inspects a dynamic run that a busier workflow's runs would otherwise displace", async () => {
+    const { tool, host, calls } = inspectHarness({
+      "dyn_1111111111111111": [{ runId: "wanted", snapshot: { status: "success" } }],
+      noise: Array.from({ length: 20 }, (_, index) => ({ runId: `n${index}`, snapshot: { status: "success" } })),
+    });
+
+    const result = await (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({ action: "inspect" }, { mastra: host, requestContext: new RequestContext() });
+
+    expect(result.runs).toEqual([
+      expect.objectContaining({ workflowId: "dyn_1111111111111111", runId: "wanted", status: "success" }),
+    ]);
+    // Paging the whole runs table and filtering afterwards drops dynamic runs
+    // behind any busier workflow, so the filter has to reach the store.
+    expect(calls.every(call => call.workflowName !== undefined)).toBe(true);
+  });
+
+  test("reports inspect truncation honestly and surfaces suspended step paths", async () => {
+    const { tool, host } = inspectHarness({
+      "dyn_1111111111111111": Array.from({ length: 21 }, (_, index) => ({
+        runId: `r${index}`,
+        snapshot: {
+          status: "suspended",
+          suspendedPaths: { paused: [0] },
+          context: { paused: { status: "suspended" } },
+        },
+      })),
+    });
+
+    const result = await (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute({ action: "inspect" }, { mastra: host, requestContext: new RequestContext() });
+
+    expect(result.truncated).toBe(true);
+    expect(result.resumable).toBe(true);
+    expect((result.runs as Array<{ suspended?: string[][] }>)[0]?.suspended).toEqual([["paused"]]);
   });
 
   test("archives a stray active definition at boot", async () => {
