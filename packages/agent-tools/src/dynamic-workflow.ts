@@ -46,6 +46,9 @@ const CEILING_POLICY = Object.freeze({
 /** Named so a model that cannot resume learns why, and that the run is unrecoverable rather than mistyped. */
 const CEILING_POLICY_MISMATCH = "ceiling_policy_mismatch";
 
+/** Named so a cross-tenant attempt is never mistaken for a ceiling change or for corruption. */
+const SCOPE_MISMATCH = "scope_mismatch";
+
 /**
  * Three bounds used to be set independently and could not all hold at once.
  *
@@ -214,6 +217,17 @@ export interface DynamicWorkflowToolOptions {
   /** Registered workflow ids a graph may nest; all other workflow references fail closed. */
   readonly nestedWorkflows?: readonly string[];
   readonly authorize?: (context: DynamicWorkflowAuthorizationContext) => Promise<void> | void;
+  /**
+   * Host-derived, request-scoped tenant key.
+   *
+   * Opaque here: this package never interprets it, only hashes it. Supplying
+   * it makes the workflow id content-addressed over the scope as well as the
+   * graph, so two tenants authoring an identical graph no longer collapse onto
+   * one id, and confines `inspect` and `resume` to the caller's own tenant.
+   * Throwing fails the call closed. Omitting it leaves every id, digest, and
+   * stored row exactly as it was before scoping existed.
+   */
+  readonly scope?: (context: DynamicWorkflowAuthorizationContext) => Promise<string> | string;
   /** Hosts without durable request-context reconstruction may disable resume. */
   readonly resumable?: boolean;
 }
@@ -297,25 +311,33 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
       if (context.requestContext.get(DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY) === 1) {
         throw new Error("Nested dynamic_workflow calls are not allowed");
       }
-      await options.authorize?.({
+      const authorizationContext = {
         requestContext: context.requestContext,
         ...(context.workspace ? { workspace: context.workspace } : {}),
-      });
+      };
+      await options.authorize?.(authorizationContext);
+      // Resolved before any action so `inspect` is confined too, and before
+      // any host call so a scope the host cannot derive stops the call here.
+      const authority: GraphAuthority = {
+        allowedAgents,
+        allowedWorkflows,
+        scopeDigest: await resolveScopeDigest(options.scope, authorizationContext),
+      };
       const host = context.mastra as unknown as DynamicWorkflowHost | undefined;
       if (!host?.addStoredWorkflow) throw new Error("dynamic_workflow requires an active Mastra runtime");
       const childRequestContext = dispatchContext(
         context.requestContext,
       );
 
-      if (input.action === "inspect") return inspect(host, input);
+      if (input.action === "inspect") return inspect(host, input, authority.scopeDigest);
       if (input.action === "resume") {
         if (!resumable) {
           return fail("resume", "This host does not support resuming a dynamic workflow run");
         }
-        return resume(host, input, context, childRequestContext, allowedAgents, allowedWorkflows);
+        return resume(host, input, context, childRequestContext, authority);
       }
 
-      const prepared = prepare(input.definition, allowedAgents, allowedWorkflows);
+      const prepared = prepare(input.definition, authority);
       if (!prepared.ok) {
         return {
           version: 1 as const,
@@ -391,11 +413,37 @@ interface PreparedDefinition {
 
 type PrepareResult = PreparedDefinition | { readonly ok: false; readonly issues: string[] };
 
+/** What a caller is allowed to reference, and which tenant it acts for. */
+interface GraphAuthority {
+  readonly allowedAgents: ReadonlySet<string>;
+  readonly allowedWorkflows: ReadonlySet<string>;
+  /** `sha256(scope)`, or undefined when the host configured no scope. */
+  readonly scopeDigest: string | undefined;
+}
+
+/**
+ * Hashes the host's tenant key so the raw value never reaches storage, a
+ * digest, or an error message. An empty key is refused rather than hashed,
+ * because it would silently place every caller of a misconfigured host into
+ * one shared scope.
+ */
+async function resolveScopeDigest(
+  scope: DynamicWorkflowToolOptions["scope"],
+  context: DynamicWorkflowAuthorizationContext,
+): Promise<string | undefined> {
+  if (!scope) return undefined;
+  const value = await scope(context);
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("dynamic_workflow scope resolved to an empty value");
+  }
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function prepare(
   definition: DynamicWorkflowDefinition,
-  allowedAgents: ReadonlySet<string>,
-  allowedWorkflows: ReadonlySet<string>,
+  authority: GraphAuthority,
 ): PrepareResult {
+  const { allowedAgents, allowedWorkflows, scopeDigest } = authority;
   const issues: string[] = [];
   const ids = new Set<string>();
   definition.graph.forEach((entry, index) => {
@@ -408,8 +456,20 @@ function prepare(
   const inputSchema = boundArraySchema(definition.inputSchema);
   const outputSchema = boundArraySchema(definition.outputSchema);
   const stateSchema = definition.stateSchema ? boundArraySchema(definition.stateSchema) : undefined;
+  // `scopeDigest` is a sibling of the graph rather than part of the ceiling
+  // policy: a tenant boundary and a containment ceiling drift for unrelated
+  // reasons, and folding them together would let a cross-tenant call report
+  // itself as a ceiling change. `canonicalJson` drops undefined entries, so an
+  // unscoped host hashes exactly the bytes it hashed before scoping existed.
   const digest = createHash("sha256")
-    .update(canonicalJson({ ceilingPolicy: CEILING_POLICY, inputSchema, outputSchema, stateSchema, graph }))
+    .update(canonicalJson({
+      ceilingPolicy: CEILING_POLICY,
+      scopeDigest,
+      inputSchema,
+      outputSchema,
+      stateSchema,
+      graph,
+    }))
     .digest("hex");
   const workflowId = `dyn_${digest.slice(0, 16)}`;
   const stored = {
@@ -423,6 +483,7 @@ function prepare(
       origin: DYNAMIC_WORKFLOW_ORIGIN,
       graphDigest: `sha256:${digest}`,
       ceilingPolicy: CEILING_POLICY,
+      ...(scopeDigest ? { scopeDigest } : {}),
     },
   };
   const upstreamIssues = validateStoredWorkflow(stored as never, {
@@ -701,8 +762,7 @@ async function resume(
   },
   context: ToolContext,
   childRequestContext: RequestContext,
-  allowedAgents: ReadonlySet<string>,
-  allowedWorkflows: ReadonlySet<string>,
+  authority: GraphAuthority,
 ): Promise<Output> {
   const store = await definitionsStore(host);
   if (!store) return fail("resume", "This runtime has no workflow definition storage");
@@ -710,6 +770,13 @@ async function resume(
   if (!definition) return fail("resume", `No stored definition for ${input.workflowId}`);
   if (definition.metadata?.origin !== DYNAMIC_WORKFLOW_ORIGIN) {
     return fail("resume", "Stored definition is outside dynamic_workflow authority");
+  }
+  // Ahead of every other check, so a caller that guessed an id learns nothing
+  // about another tenant's row — not its ceilings, not its content. A row
+  // stored without a scopeDigest matches only an unscoped caller, so turning
+  // scoping on retires legacy rows rather than sharing them with everyone.
+  if (definition.metadata.scopeDigest !== authority.scopeDigest) {
+    return fail("resume", `${SCOPE_MISMATCH}: this run belongs to a different scope`);
   }
   const parsed = definitionSchema.safeParse({
     inputSchema: definition.inputSchema,
@@ -733,7 +800,7 @@ async function resume(
       + "resumed under them. Author the graph again.",
     );
   }
-  const prepared = prepare(parsed.data, allowedAgents, allowedWorkflows);
+  const prepared = prepare(parsed.data, authority);
   if (!prepared.ok) return fail("resume", `Stored definition is outside current authority: ${prepared.issues.join("; ")}`);
   if (prepared.workflowId !== input.workflowId || definition.metadata.graphDigest !== prepared.digest) {
     return fail("resume", "Stored definition identity or digest does not match its content");
@@ -827,12 +894,16 @@ function emptyInspect(): Output {
 async function inspect(
   host: DynamicWorkflowHost,
   input: { workflowId?: string | undefined; runId?: string | undefined },
+  scopeDigest: string | undefined,
 ): Promise<Output> {
   const store = await definitionsStore(host);
   if (!store) return emptyInspect();
   const { definitions } = await store.list({ status: "archived" });
   const workflowIds = definitions
     .filter(definition => definition.metadata?.origin === DYNAMIC_WORKFLOW_ORIGIN)
+    // Existence, count, and status are the leak here, so the tenant filter has
+    // to sit on the definition list rather than on the runs it produces.
+    .filter(definition => definition.metadata?.scopeDigest === scopeDigest)
     .filter(definition => !input.workflowId || definition.id === input.workflowId)
     .map(definition => definition.id);
   const runsStore = await workflowRunsStore(host);
