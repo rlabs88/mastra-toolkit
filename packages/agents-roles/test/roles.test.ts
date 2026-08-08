@@ -113,7 +113,7 @@ describe("canonical agent roles", () => {
       cortex: "8efbc918af86199ba12aad85be438cf89f6ec4654bc670a83b188ebc32d34025",
       flux: "65d2287aaad260e897d6be456260a11dbe5df36cb0e2ecba12ff27903e9ef30f",
       zen: "882bf7527bbff3c4ee19e21c92ca472078f375038e04f530c5aae6cbd3d10911",
-      ayra: "33d8cf2642f45e1675cdd8cf80a87b18a80bc957a375d2573c81e27059912098",
+      ayra: "5fe545142eb1313d55f02685df7f83b338e21d729cce4916a908f4b3704aa1b1",
     });
   });
 
