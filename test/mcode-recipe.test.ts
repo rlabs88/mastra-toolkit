@@ -169,8 +169,7 @@ describe("canonical MCode recipe", () => {
   test("inherits runtime-memory changes through the shared contract digest", () => {
     const profile = loadModelProfile();
     const changedMemory = structuredClone(profile);
-    changedMemory.memory.contextBudgetTokens = 180_000;
-    changedMemory.memory.observationThresholdTokens = 70_000;
+    changedMemory.modelCards["code-frontier-high"]!.observation!.messageTokens = 170_000;
     const original = createMcodeRecipe({
       profile,
       browser: false,

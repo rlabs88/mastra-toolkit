@@ -175,7 +175,7 @@ describe("single-project Factory composition", () => {
         source: "@rlabs/runtime-config/models.yaml",
         version: 1,
         factoryMemory: {
-          observationThreshold: 120_000,
+          observationThreshold: 180_000,
           reflectionThreshold: 60_000,
         },
         persistedPrecedence: "memory-settings-over-startup-defaults",

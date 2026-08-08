@@ -25,7 +25,8 @@ describe("ToolkitRuntimeContract", () => {
     expect(Object.isFrozen(first.roles.definitions.cortex.model)).toBe(true);
 
     const changedProfile = structuredClone(profile);
-    changedProfile.memory.contextBudgetTokens += 1;
+    const changedObservation = changedProfile.modelCards["code-frontier-high"]!.observation!;
+    changedObservation.messageTokens = changedObservation.messageTokens! + 1;
     expect(createToolkitRuntimeContract({ profile: changedProfile }).capability.digest)
       .not.toBe(first.capability.digest);
     expect(createToolkitRuntimeContract({
