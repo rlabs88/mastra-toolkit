@@ -21,7 +21,8 @@ export class ProxyGateway extends MastraModelGateway {
     return {
       "a1-proxy": {
         name: "A1 OpenAI-compatible",
-        models: await this.fetchModelIds(),
+        // The declared aliases are the catalog. See `advertisedModelIds`.
+        models: this.advertisedModelIds(),
         apiKeyEnvVar: ["PROXY_API_KEY", "CLI_PROXY_API_KEY"],
         gateway: this.id,
         url: this.config.baseUrl,
@@ -59,22 +60,24 @@ export class ProxyGateway extends MastraModelGateway {
     return { id: this.id, name: this.name, baseUrl: this.config.baseUrl };
   }
 
-  private async fetchModelIds(): Promise<string[]> {
-    if (!this.config.apiKey) return [...this.config.models];
-
-    try {
-      const response = await fetch(`${this.config.baseUrl}/models`, {
-        headers: { authorization: `Bearer ${this.config.apiKey}` },
-      });
-      if (!response.ok) return [...this.config.models];
-
-      const body = await response.json() as { data?: Array<{ id?: unknown }> };
-      const discovered = (body.data ?? []).flatMap(model => (
-        typeof model.id === "string" ? [model.id] : []
-      ));
-      return [...new Set([...this.config.models, ...discovered])];
-    } catch {
-      return [...this.config.models];
-    }
+  /**
+   * The catalog is exactly the declared proxy aliases, never what the proxy happens to advertise.
+   *
+   * This used to union the declared list with every id from `GET /models`. That endpoint returns
+   * the raw upstream model names alongside the aliases — `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.4`,
+   * `deepseek-v4-pro` — so discovery made a raw upstream id selectable, and selecting one produced
+   * a model no provider entry could resolve.
+   *
+   * Discovery cannot be repaired by filtering, because the alias to upstream mapping is many to
+   * one: the proxy distinguishes tiers by `reasoning.effort` over a shared upstream model, so
+   * `code-frontier-max`, `-high`, and `-low` all resolve to `gpt-5.6-sol`. An upstream id therefore
+   * carries no recoverable tier, and nothing downstream can reconstruct which alias was meant.
+   *
+   * `models.yaml` is the canonical declaration and `resolveAliasModelId` already rejects anything
+   * absent from it, so an id discovered here but undeclared there could be selected and never
+   * resolved. Publishing only the declared aliases makes the catalog agree with that rule.
+   */
+  private advertisedModelIds(): string[] {
+    return [...this.config.models];
   }
 }
