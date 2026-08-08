@@ -5,6 +5,7 @@ import {
   createMcodeControllerProjection,
   createStudioControllerProjection,
   fillMissingSubagentModelId,
+  RESERVED_HOST_TOOL_IDS,
   type McodeControllerProjection,
 } from "./recipe.js";
 import { type MastraCodeAgentController, prepareAgentControllerMount, wireSessionConcerns } from "@mastra/code-sdk";
@@ -15,6 +16,7 @@ import { ONBOARDING_VERSION } from "@mastra/code-sdk/onboarding/index";
 import type { MastraCodeState } from "@mastra/code-sdk/schema";
 import { detectProject, type ProjectInfo } from "@mastra/code-sdk/utils/project";
 import { releaseAllThreadLocks } from "@mastra/code-sdk/utils/thread-lock";
+import type { ToolsInput } from "@mastra/core/agent";
 import type { AgentControllerConfig, Session } from "@mastra/core/agent-controller";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
@@ -276,7 +278,7 @@ export async function prepareMcodeRuntime(
   } satisfies ToolkitRuntimeBinding<typeof workspace, Awaited<ReturnType<typeof workspace.resolveSandbox>>>;
   let resources: ProjectMountingManager | undefined;
   const dynamicTools = createDynamicTools(undefined, () =>
-    (resources?.getTools() ?? {}) as Record<string, ToolLike>,
+    withoutReservedHostTools(resources?.getTools() ?? {}) as Record<string, ToolLike>,
   ) as ToolkitAdditionalTools;
   const createProjection = options.host === "studio"
     ? createStudioControllerProjection
@@ -365,7 +367,10 @@ export async function prepareMcodeRuntime(
           modelAliases: new ProfileModelAliasResolver(contractProfile),
           mcp,
           // Reported, not published: the mounting manager rejects a project
-          // workflow that would shadow a reserved host tool id.
+          // workflow that would shadow a reserved host tool id. The manager
+          // merges this snapshot into the tools it publishes, so
+          // `withoutReservedHostTools` strips these ids back out of everything
+          // that returns through `getTools()`.
           currentTools: new StaticToolSnapshot({
             dynamic_workflow: dynamicWorkflow,
           }),
@@ -452,6 +457,20 @@ async function cleanupFailedMcodeStartup(
   const results = await Promise.allSettled(tasks);
   setCustomProvidersSource(undefined);
   return results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+}
+
+/**
+ * The reserved-tool snapshot handed to the project mounting manager is a
+ * shadow-detection input, not a publication. Stripping those ids on the way
+ * back keeps the host's per-role exclusions authoritative: a project-mounted
+ * tool map has no way to express that Flux is excluded from durable
+ * orchestration, so anything the manager republishes under a reserved id
+ * would silently overrule that exclusion for every role.
+ */
+function withoutReservedHostTools(tools: ToolsInput): ToolsInput {
+  const reserved = new Set<string>(RESERVED_HOST_TOOL_IDS);
+  if (!Object.keys(tools).some(id => reserved.has(id))) return tools;
+  return Object.fromEntries(Object.entries(tools).filter(([id]) => !reserved.has(id)));
 }
 
 function freezeSnapshot<T>(value: T): T {
