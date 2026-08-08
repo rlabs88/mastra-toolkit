@@ -27,14 +27,15 @@ const MAX_RETAINED_CHARS = 24_000;
 const MAX_INSPECT_RUNS = 20;
 
 /**
- * Bumped whenever any ceiling above changes. The value is digested with the
- * graph, so a definition stored under one policy can never be mistaken for the
- * same graph clamped under another, and `resume` can say which policy a
- * suspended run belongs to instead of reporting a bare digest mismatch.
+ * Bump when a ceiling change should orphan outstanding suspended runs even
+ * though the numbers alone would not say so. `ceilingPolicyDrift` compares
+ * every field, so a forgotten bump still produces the named error rather than
+ * an opaque digest mismatch; the version exists to name the generation.
  */
 const CEILING_POLICY_VERSION = 1;
 
-export const DYNAMIC_WORKFLOW_CEILING_POLICY = Object.freeze({
+/** Persisted in each definition's metadata, so a stored graph carries the ceilings it was admitted under. */
+const CEILING_POLICY = Object.freeze({
   version: CEILING_POLICY_VERSION,
   maxGraphEntries: MAX_GRAPH_ENTRIES,
   maxFanOut: MAX_FAN_OUT,
@@ -42,10 +43,8 @@ export const DYNAMIC_WORKFLOW_CEILING_POLICY = Object.freeze({
   maxSleepMs: MAX_SLEEP_MS,
 });
 
-const CEILING_POLICY = DYNAMIC_WORKFLOW_CEILING_POLICY;
-
 /** Named so a model that cannot resume learns why, and that the run is unrecoverable rather than mistyped. */
-export const DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH = "ceiling_policy_mismatch";
+const CEILING_POLICY_MISMATCH = "ceiling_policy_mismatch";
 
 /**
  * Three bounds used to be set independently and could not all hold at once.
@@ -55,25 +54,15 @@ export const DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH = "ceiling_policy_mismatch
  * `cancel()` is still in flight and the run is never contained. The harness
  * bound in turn has to fit inside the aggregate run budget, or a single
  * dynamic workflow can outlive the wall clock that is supposed to contain the
- * whole agent run. `timeBoundsInvariant` is the executable statement of that
- * ordering.
+ * whole agent run.
+ *
+ * The harness bound is therefore derived from the authored cap rather than set
+ * beside it, so the two cannot drift apart, and the package test asserts the
+ * remaining leg against `RUN_CONTAINMENT_POLICY.maxWallClockMs`.
  */
 const MAX_TIMEOUT_MS = 600_000;
 const CANCELLATION_GRACE_MS = 30_000;
 const BACKGROUND_TIMEOUT_MS = MAX_TIMEOUT_MS + CANCELLATION_GRACE_MS;
-
-export const DYNAMIC_WORKFLOW_TIME_BOUNDS = Object.freeze({
-  maxTimeoutMs: MAX_TIMEOUT_MS,
-  cancellationGraceMs: CANCELLATION_GRACE_MS,
-  backgroundTimeoutMs: BACKGROUND_TIMEOUT_MS,
-  runBudgetWallClockMs: RUN_CONTAINMENT_POLICY.maxWallClockMs,
-});
-
-/** True only while every authored timeout can still be cancelled and reported inside the run budget. */
-export function timeBoundsInvariant(): boolean {
-  return MAX_TIMEOUT_MS < BACKGROUND_TIMEOUT_MS
-    && BACKGROUND_TIMEOUT_MS <= RUN_CONTAINMENT_POLICY.maxWallClockMs;
-}
 
 const identifier = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
 const jsonSchemaObject = z.record(z.string(), z.unknown());
@@ -482,8 +471,10 @@ function checkEntry(entry: DynamicWorkflowGraphEntry, path: string, check: Check
       checkEntry(entry.step, `${path}.step`, check);
       return;
     case "parallel":
+      entry.steps.forEach((step, index) => checkEntry(step, `${path}.steps.${index}`, check));
+      return;
     case "conditional":
-      if (entry.type === "conditional" && entry.predicates.length !== entry.steps.length) {
+      if (entry.predicates.length !== entry.steps.length) {
         check.issues.push(`${path}: predicates must align one-to-one with steps`);
       }
       entry.steps.forEach((step, index) => checkEntry(step, `${path}.steps.${index}`, check));
@@ -687,7 +678,7 @@ async function resume(
   if (drift) {
     return fail(
       "resume",
-      `${DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH}: run was suspended under ceiling policy `
+      `${CEILING_POLICY_MISMATCH}: run was suspended under ceiling policy `
       + `v${drift.storedVersion ?? "unversioned"}, and this runtime enforces v${CEILING_POLICY_VERSION} `
       + `(${drift.changed.join(", ")}). Ceilings changed while the run was suspended, so it cannot be `
       + "resumed under them. Author the graph again.",
@@ -770,8 +761,8 @@ async function runBelongsToWorkflow(
   return { ok: true };
 }
 
-function emptyInspect(truncated = false): Output {
-  return { version: 1 as const, action: "inspect" as const, runs: [], resumable: false, truncated };
+function emptyInspect(): Output {
+  return { version: 1 as const, action: "inspect" as const, runs: [], resumable: false, truncated: false };
 }
 
 /**

@@ -8,13 +8,10 @@ import { z } from "zod";
 import {
   createDynamicWorkflowTool,
   createRunBudgetHooks,
-  DYNAMIC_WORKFLOW_CEILING_POLICY,
-  DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH,
   DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY,
   DYNAMIC_WORKFLOW_ORIGIN,
-  DYNAMIC_WORKFLOW_TIME_BOUNDS,
   reconcileDynamicWorkflowDefinitions,
-  timeBoundsInvariant,
+  RUN_CONTAINMENT_POLICY,
 } from "../src/index.js";
 
 const helper = createWorkflow({
@@ -619,10 +616,6 @@ describe("dynamic_workflow", () => {
 
   test("clamps author-supplied fan-out concurrency to the host ceiling", async () => {
     const { mastra, invoke } = harness();
-    // `createStep(agent)` pins the step input to `{ prompt }` and its default
-    // output to `{ text }`, so a fan-out array must carry that element shape.
-    const promptSchema = { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] };
-    const textSchema = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
 
     const result = await invoke({
       action: "run",
@@ -631,8 +624,7 @@ describe("dynamic_workflow", () => {
       timeoutMs: 30_000,
       input: [],
       definition: {
-        inputSchema: { type: "array", items: promptSchema },
-        outputSchema: { type: "array", items: textSchema },
+        ...fanOutGraph,
         graph: [{
           type: "foreach",
           step: { type: "agent", id: "fan", agentId: "flux" },
@@ -649,7 +641,9 @@ describe("dynamic_workflow", () => {
     const stored = await store.get(result.workflowId as string);
 
     expect((stored?.graph[0] as { opts?: { concurrency?: number } })?.opts?.concurrency).toBe(3);
-    // A maxItems ceiling is the only static bound on fan-out width.
+    // The stamped ceiling records the width the definition was admitted under.
+    // It does not enforce it — upstream's converter discards `maxItems` — which
+    // is why the run-time width check above is the control that binds.
     expect(stored?.inputSchema.maxItems).toBe(8);
   });
 
@@ -923,15 +917,15 @@ describe("dynamic_workflow", () => {
       }>;
     }).getStore("workflowDefinitions");
     const stored = await store.get(started.workflowId as string);
+    const metadata = stored?.metadata as { ceilingPolicy?: Record<string, unknown> };
+    // The definition records the ceilings it was admitted under.
+    expect(metadata.ceilingPolicy).toMatchObject({ version: 1, maxFanOut: 8 });
     // Stands in for a runtime that lowered a ceiling while the run was
     // suspended, and did so without remembering to bump the policy version.
     await store.upsert({
       ...stored,
       status: "archived",
-      metadata: {
-        ...(stored?.metadata as Record<string, unknown>),
-        ceilingPolicy: { ...DYNAMIC_WORKFLOW_CEILING_POLICY, maxFanOut: 64 },
-      },
+      metadata: { ...metadata, ceilingPolicy: { ...metadata.ceilingPolicy, maxFanOut: 64 } },
     });
 
     const result = await invoke({
@@ -944,7 +938,7 @@ describe("dynamic_workflow", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.error).toContain(DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH);
+    expect(result.error).toContain("ceiling_policy_mismatch");
     expect(result.error).toContain("maxFanOut");
     // The opaque content mismatch was what orphaned suspended runs before.
     expect(result.error).not.toMatch(/digest does not match/i);
@@ -1168,12 +1162,28 @@ describe("dynamic_workflow", () => {
     expect(steps.at(-1)?.output ?? "").toBe("");
   });
 
-  test("pins the tool timeout inside the harness deadline and the run budget", () => {
-    expect(timeBoundsInvariant()).toBe(true);
-    expect(DYNAMIC_WORKFLOW_TIME_BOUNDS.maxTimeoutMs)
-      .toBeLessThan(DYNAMIC_WORKFLOW_TIME_BOUNDS.backgroundTimeoutMs);
-    expect(DYNAMIC_WORKFLOW_TIME_BOUNDS.backgroundTimeoutMs)
-      .toBeLessThanOrEqual(DYNAMIC_WORKFLOW_TIME_BOUNDS.runBudgetWallClockMs);
+  test("pins the authored timeout inside the harness deadline and the run budget", () => {
+    const { tool } = harness();
+    const { inputSchema, background } = tool as unknown as {
+      inputSchema: { safeParse(value: unknown): { success: boolean } };
+      background: { timeoutMs: number };
+    };
+    const accepts = (timeoutMs: number) => inputSchema.safeParse({
+      action: "run",
+      description: "d",
+      definition: nestedGraph,
+      timeoutMs,
+    }).success;
+
+    // The largest timeout a caller can author.
+    expect(accepts(600_000)).toBe(true);
+    expect(accepts(600_001)).toBe(false);
+    // It must expire before the harness reclaims the call, or cancellation
+    // never runs and the workflow is never contained.
+    expect(background.timeoutMs).toBeGreaterThan(600_000);
+    // And the harness bound must fit inside the aggregate run budget, or one
+    // dynamic workflow can outlive the wall clock containing the whole run.
+    expect(background.timeoutMs).toBeLessThanOrEqual(RUN_CONTAINMENT_POLICY.maxWallClockMs);
   });
 
   test("leaves an active definition this tool did not author alone", async () => {
