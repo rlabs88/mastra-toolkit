@@ -42,7 +42,7 @@
     "@mastra/docker": "0.5.0",
     "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
     "@mastra/libsql": "1.19.0",
-    "@mastra/memory": "1.26.0",
+    "@mastra/memory": "1.26.1-alpha.3",
     "@mastra/pg": "1.19.0",
     "@mastra/platform-workspace": "0.2.3",
     "@mastra/redis-streams": "0.3.0",
@@ -58,5 +58,8 @@
     "tsx": "4.20.6",
     "typescript": "5.9.2",
     "vitest": "4.1.10"
+  },
+  "overrides": {
+    "@mastra/memory": "1.26.1-alpha.3"
   }
 }

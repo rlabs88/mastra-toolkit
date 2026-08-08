@@ -3,13 +3,14 @@ import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { CODE_MODE_IDS } from "@rlabs/mcode";
 import {
   createLocalMcodeRuntime,
   type LocalMcodeRuntime,
 } from "@rlabs/mcode";
 import { loadModelProfile } from "@rlabs/runtime-config";
+import { startDynamicWorkflowBackgroundTaskObserver } from "../packages/mcode/src/background-task-observer.js";
 
 const execFileAsync = promisify(execFile);
 const openRuntimes: LocalMcodeRuntime[] = [];
@@ -80,5 +81,78 @@ describe("local Mastra Code runtime", () => {
     openRuntimes.push(runtime);
 
     expect(runtime.config.runtime.proxy.model).toBe("startup-only");
+  });
+
+  test("projects manager output onto the human session bus without persisting it", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "mastra-code-observer-project-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-code-observer-data-"));
+    await execFileAsync("git", ["init", "--quiet", projectRoot]);
+    const runtime = await createLocalMcodeRuntime({
+      cwd: projectRoot,
+      dataDirectory,
+      browser: false,
+      disableMcp: true,
+      watch: false,
+      environment: {
+        ...process.env,
+        CLI_PROXY_API_KEY: "test-only-key",
+      },
+    });
+    openRuntimes.push(runtime);
+    await runtime.session.thread.create({ id: "observer-thread" });
+    const messagesBefore = await runtime.session.thread.listActiveMessages();
+    const info: string[] = [];
+    const unsubscribe = runtime.session.subscribe(event => {
+      if (event.type === "info") info.push(event.message);
+    });
+    const manager = runtime.mastra.backgroundTaskManager;
+    if (!manager) throw new Error("Expected the local background task manager");
+    const observer = startDynamicWorkflowBackgroundTaskObserver({
+      manager,
+      resourceId: runtime.session.identity.getResourceId(),
+      emit: event => runtime.session.emit(event),
+    });
+    const base = {
+      id: "task-1",
+      status: "running",
+      toolCallId: "call-1",
+      args: { action: "run" },
+      agentId: "cortex",
+      threadId: "thread-1",
+      resourceId: runtime.project.resourceId,
+      runId: "run-1",
+      createdAt: new Date(),
+      startedAt: new Date(),
+      retryCount: 0,
+      maxRetries: 0,
+      timeoutMs: 30_000,
+    } as const;
+
+    await manager.publishLifecycleEvent("task.output", {
+      ...base,
+      toolName: "another_tool",
+      chunk: { type: "tool-output", payload: { ignored: true } } as never,
+    });
+    await manager.publishLifecycleEvent("task.output", {
+      ...base,
+      toolName: "dynamic_workflow",
+      chunk: {
+        type: "tool-output",
+        payload: {
+          type: "workflow-step-output",
+          payload: { stepName: "research", output: { text: "visible to the human" } },
+        },
+      } as never,
+    });
+
+    await vi.waitFor(() => expect(info).toHaveLength(1));
+    expect(info[0]).toContain("background-task-output");
+    expect(info[0]).toContain("workflow-step-output");
+    expect(info[0]).toContain("visible to the human");
+    expect(info[0]).not.toContain("ignored");
+    expect(await runtime.session.thread.listActiveMessages()).toEqual(messagesBefore);
+    expect(JSON.stringify(await runtime.session.thread.listActiveMessages())).not.toContain("visible to the human");
+    await observer.close();
+    unsubscribe();
   });
 });

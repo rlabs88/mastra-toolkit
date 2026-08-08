@@ -10,7 +10,7 @@
   "spec": {
     "defaultProvider": "local",
     "commandTimeoutMs": 300000,
-    "maxSandboxes": 8,
+    "maxSandboxes": 50,
     "workdir": "/workspace",
     "entrypointProfile": {
       "id": "aes-sandbox-arm64-v1",

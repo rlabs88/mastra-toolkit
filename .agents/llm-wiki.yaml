@@ -1,0 +1,461 @@
+# ~/.agents/.agents/llm-wiki.yaml (symlinked by `just install` from repo checkout)
+# Project overlay: <repo>/.agents/llm-wiki.yaml
+#
+# WHY YAML: comments travel with the schema so agents record WHY a field exists.
+# Agents editing this file must leave a WHY comment beside every field they instantiate or change.
+# Markdown guides in skills/core/llm-wiki/ explain meaning; this file is the machine-checkable SSOT.
+
+# WHY versioned: checkers reject unknown schema revisions instead of half-parsing.
+version: 1
+
+# WHY wiki objects are closed: runtime classification must stay mutually exclusive per file.
+wiki_objects:
+  - concepts
+  - index
+  - procedure
+
+# WHY tags are enumerated here: Markdown guides explain; YAML gates.
+tags:
+  # WHY three segments: every live tag must be #<statement-kind>/<domain>/<qualifier>.
+  grammar: "<statement-kind>/<domain>/<qualifier>"
+  kinds:
+    requirement:
+      # WHY these domains: requirement statements span product and operability concerns including documentation contracts.
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - documentation
+        - data
+        - api
+        - performance
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - critical
+        - high
+        - normal
+        - low
+    constraint:
+      # WHY no documentation domain: constraints use tooling/architecture/platform axes; documentation musts are requirements.
+      domains:
+        - architecture
+        - security
+        - platform
+        - dependency
+        - data
+        - api
+        - performance
+        - operability
+        - tooling
+        - compatibility
+      qualifiers:
+        - hard
+        - soft
+    decision:
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - documentation
+        - data
+        - api
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - foundational
+        - structural
+        - local
+    risk:
+      # WHY no documentation domain: documentation exposures are tracked as tooling or operability risks.
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - data
+        - api
+        - dependency
+        - performance
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - critical
+        - high
+        - medium
+        - low
+    validation:
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - documentation
+        - data
+        - api
+        - performance
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - test
+        - command
+        - metric
+        - api
+        - probe
+        - inspection
+    direction:
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - documentation
+        - data
+        - api
+        - performance
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - committed
+        - exploring
+        - deferred
+    non-goal:
+      domains:
+        - architecture
+        - security
+        - devops
+        - testing
+        - documentation
+        - data
+        - api
+        - performance
+        - runtime
+        - operability
+        - tooling
+        - compatibility
+        - ux
+      qualifiers:
+        - excluded
+        - delegated
+        - external
+
+# WHY headers are listed: frontmatter is not free-form on scanned surfaces.
+headers:
+  skill:
+    # WHY skill identity fields: harness discovery and Index placement key off name/description/domain.
+    required:
+      - name
+      - description
+      - domain
+    # WHY this list now matters: until `validateNoUnknownFields` landed, `optional` had NO machine
+    # effect — the checker validated required-field presence and `values` enums and nothing else, so
+    # any key at all passed and this list only documented intent. Adding a key here is now a real
+    # permission, and omitting one is a real rejection.
+    optional:
+      - related
+      - agent_harness
+      - wiki
+      # WHY these four are permitted rather than stripped: each is read by a harness, so removing it
+      # from a skill changes that skill's behaviour. `disable-model-invocation` is the load-bearing
+      # one — it stops a harness invoking the skill on its own inference. Four of the five upstream
+      # skills distilled in #119 carried it, and it was dropped in translation, which quietly made
+      # `wayfinder` (a skill whose job is to WRITE a map plus N child issues to a live tracker)
+      # implicitly invocable. Enumerating it here is what lets a skill declare that gate again.
+      - disable-model-invocation
+      - argument-hint
+      - aliases
+      - license
+    # WHY only the VALUES are project-only, not this header (#119): the third instance of the same
+    # inheritance defect as `domain_model` and `docs_tree_trap`. Requiring name/description/domain on
+    # a skill is portable and every consumer wants it, so the header must be inherited. The allowed
+    # values below are this repository's own directory names — a consumer whose skills sit under
+    # `skills/frontend/` would have every one rejected by a vocabulary they never chose. Marking the
+    # whole header `project_only` is not the alternative: `local_skills` binds it, so stripping it
+    # would stop checking a consumer's skills entirely, trading a false failure for a silent gap.
+    project_only_values:
+      - domain
+    values:
+      # WHY this list mirrors the directory: a skill's domain is its PLACEMENT, and
+      # `markdown-guide.md` requires the field to equal the containing `skills/<domain>/` folder.
+      # Enumerating it here is what turns that sentence into a gate — a skill that moves folders
+      # without updating its header now fails instead of drifting.
+      # NOTE this is a different axis from `domain_model.values.domain`, which names a vault note's
+      # SUBJECT. Same key, two vocabularies, kept apart because header specs resolve per-surface.
+      # WHY `core` (#119): five skills that every other skill leans on — llm-wiki, grilling, teach,
+      # calibrate-focus, wizard — were filed under whichever domain first happened to need them, so
+      # `domain:` recorded their historical sponsor rather than their role. `core` names that role.
+      domain:
+        - agentics
+        - core
+        - swe
+        - devops
+        - productivity
+  checkpoint_agents:
+    # WHY checkpoint envelope: repo-standard nearest-policy discovery depends on these fields.
+    required:
+      - kind
+      - version
+      - scope
+      - status
+    optional:
+      - applies_to
+      - inherits
+  checkpoint_context:
+    required:
+      - kind
+      - version
+      - scope
+      - status
+    optional: []
+  skill_reference:
+    # WHY `wiki` moved from `required` to `optional` (#119): the requirement did not weaken, it moved
+    # to the surface that enforces it. `require_wiki: true` on a surface produces the identical
+    # violation, and `llm_wiki_skill` already set it — so listing `wiki` here as well encoded one
+    # policy in two places, and the header copy was the one blocking the `skill_references` surface
+    # below from being bound at all.
+    #
+    # WHAT THIS BUYS: a reference tree can now be bound for LINK and TAG checking before its files
+    # carry `wiki:`, and the classification requirement is switched on later by flipping one
+    # `require_wiki` line. Files that DO declare `wiki` are still validated against `wiki_objects`
+    # everywhere, because the checker validates the field whenever it is present, not only when it
+    # is required.
+    required: []
+    optional:
+      - wiki
+  domain_model:
+    # WHY this header exists at all: `vault/` is the repo-wide concepts layer, and its notes are
+    # classified by frontmatter rather than by path. It was previously declared here but referenced
+    # by NO surface — dead configuration that could not fail anything. The `vault_notes` surface
+    # below wires it live.
+    #
+    # WHY `kind` was removed: it is 100% recoverable from the surface a file matches, and the
+    # checker already selects this contract by glob + basename BEFORE reading frontmatter, so the
+    # field could only ever restate a decision the checker had already made.
+    #
+    # WHY `domain` is required: path-based classification (`vault/<domain>/...`) was rejected —
+    # domains are an open, growing vocabulary and the elected carrier is YAML. With the path
+    # equality check gone, this field is the ONLY thing that classifies a note.
+    #
+    # WHY `domain` here does not collide with `domain` on the `skill` header: header specs resolve
+    # PER-SURFACE (`skills/**/SKILL.md` -> skill; `vault/*.md` -> domain_model), and a file resolves
+    # to exactly one spec. Same key, different specs, no machine ambiguity.
+    #
+    # WHY `wiki` is required: a concepts-layer note whose runtime object is unstated cannot be
+    # routed by any agent reading it. The `vault_notes` surface also sets `require_wiki: true`;
+    # the two agree deliberately so the contract is readable from either end.
+    #
+    # WHY `aliases` is optional and not forbidden: Markdown Oxide parses frontmatter and `aliases`
+    # is the one key it queries. A FLAT vault puts every note in a single title namespace, which is
+    # exactly where aliases earn their keep.
+    required:
+      - domain
+      - wiki
+      - status
+    optional:
+      - aliases
+      - version
+    # WHY an allowed-value list: presence-only validation let `domain: frontnd-design` ship
+    # silently. `values` is the per-header value check — the same closed-set mechanism `wiki` has
+    # always had, narrowed to the files this header binds.
+    #
+    # WHY the list is short and stays short: vocabulary growth is HUMAN-GATED. A human adds a
+    # domain or qualifier in the loop; an agent may initiate one only with explicit prior human
+    # approval. The old "add it once three statements need it" rule was removed — applied
+    # consistently it meant this list starts empty and `domain` could never ship as required.
+    #
+    # WHY this list is PROJECT-LAYER ONLY, and how that is now ENFORCED rather than promised (#119,
+    # audit finding D5): this list must not be inherited by other repositories. Domains are initiated
+    # per repo, by that repo's base; a domain seeded into the shared baseline would be handed to
+    # every repo that installs it, which is exactly the vocabulary sprawl the human gate prevents.
+    #
+    # This comment previously stated that guarantee and the plumbing inverted it. `justfile` symlinks
+    # THIS FILE to ~/.agents/.agents/llm-wiki.yaml as the system baseline, and `mergeWikiConfigs`
+    # resolves a colliding key in the SYSTEM layer's favour unless the consumer writes an explicit
+    # `overrides` path — so the list did migrate, to every consumer, and could not easily be narrowed.
+    # A guarantee the plumbing inverts is worse than no guarantee, because a reader trusts it.
+    #
+    # `project_only: true` below closes it. `stripProjectOnly` in apps/ax/src/wiki/config.js removes
+    # this header when the file is read AS another repository's system baseline, and keeps it when
+    # the file is the project layer of the repository that owns it — which is this one. The install
+    # symlink is therefore safe as written and needs no change.
+    #
+    # RESIDUAL RISK, stated rather than implied: the baseline is a live symlink into a working
+    # checkout, so every consumer's system layer tracks whatever that checkout currently has on disk.
+    # `project_only` bounds WHAT is shared; it does not pin WHEN. A consumer that needs a stable
+    # grammar should vendor its own copy rather than follow the symlink.
+    project_only: true
+    values:
+      domain:
+        # RATIFIED. These are the subjects of the repository's current vault notes. The list remains
+        # human-gated: add a domain only when an accepted note needs a distinct retrieval boundary.
+        - agent-harness
+        - agent-tooling
+        - test-engineering
+  audit_report:
+    # WHY zero fields: this header exists so `audit_reports` can be bound at all — a surface needs a
+    # header — while asserting nothing about an audit's frontmatter. The surface's whole purpose is
+    # link resolution. Paired `project_only` with that surface: an audits tree is this repository's
+    # own convention, not something to impose on a consumer.
+    project_only: true
+    required: []
+    optional: []
+  repository_document:
+    # WHY docs are a supported repository boundary here: root policy explicitly routes architecture,
+    # validation, and research material through docs/. Bind it for link checking without inventing a
+    # universal frontmatter envelope for documents that predate the wiki contract.
+    project_only: true
+    required: []
+    optional: []
+# WHY surfaces bound the checker: not every repository Markdown is in scope yet.
+# Checker also skips vendored trees (skill-bank, harness, .claude worktrees, node_modules).
+surfaces:
+  llm_wiki_skill:
+    # WHY dogfood first: the skill folder must pass the contract it teaches.
+    #
+    # WHY this glob is the fragile one (#119, when the skill moved agentics -> core): it is the only
+    # surface that names a SPECIFIC folder rather than a pattern, and it is the only surface setting
+    # both `require_wiki` and `require_governing_tags`. A stale path here matches ZERO files, and
+    # `ax wiki check` still exits 0 — it just reports a lower `checked=` and stops enforcing the
+    # strictest contract in the repo. The gate goes green by not looking. If this folder moves again,
+    # this line moves with it, and the proof is that `checked=` still accounts for all 6 of its files.
+    glob: "skills/core/llm-wiki/**/*.md"
+    require_wiki: true
+    require_governing_tags: true
+    header_by_name:
+      SKILL.md: skill
+      default: skill_reference
+  local_skills:
+    # WHY only SKILL.md, not `skills/**/*.md`: an entry point declares the skill's identity and is
+    # the file harness discovery keys off. Disclosed `references/` carry document-specific headers
+    # and are deliberately left out — forcing one schema onto them is the universal-header mistake
+    # `markdown-guide.md` already rejects.
+    glob: "skills/**/SKILL.md"
+    require_wiki: false
+    # WHY true: all 31 local skills carry at least one live statement tag, so this enforces an
+    # invariant that holds today rather than starting a migration that breaks the build.
+    #
+    # WHY the threshold is ONE and not two: three skills — grilling, teach, wizard — are MIT copies
+    # of mattpocock/skills held at zero prose diff on purpose, and each carries exactly one tag,
+    # added because this surface requires it. Raising the bar would force edits to someone else's
+    # writing to satisfy our gate, which is manufactured governance with an extra step.
+    #
+    # This comment previously claimed 22 skills each carrying at least two tags. Both numbers were
+    # wrong by the time anyone checked. Counts in a WHY comment go stale silently — prefer the
+    # reason over the tally, and re-measure before restating one. #risk/documentation/medium
+    require_governing_tags: true
+    header: skill
+  skill_references:
+    # WHY this surface exists (#119, the gate's largest blind spot): `skills/**/references/**` — 50
+    # files — matched NO surface, and link validation only runs for a file with a matched surface.
+    # Nothing checked their links. The proof was sitting in the tree: `[[GitHub Org]]` and
+    # `[[Linear Execution]]` in graph-engineering's references pointed at deleted skills for weeks
+    # while `ax wiki check` printed `ok`. The comment on `local_skills` above explains why these
+    # files are not forced onto the SKILL.md schema — that reasoning is sound and unchanged. It was
+    # never a reason to leave their links unchecked.
+    glob: "skills/**/references/**/*.md"
+    # WHY true: this landed in two deliberate steps within #119. The surface was first bound with
+    # `require_wiki: false`, because 51 of the then-56 reference files carried no `wiki:` and a
+    # surface that fails every file it binds gets reverted — returning the tree to invisible, which
+    # is the failure this surface exists to end. Links and tags were checked from that moment; the
+    # classification pass then gave all 61 files a `wiki:` value, and this flipped.
+    #
+    # The staging is worth remembering as a pattern: bind the surface first so the tree stops being
+    # invisible, then raise the requirement once the tree can satisfy it. The reverse order — demand
+    # compliance from an unbound tree — produces a red gate with no incremental path off it, and the
+    # pressure is then to unbind rather than to comply.
+    require_wiki: true
+    # WHY false: a reference file is procedure or concept material. Its parent SKILL.md carries the
+    # skill's governing statements and `local_skills` already requires tags there. Forcing a live
+    # statement tag onto every disclosed page manufactures governance to satisfy a gate — the
+    # explicit anti-pattern in this repository's own contract. Tags found here are still validated.
+    require_governing_tags: false
+    header: skill_reference
+  audit_reports:
+    # WHY this surface exists (#119): `audits/` held a 1075-line report ABOUT the wiki contract, and
+    # it was the one tree the wiki gate could not see. It accumulated 30 broken relative links — every
+    # one pointing at a path this same effort renamed — while `ax wiki check` printed `ok`. A document
+    # that audits the link contract and cannot itself be link-checked is the sharpest possible version
+    # of the blind spot it was written to report. #risk/documentation/high
+    #
+    # WHY links only, with no header requirement: an audit is a dated record, not current-system
+    # documentation. Forcing `wiki:` onto it would classify it as a runtime object the router should
+    # dispatch to, which it is not. Its links must resolve; nothing else about it is the contract's
+    # business.
+    #
+    # OPEN QUESTION, recorded rather than silently answered: whether a repo-owned `audits/` tree is
+    # consistent with Rule 3 at all. Rule 3 forbids `docs/` by name, and the placement table routes an
+    # investigation ledger to a work item — so this directory is arguably the forbidden structure
+    # under a different name. That is a human decision about doctrine, not a plumbing fix, so the
+    # tree is checked where it stands instead of being quietly moved or quietly blessed.
+    glob: "audits/**/*.md"
+    project_only: true
+    require_wiki: false
+    require_governing_tags: false
+    header: audit_report
+  checkpoints_agents:
+    glob: "**/AGENTS.md"
+    require_wiki: false
+    require_governing_tags: false
+    header: checkpoint_agents
+  checkpoints_context:
+    glob: "**/CONTEXT.md"
+    require_wiki: false
+    require_governing_tags: false
+    header: checkpoint_context
+  vault_notes:
+    # WHY `vault/*.md` and not `vault/**/*.md`: `globToRegExp` compiles a single `*` to `[^/]*`, so
+    # this pattern CANNOT match a nested path. That is the point — Rule 1 says the vault is flat,
+    # and a flat vault enforced by a glob is enforced structurally: a note filed at
+    # `vault/<domain>/note.md` matches no surface, is silently skipped, and its author gets no
+    # gate signal. Reintroducing path-based nesting therefore cannot pass unnoticed as "checked".
+    #
+    # KNOWN LIMIT, recorded rather than hidden: a nested note is SKIPPED, not REJECTED. A companion
+    # trap surface cannot express the difference — `globToRegExp` compiles `**/` to `(?:.*/)?`, so
+    # `vault/**/*.md` matches `vault/note.md` as well as `vault/a/note.md`, and a trap on that glob
+    # would fail every valid flat note. Catching a misfiled nested note needs a glob compiler that
+    # can require at least one path segment; until then `ax wiki check` reporting a lower file count
+    # is the only signal, so treat an unexplained drop in `checked=` as a misfiled note.
+    glob: "vault/*.md"
+    # WHY project_only, and why it MUST agree with `headers.domain_model`: this surface resolves to
+    # that header, and `stripProjectOnly` refuses to leave a surface bound to a header it removed.
+    # The pairing is the substance — another repository inherits neither this repository's vault
+    # domain vocabulary nor a surface that would judge its notes against it. Its own `vault_notes`
+    # surface, once it declares one, is then additive rather than shadowed by the baseline.
+    project_only: true
+    # WHY require_wiki: a vault note IS the concepts layer; one that does not declare its runtime
+    # object cannot be routed. Mirrors the `wiki` entry in `headers.domain_model.required`.
+    require_wiki: true
+    # WHY governing tags are NOT required: a concepts note carries subject matter, and forcing a
+    # live `#<kind>/<domain>/<qualifier>` statement onto every note would manufacture governance
+    # claims to satisfy a gate. Tags stay opt-in here; when present they are still validated.
+    require_governing_tags: false
+    header: domain_model
+  repository_docs:
+    # WHY this replaces the generated docs-tree trap: mastra-toolkit owns a legitimate docs/ tree.
+    # Checking its links preserves the wiki contract without importing another project's placement rule.
+    # Historical snapshots under docs/research intentionally pin absolute and removed source paths;
+    # they remain unbound evidence rather than current link targets.
+    glob: "docs/*.md"
+    project_only: true
+    require_wiki: false
+    require_governing_tags: false
+    header: repository_document
+# WHY overrides exist: a project may clobber system keys only when it declares the path explicitly under overrides.
+# Example (project file only):
+# overrides:
+#   surfaces:
+#     llm_wiki_skill:
+#       require_governing_tags: false
+overrides: {}

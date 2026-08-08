@@ -53,6 +53,23 @@ const pausing = createWorkflow({
   },
 })).commit();
 
+/** Preserves agent-entry schema compatibility on both sides of a suspension. */
+const pausingAgent = createWorkflow({
+  id: "pausing-agent",
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.object({ prompt: z.string() }),
+}).then(createStep({
+  id: "await-agent-approval",
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.object({ prompt: z.string() }),
+  resumeSchema: z.object({ approved: z.string() }),
+  suspendSchema: z.object({}),
+  execute: async ({ resumeData, suspend }) => {
+    if (!resumeData) return await suspend({});
+    return { prompt: resumeData.approved };
+  },
+})).commit();
+
 /** Streams a chunk through the tool writer so the writer bridge is observable. */
 const streaming = createWorkflow({
   id: "streaming",
@@ -100,12 +117,16 @@ const promptSchema = { type: "object", properties: { prompt: { type: "string" } 
 const textSchema = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
 
 /** Counts real agent dispatches so a ceiling can be proven to bind before one happens. */
-function stubAgentStream(agent: Agent): { calls: number } {
-  const state = { calls: 0 };
+function stubAgentStream(agent: Agent): { calls: number; memories: unknown[] } {
+  const state: { calls: number; memories: unknown[] } = { calls: 0, memories: [] };
   vi.spyOn(agent, "getModel").mockResolvedValue({ specificationVersion: "v2" } as never);
   vi.spyOn(agent, "stream").mockImplementation((async (...args: unknown[]) => {
     state.calls += 1;
-    const options = args[1] as { onFinish?: (result: { text: string }) => void } | undefined;
+    const options = args[1] as {
+      memory?: unknown;
+      onFinish?: (result: { text: string }) => void;
+    } | undefined;
+    state.memories.push(options?.memory);
     const fullStream = (async function* () {
       options?.onFinish?.({ text: "ok" } as never);
     })();
@@ -244,6 +265,17 @@ describe("dynamic_workflow", () => {
     expect(requireApproval({ action: "run", dryRun: true })).toBe(false);
     expect(requireApproval({ action: "resume" })).toBe(true);
     expect(requireApproval({ action: "inspect" })).toBe(false);
+  });
+
+  test("guides actual runs and resumes to stay backgrounded while read-only actions may run foreground", () => {
+    const { tool } = harness();
+    const description = (tool as unknown as { description: string }).description;
+
+    expect(description).toContain("run with dryRun:false");
+    expect(description).toContain("resume");
+    expect(description).toContain("_background.enabled:true");
+    expect(description).toContain("Never set _background.enabled:false");
+    expect(description).toContain("dryRun and inspect may run in the foreground");
   });
 
   test("derives a content-addressed id so an identical graph is idempotent", async () => {
@@ -679,6 +711,111 @@ describe("dynamic_workflow", () => {
     expect(result).toMatchObject({ status: "success", output: { text: "64" } });
   });
 
+  test("runs stored agent entries through the underlying registered durable agent", async () => {
+    const flux = new Agent({
+      id: "flux",
+      name: "flux",
+      instructions: "test",
+      model: "openai/gpt-4o-mini",
+      durable: true,
+    });
+    const mastra = new Mastra({
+      agents: { flux },
+      storage: new InMemoryStore(),
+      logger: false as never,
+    });
+    const registered = mastra.getAgent("flux") as unknown as { agent: Agent };
+    const stream = stubAgentStream(registered.agent);
+    const tool = createDynamicWorkflowTool({ agents: ["flux"] });
+    const invoke = (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute.bind(tool);
+    const input = {
+      action: "run",
+      description: "durable agent compatibility",
+      definition: {
+        inputSchema: promptSchema,
+        outputSchema: textSchema,
+        graph: [{ type: "agent", id: "durable", agentId: "flux" }],
+      },
+      input: { prompt: "inspect" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    };
+    const result = await invoke(input, { mastra, requestContext: new RequestContext() });
+    const repeated = await invoke(input, { mastra, requestContext: new RequestContext() });
+
+    expect(result).toMatchObject({ status: "success", output: { text: "ok" } });
+    expect(repeated).toMatchObject({ status: "success", output: { text: "ok" } });
+    expect(stream.calls).toBe(2);
+    expect(stream.memories).toEqual([
+      {
+        thread: expect.stringMatching(/^dynamic-workflow:dyn_[0-9a-f]{16}:/),
+        resource: expect.stringMatching(/^dynamic-workflow:dyn_[0-9a-f]{16}:/),
+      },
+      {
+        thread: expect.stringMatching(/^dynamic-workflow:dyn_[0-9a-f]{16}:/),
+        resource: expect.stringMatching(/^dynamic-workflow:dyn_[0-9a-f]{16}:/),
+      },
+    ]);
+    expect(new Set(stream.memories.map(memory => (memory as { thread: string }).thread)).size).toBe(2);
+    expect(new Set(stream.memories.map(memory => (memory as { resource: string }).resource)).size).toBe(2);
+  });
+
+  test("keeps same-agent memory isolated across workflow suspension and re-registration", async () => {
+    const flux = new Agent({
+      id: "flux",
+      name: "flux",
+      instructions: "test",
+      model: "openai/gpt-4o-mini",
+      durable: true,
+    });
+    const mastra = new Mastra({
+      agents: { flux },
+      workflows: { pausingAgent },
+      storage: new InMemoryStore(),
+      logger: false as never,
+    });
+    const registered = mastra.getAgent("flux") as unknown as { agent: Agent };
+    const stream = stubAgentStream(registered.agent);
+    const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["pausing-agent"] });
+    const invoke = (input: unknown) => (tool as unknown as {
+      execute(input: unknown, context: unknown): Promise<Record<string, unknown>>;
+    }).execute(input, { mastra, requestContext: new RequestContext() });
+    const definition = {
+      inputSchema: promptSchema,
+      outputSchema: textSchema,
+      graph: [
+        { type: "agent", id: "before", agentId: "flux", outputSchema: textSchema },
+        { type: "workflow", id: "pause", workflowId: "pausing-agent" },
+        { type: "agent", id: "after", agentId: "flux" },
+      ],
+    };
+
+    const started = await invoke({
+      action: "run",
+      description: "suspend between two invocations of one agent",
+      definition,
+      input: { prompt: "before" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+    expect(started.status).toBe("suspended");
+    const resumed = await invoke({
+      action: "resume",
+      description: "continue to the second agent invocation",
+      workflowId: started.workflowId,
+      runId: started.runId,
+      resumeData: { approved: "after" },
+      timeoutMs: 30_000,
+    });
+
+    expect(resumed.status).toBe("success");
+    expect(stream.calls).toBe(2);
+    expect(new Set(stream.memories.map(memory => (memory as { thread: string }).thread)).size).toBe(2);
+    expect(new Set(stream.memories.map(memory => (memory as { resource: string }).resource)).size).toBe(1);
+  });
+
   test("clamps author-supplied fan-out concurrency to the host ceiling", async () => {
     const { mastra, invoke } = harness();
 
@@ -1082,6 +1219,10 @@ describe("dynamic_workflow", () => {
       type: "workflow-step-output",
       payload: expect.objectContaining({ stepName: "emit", output: { note: "streamed" } }),
     }));
+    // Raw observer/workflow telemetry belongs to the human stream, not the
+    // bounded result that is injected into the parent agent's continuation.
+    expect(result).not.toHaveProperty("note");
+    expect(JSON.stringify(result)).not.toContain("workflow-step-output");
   });
 
   test("cancels when the caller aborts rather than when the timeout expires", async () => {
