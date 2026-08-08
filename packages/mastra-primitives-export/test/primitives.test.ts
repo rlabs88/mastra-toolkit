@@ -52,4 +52,39 @@ describe("ToolkitRuntimeContract", () => {
     expect(first.tools.reconcileDynamicWorkflowDefinitions).toBeTypeOf("function");
     expect(first.sandbox).not.toHaveProperty("createCommandRun");
   });
+
+  test("boot reconciliation fails open when the host has no workflow definition store", async () => {
+    const contract = createToolkitRuntimeContract({ profile: loadModelProfile() });
+    const reconcile = contract.tools.reconcileDynamicWorkflowDefinitions;
+    const removed: string[] = [];
+
+    // A host without `workflowDefinitions` storage cannot have persisted a
+    // model-authored definition, so boot continues instead of failing closed.
+    // Pinned because startup calls this before anything can mount those rows:
+    // if it ever starts throwing, MCode startup ordering has to be revisited.
+    await expect(reconcile({ getStorage: () => undefined })).resolves.toBe(0);
+    await expect(reconcile({ getStorage: () => ({}) })).resolves.toBe(0);
+    await expect(reconcile({ getStorage: () => ({ getStore: async () => undefined }) })).resolves.toBe(0);
+    await expect(reconcile({})).resolves.toBe(0);
+
+    // ...but a host that does expose the store must have its stray rows archived.
+    const rows = [
+      { id: "dyn_0000000000000001", metadata: { origin: "dynamic_workflow" } },
+      { id: "project_workflow", metadata: { origin: "project" } },
+    ];
+    const archived: Array<Record<string, unknown>> = [];
+    await expect(reconcile({
+      getStorage: () => ({
+        getStore: async (name: string) => name === "workflowDefinitions"
+          ? {
+            upsert: async (input: Record<string, unknown>) => { archived.push(input); },
+            list: async () => ({ definitions: rows }),
+          }
+          : undefined,
+      }),
+      removeWorkflow: (id: string) => { removed.push(id); return true; },
+    })).resolves.toBe(1);
+    expect(archived).toEqual([{ id: "dyn_0000000000000001", status: "archived" }]);
+    expect(removed).toEqual(["dyn_0000000000000001"]);
+  });
 });
