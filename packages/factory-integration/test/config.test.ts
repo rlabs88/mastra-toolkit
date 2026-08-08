@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { loadModelProfile } from "@rlabs/runtime-config";
 import type { CloneableSandboxMachine, SandboxMachineOptions } from "@rlabs/sandbox";
-import { createFactorySandboxMachine, loadFactoryConfig } from "../src/index.js";
+import { HOST_BACKGROUND_TASK_POLICY } from "@rlabs/runtime-config";
+import {
+  createFactorySandboxMachine,
+  factoryBackgroundTaskPolicy,
+  loadFactoryConfig,
+} from "../src/index.js";
 
 describe("loadFactoryConfig", () => {
   test("publishes one root facade over four cohesive source modules", async () => {
@@ -345,5 +350,48 @@ describe("loadFactoryConfig", () => {
       WORKOS_CLIENT_ID: "workos-client",
       WORKOS_COOKIE_PASSWORD: "x".repeat(32),
     }, process.cwd())).toThrow(/production WorkOS.*HTTPS/i);
+  });
+});
+
+describe("factoryBackgroundTaskPolicy", () => {
+  const executingFactory = () => loadFactoryConfig({
+    MASTRA_TOOLKIT_MODE: "factory",
+    CLI_PROXY_API_KEY: "test-only-key",
+    WORKSPACE_ROOT: process.cwd(),
+    SANDBOX_PROVIDER: "local",
+  }, process.cwd());
+
+  test("sizes background capacity from Factory's own session governor", () => {
+    const config = executingFactory();
+    if (!config.sandbox) throw new Error("expected configured sandbox");
+    const policy = factoryBackgroundTaskPolicy(config);
+
+    // The shared host policy caps one process-shared agent instance at a
+    // single background task, which in Factory is a per-process cap rather
+    // than a per-session one: one project's ten-minute graph would otherwise
+    // hold the only slot every other project's session shares.
+    expect(HOST_BACKGROUND_TASK_POLICY.perAgentConcurrency).toBe(1);
+    expect(policy.perAgentConcurrency).toBe(config.sandbox.maxSandboxes);
+    expect(policy.globalConcurrency).toBeGreaterThanOrEqual(config.sandbox.maxSandboxes * 3);
+  });
+
+  test("degrades an over-capacity enqueue to inline execution instead of rejecting another project", () => {
+    expect(HOST_BACKGROUND_TASK_POLICY.backpressure).toBe("reject");
+    expect(factoryBackgroundTaskPolicy(executingFactory()).backpressure).toBe("fallback-sync");
+  });
+
+  test("never drops below the shared host policy on a control plane without sandboxes", () => {
+    const config = loadFactoryConfig({
+      CLI_PROXY_API_KEY: "test-only-key",
+      MASTRA_TOOLKIT_MODE: "factory",
+      FACTORY_REPOSITORY_EXECUTION: "disabled",
+    }, process.cwd());
+    const policy = factoryBackgroundTaskPolicy(config);
+
+    expect(config.sandbox).toBeUndefined();
+    expect(policy.globalConcurrency).toBe(HOST_BACKGROUND_TASK_POLICY.globalConcurrency);
+    expect(policy.perAgentConcurrency).toBe(HOST_BACKGROUND_TASK_POLICY.perAgentConcurrency);
+    expect(policy.enabled).toBe(HOST_BACKGROUND_TASK_POLICY.enabled);
+    expect(policy.defaultTimeoutMs).toBe(HOST_BACKGROUND_TASK_POLICY.defaultTimeoutMs);
   });
 });
