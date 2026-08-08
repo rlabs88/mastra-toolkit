@@ -156,6 +156,22 @@ export interface McodeControllerIngredientsV3 {
   readonly subagents: AgentControllerSubagent[];
 }
 
+/**
+ * The authority ceilings `dynamic_workflow` is constructed with. Recorded in
+ * the capability digest because widening any of them is an authority change:
+ * without this, adding `nestedWorkflows` or a fourth dispatchable agent would
+ * be invisible to every digest-comparison test.
+ */
+export interface McodeDynamicWorkflowCeilings {
+  readonly toolId: "dynamic_workflow";
+  /** Agent ids a graph may dispatch. Derived from the role registry. */
+  readonly agents: readonly string[];
+  /** Registered workflow ids a graph may nest. Empty means every nested reference fails closed. */
+  readonly nestedWorkflows: readonly string[];
+  /** Host-owned ids stripped from anything the project mounting bridge republishes. */
+  readonly hostReservedToolIds: readonly string[];
+}
+
 export interface McodeCapabilityDescriptorV3 {
   readonly schemaVersion: typeof MCODE_CAPABILITY_SCHEMA_VERSION;
   readonly projectionVersion: typeof MCODE_CONTROLLER_PROJECTION_VERSION;
@@ -166,6 +182,7 @@ export interface McodeCapabilityDescriptorV3 {
   readonly modes: readonly string[];
   readonly subagents: readonly string[];
   readonly requiredTools: typeof NATIVE_WORKSPACE_TOOL_IDS;
+  readonly dynamicWorkflow: McodeDynamicWorkflowCeilings;
   readonly behavior: {
     readonly toolContract: "mastra-workspace-tools/v1";
     readonly modeInstructionDigests: Readonly<Record<string, `sha256:${string}`>>;
@@ -242,7 +259,8 @@ function createControllerProjection(
 ): McodeControllerProjection {
   // The host owns persistence and allowlists; the canonical role package only
   // decides which roles receive the resulting capability.
-  const dynamicWorkflow = contract.tools.createDynamicWorkflow({ agents: contract.roles.ids });
+  const ceilings = dynamicWorkflowCeilings(contract);
+  const dynamicWorkflow = contract.tools.createDynamicWorkflow({ agents: ceilings.agents });
   const agentOptions = {
     ...options,
     dynamicWorkflow,
@@ -265,7 +283,23 @@ function createControllerProjection(
       subagents,
       contract.capability.digest,
       projection,
+      ceilings,
     ),
+  };
+}
+
+/**
+ * Derived from the role registry rather than a literal role list, so adding a
+ * canonical role widens the recorded ceiling and moves the digest with it.
+ */
+function dynamicWorkflowCeilings(contract: ToolkitRuntimeContract): McodeDynamicWorkflowCeilings {
+  return {
+    toolId: "dynamic_workflow",
+    agents: [...contract.roles.ids],
+    // MCode passes no nested-workflow allowlist, so every nested reference
+    // fails closed. Wiring project workflows in here is an authority change.
+    nestedWorkflows: [],
+    hostReservedToolIds: [...RESERVED_HOST_TOOL_IDS],
   };
 }
 
@@ -286,6 +320,7 @@ export function createMcodeCapabilityDescriptor(
   subagents: AgentControllerSubagent[],
   contractDigest = createToolkitRuntimeContract({ profile }).capability.digest,
   projection: "mcode" | "studio" = "mcode",
+  dynamicWorkflow = dynamicWorkflowCeilings(createToolkitRuntimeContract({ profile })),
 ): McodeCapabilityDescriptorV3 {
   const payload = {
     schemaVersion: MCODE_CAPABILITY_SCHEMA_VERSION,
@@ -296,6 +331,7 @@ export function createMcodeCapabilityDescriptor(
     modes: modes.map(mode => mode.id),
     subagents: subagents.map(subagent => subagent.id),
     requiredTools: NATIVE_WORKSPACE_TOOL_IDS,
+    dynamicWorkflow,
     behavior: {
       toolContract: "mastra-workspace-tools/v1",
       modeInstructionDigests: Object.fromEntries(modes.map(mode => [mode.id, digestInstructions(mode.instructions)])),

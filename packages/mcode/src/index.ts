@@ -37,6 +37,7 @@ export {
   type McodeControllerIngredientsV2,
   type McodeControllerIngredientsV3,
   type McodeControllerProjectionOptions,
+  type McodeDynamicWorkflowCeilings,
   type McodeRecipeOptions,
   type McodeRecipeV2,
   type McodeRecipeV3,
