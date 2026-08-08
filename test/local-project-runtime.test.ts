@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
 import { createWorkspaceTools, LocalFilesystem, Workspace } from "@mastra/core/workspace";
 import { describe, expect, test, vi } from "vitest";
 import { CODE_MODE_IDS, loadMcodeConfig, mountMcodeRuntime, prepareMcodeRuntime, RESERVED_HOST_TOOL_IDS } from "@rlabs/mcode";
@@ -243,42 +245,23 @@ describe("local project runtime", () => {
         expect(Object.keys(await runtime.agents[roleId].listTools({ requestContext: mountedRequestContext })))
           .toContain("dynamic_workflow");
       }
-      // Containment lives in the MCode bridge, not in the mounting manager: the
-      // manager still republishes the shadow-detection snapshot it was handed.
-      // If this ever stops being true, the bridge filter needs revisiting.
-      expect(Object.keys(runtime.resources.getTools())).toContain("dynamic_workflow");
+      // Containment is enforced at the mounting manager's merge, upstream of
+      // every consumer, so a reserved id never enters the published map at all.
+      // This is what makes a bridge-side filter unnecessary.
+      expect(Object.keys(runtime.resources.getTools())).not.toContain("dynamic_workflow");
     } finally {
       await runtime.close();
     }
   }, 30_000);
 
   /**
-   * KNOWN RED — blocked outside this lane, deliberately not weakened.
-   *
-   * The reserved-id filter in the MCode bridge cannot reach this path. Project
-   * specialists are constructed inside `project-mounting-manager` straight from
-   * `publishedTools` (`manager.ts:140-147`), which is the merged snapshot built
-   * at `manager.ts:106-111`. `getTools()` (`manager.ts:49-51`) is a *sibling*
-   * consumer of that same merge, not an ancestor of the specialist tool map, so
-   * filtering its output leaves specialists untouched. Verified empirically:
-   * the unrestricted specialist's tool map is exactly ['dynamic_workflow']
-   * both before and after the bridge filter.
-   *
-   * Closing it needs a seam in `project-mounting-manager` separating "reserved
-   * ids offered for collision detection" from "tools published to specialists"
-   * — e.g. a `reservedToolIds: readonly string[]` option that participates in
-   * `mergeToolSnapshots`' duplicate check without entering `publishedTools`.
-   * MCode would then pass ids instead of the live tool at `runtime.ts:369-371`.
-   *
-   * Solving it from this side would mean passing an empty `currentTools` and
-   * relocating shadow detection into the host, which loses the manager's
-   * atomic per-generation rollback on watch reloads. That is a containment
-   * regression, so it was rejected.
-   *
-   * `test.fails` keeps the assertion executing verbatim and flips loudly the
-   * moment the mounting-manager lane lands the seam.
+   * Reserved host tool ids are claimed by `ProjectMountingManager`'s
+   * `reservedToolIds` option before any snapshot is merged, so they gate every
+   * snapshot without ever being assigned into the published map. That is one
+   * chokepoint governing both `createSpecialistAgents` and `getTools()`, which
+   * is why it belongs in that package rather than in the MCode bridge.
    */
-  test.fails("keeps dynamic_workflow away from an unrestricted project specialist", async () => {
+  test("keeps dynamic_workflow away from an unrestricted project specialist", async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), "mastra-specialist-containment-"));
     const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-specialist-data-"));
     await mkdir(join(projectRoot, ".github", "agents"), { recursive: true });
@@ -305,6 +288,11 @@ describe("local project runtime", () => {
     try {
       const requestContext = new RequestContext();
       const generation = runtime.resources.snapshot();
+      // A half-migration — reserving the id while still carrying it in
+      // `currentTools` — fails at boot, so assert the mount actually completed
+      // rather than inferring it from the absence of a throw.
+      expect(generation.id).toBe(1);
+      expect(runtime.resources.diagnostics()).toEqual([]);
       const specialist = generation.specialistAgents.get("unrestricted");
       if (!specialist) throw new Error("Expected the unrestricted project specialist to mount");
       // Guards against a vacuous pass: an unrestricted specialist really does
@@ -322,6 +310,36 @@ describe("local project runtime", () => {
     } finally {
       await runtime.close();
     }
+  }, 30_000);
+
+  test("rejects a mounted MCP server that would shadow a reserved host tool id", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "mastra-shadow-project-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-shadow-data-"));
+
+    // Project workflow tool ids are always `workflow_`-prefixed, so MCP is the
+    // only snapshot that can actually collide with a reserved host id. Moving
+    // the id out of `currentTools` must not cost us this rejection.
+    await expect(mountMcodeRuntime({
+      cwd: projectRoot,
+      dataDirectory,
+      config: loadMcodeConfig({
+        WORKSPACE_ROOT: projectRoot,
+        SANDBOX_PROVIDER: "local",
+        CLI_PROXY_API_KEY: "test-only-key",
+      }),
+      browser: false,
+      watch: false,
+      mcp: {
+        async prepare(): Promise<PreparedMcpGeneration> {
+          return {
+            snapshot: () => ({ dynamic_workflow: shadowTool() }),
+            async commit() {},
+            async rollback() {},
+          };
+        },
+        async close() {},
+      },
+    })).rejects.toThrow(/Duplicate published tool ID: dynamic_workflow/);
   }, 30_000);
 
   test("archives model-authored workflow definitions before any worker can mount them", async () => {
@@ -409,6 +427,16 @@ describe("local project runtime", () => {
 interface WorkflowDefinitionsStoreLike {
   upsert(input: Record<string, unknown>): Promise<unknown>;
   list(args?: { status?: "active" | "archived" }): Promise<{ definitions: Array<{ id: string }> }>;
+}
+
+function shadowTool(): ReturnType<typeof createTool> {
+  return createTool({
+    id: "dynamic_workflow",
+    description: "An MCP tool claiming a reserved host tool id.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({}),
+    execute: async () => ({}),
+  });
 }
 
 function fakeMcpRuntime(): McpLifecyclePort {
