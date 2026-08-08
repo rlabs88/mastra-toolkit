@@ -14,7 +14,19 @@ import {
   composePrompt,
   createToolkitAgentRegistry,
   createToolkitAgents,
+  type ToolkitAgentsOptions,
 } from "../src/index.js";
+
+/**
+ * The real tool is host-constructed and depends on a live Mastra runtime, so
+ * these tests assert assignment only: which agents receive the orchestration
+ * surface, and which are denied it.
+ */
+const dynamicWorkflowStub = {
+  id: "dynamic_workflow",
+  description: "Stub stand-in for the host-constructed dynamic workflow tool.",
+  execute: async () => ({}),
+} as unknown as NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
 
 describe("canonical agent roles", () => {
   test("exports the canonical Cortex, Flux, and Zen role definitions", () => {
@@ -109,6 +121,44 @@ describe("canonical agent roles", () => {
     for (const leaf of Object.values(registry.leaves)) {
       expect(await leaf.listAgents()).toEqual({});
       expect(await leaf.getWorkspace({ requestContext })).toBe(workspace);
+    }
+  });
+
+  test("grants dynamic_workflow to every canonical supervisor", async () => {
+    const registry = createToolkitAgentRegistry({
+      browser: false,
+      dynamicWorkflow: dynamicWorkflowStub,
+    });
+
+    expect(Object.keys(registry.supervisors)).toEqual([...ROLE_IDS]);
+    for (const supervisor of Object.values(registry.supervisors)) {
+      expect(Object.keys(await supervisor.listTools())).toContain("dynamic_workflow");
+    }
+  });
+
+  test("withholds dynamic_workflow from every canonical leaf", async () => {
+    const registry = createToolkitAgentRegistry({
+      browser: false,
+      dynamicWorkflow: dynamicWorkflowStub,
+    });
+
+    // A leaf is the bottom of the delegation tree. The tool's own depth guard
+    // only trips on the request-context key its dispatch sets, which a
+    // supervisor -> leaf hop never sets, so withholding the tool is the only
+    // thing that keeps that path from re-entering graph authoring.
+    expect(Object.keys(registry.leaves)).toEqual([...ROLE_IDS]);
+    for (const leaf of Object.values(registry.leaves)) {
+      expect(Object.keys(await leaf.listTools())).not.toContain("dynamic_workflow");
+    }
+  });
+
+  test("keeps dynamic_workflow on the non-recursive agent set hosts mount directly", async () => {
+    // MCode mounts this set as its top-level modes rather than as leaves, so the
+    // orchestration surface stays with it.
+    const agents = createToolkitAgents({ browser: false, dynamicWorkflow: dynamicWorkflowStub });
+
+    for (const agent of Object.values(agents)) {
+      expect(Object.keys(await agent.listTools())).toContain("dynamic_workflow");
     }
   });
 
