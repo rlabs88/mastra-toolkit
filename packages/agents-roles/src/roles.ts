@@ -1,12 +1,13 @@
 import { DEFAULT_ACTIVE_ALIAS } from "@rlabs/runtime-config";
 import {
+  ayraPrompt,
   cortexPrompt,
   fluxPrompt,
   zenPrompt,
   type RolePrompt,
 } from "./prompts.js";
 
-export const ROLE_IDS = Object.freeze(["cortex", "flux", "zen"] as const);
+export const ROLE_IDS = Object.freeze(["cortex", "flux", "zen", "ayra"] as const);
 export type RoleId = (typeof ROLE_IDS)[number];
 
 export interface RoleDefinition<TId extends RoleId = RoleId> {
@@ -81,5 +82,20 @@ export const ZEN_ROLE = defineRole({
 });
 
 
-export const ROLES = Object.freeze({ cortex: CORTEX_ROLE, flux: FLUX_ROLE, zen: ZEN_ROLE });
+export const AYRA_ROLE = defineRole({
+  id: "ayra",
+  name: "Ayra",
+  description: "Orchestration agent that provisions domain-focused agents for a goal, declares their execution graph or loop, and owns the combined result.",
+  temperature: 0.3,
+  steps: 80,
+  prompts: ayraPrompt,
+});
+
+
+export const ROLES = Object.freeze({
+  cortex: CORTEX_ROLE,
+  flux: FLUX_ROLE,
+  zen: ZEN_ROLE,
+  ayra: AYRA_ROLE,
+});
 export const ARCHETYPES = ROLES;

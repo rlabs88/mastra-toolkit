@@ -106,10 +106,14 @@ describe("canonical agent roles", () => {
       createHash("sha256").update(composePrompt(ROLES[id])).digest("hex"),
     ]));
 
+    // Moved deliberately: every role gained the dynamic_workflow/subagent
+    // distinction, Zen's delegation section gained its third child, and Ayra is
+    // new. Change these only alongside the prompt text that produced them.
     expect(hashes).toEqual({
-      cortex: "08aab5280ec12e4c62c8d4989b4456cf084e01043a87e77951ff759f869b7751",
-      flux: "200c0e2add58ede9ec0382800ab7c33ae529a0cec505328cb6982578030c0122",
-      zen: "411351b9d27271fe546a4cdd879947d6e2b2ee717249cc3a1c3fd2341be81188",
+      cortex: "8efbc918af86199ba12aad85be438cf89f6ec4654bc670a83b188ebc32d34025",
+      flux: "65d2287aaad260e897d6be456260a11dbe5df36cb0e2ecba12ff27903e9ef30f",
+      zen: "882bf7527bbff3c4ee19e21c92ca472078f375038e04f530c5aae6cbd3d10911",
+      ayra: "33d8cf2642f45e1675cdd8cf80a87b18a80bc957a375d2573c81e27059912098",
     });
   });
 
