@@ -14,7 +14,12 @@ import type { McpLifecyclePort, PreparedMcpGeneration } from "@rlabs/project-mou
  * the role projection (`agents-roles` passes it as a role tool). Flux is absent
  * only because that package never passes it there; on the mounted runtime it
  * was arriving through the project-mounting bridge by accident, which is the
- * path this suite closes. Restoring Flux is an `agents-roles` change.
+ * path this suite closes.
+ *
+ * Deliberately a literal and not derived from the role registry: it records
+ * which roles are *granted* the tool, which is not the same list as the roles
+ * a graph may *dispatch*. Add a role here when `agents-roles` grants it — Flux
+ * and the incoming `ayra` both need that change there, not here.
  */
 const INTENTIONAL_DYNAMIC_WORKFLOW_ROLES: ReadonlyArray<"cortex" | "flux" | "zen"> = ["cortex", "zen"];
 
