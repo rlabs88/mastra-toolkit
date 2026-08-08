@@ -14,6 +14,13 @@ export interface ProjectMountingManagerOptions {
   readonly workspace?: Workspace;
   readonly specialistMaxSteps?: number;
   readonly requiredSpecialistTools?: readonly string[];
+  /**
+   * Host tool IDs that a project may not shadow but may not call either. Reserved IDs take part in
+   * collision detection without entering the published tool map, so they reach neither project
+   * specialists nor `getTools()`. Pass a reserved ID here rather than through `currentTools`:
+   * everything in `currentTools` is published to unrestricted specialists.
+   */
+  readonly reservedToolIds?: readonly string[];
   readonly onDiagnostic?: ProjectMountingDiagnosticListener;
 }
 
@@ -104,6 +111,7 @@ export class ProjectMountingManager {
 
       phase = "prepare";
       const publishedTools = mergeToolSnapshots(
+        this.#options.reservedToolIds ?? [],
         await this.#options.currentTools.snapshot(),
         await mcpStage.snapshot(),
         workflowTools(workflows),
@@ -141,6 +149,7 @@ export class ProjectMountingManager {
       generationId: id,
       specialists,
       tools: publishedTools,
+      reservedToolIds: this.#options.reservedToolIds ?? [],
       requiredTools: this.#options.requiredSpecialistTools ?? [],
       ...(this.#options.workspace ? { workspace: this.#options.workspace } : {}),
       maxSteps: this.#options.specialistMaxSteps ?? 48,
@@ -172,6 +181,7 @@ interface CreateSpecialistAgentsOptions {
   readonly generationId: number;
   readonly specialists: ReadonlyMap<string, ProjectSpecialist>;
   readonly tools: ToolsInput;
+  readonly reservedToolIds: readonly string[];
   readonly requiredTools: readonly string[];
   readonly workspace?: Workspace;
   readonly maxSteps: number;
@@ -179,8 +189,9 @@ interface CreateSpecialistAgentsOptions {
 
 function createSpecialistAgents(options: CreateSpecialistAgentsOptions): ReadonlyMap<string, Agent> {
   const agents = new Map<string, Agent>();
+  const reserved = new Set(options.reservedToolIds);
   for (const specialist of options.specialists.values()) {
-    const tools = selectSpecialistTools(specialist, options.tools, options.requiredTools);
+    const tools = selectSpecialistTools(specialist, options.tools, options.requiredTools, reserved);
     agents.set(specialist.id, new Agent({
       id: `project-specialist-${specialist.id}-${options.generationId}`,
       name: specialist.name,
@@ -199,10 +210,16 @@ function selectSpecialistTools(
   specialist: ProjectSpecialist,
   available: ToolsInput,
   required: readonly string[],
+  reserved: ReadonlySet<string>,
 ): ToolsInput {
+  // An unrestricted specialist receives every published tool, so reserved IDs are kept out of
+  // `available` upstream rather than filtered here.
   if (!specialist.tools) return { ...available };
   const selected: ToolsInput = {};
   for (const toolName of new Set([...specialist.tools, ...required])) {
+    if (reserved.has(toolName)) {
+      throw new Error(`Reserved host tool cannot be granted to specialist ${specialist.id}: ${toolName}`);
+    }
     if (!Object.hasOwn(available, toolName)) {
       throw new Error(`Unknown tool for specialist ${specialist.id}: ${toolName}`);
     }
@@ -219,10 +236,21 @@ function workflowTools(workflows: ReadonlyMap<string, ProjectWorkflow>): ToolsIn
   return tools;
 }
 
-function mergeToolSnapshots(...snapshots: readonly Readonly<ToolsInput>[]): ToolsInput {
+/**
+ * Reserved IDs are claimed before any snapshot is merged, so a project workflow still cannot shadow
+ * a host tool ID, but the reserved tool itself never becomes publishable.
+ */
+function mergeToolSnapshots(
+  reservedToolIds: readonly string[],
+  ...snapshots: readonly Readonly<ToolsInput>[]
+): ToolsInput {
   const merged: ToolsInput = {};
+  const reserved = new Set(reservedToolIds);
   for (const snapshot of snapshots) {
     for (const [id, tool] of Object.entries(snapshot)) {
+      if (reserved.has(id)) {
+        throw new Error(`Duplicate published tool ID: ${id} (reserved by the host)`);
+      }
       if (Object.hasOwn(merged, id)) throw new Error(`Duplicate published tool ID: ${id}`);
       merged[id] = tool;
     }

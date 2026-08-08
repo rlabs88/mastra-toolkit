@@ -1,4 +1,4 @@
-import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RequestContext } from "@mastra/core/request-context";
@@ -10,11 +10,14 @@ import { afterEach, describe, expect, test } from "vitest";
 import { createFactoryAgentBundle, ToolkitFactoryIntegration } from "../src/index.js";
 
 let projectRoot: string | undefined;
+let scratchRoot: string | undefined;
 
 afterEach(async () => {
   delete process.env.FACTORY_PRIVILEGED_SENTINEL;
   if (projectRoot) await rm(projectRoot, { recursive: true, force: true });
+  if (scratchRoot) await rm(scratchRoot, { recursive: true, force: true });
   projectRoot = undefined;
+  scratchRoot = undefined;
 });
 
 describe("Factory project workflows", () => {
@@ -302,7 +305,146 @@ describe("Factory project workflows", () => {
       await workspace.destroy();
     }
   }, 30_000);
+
+  test("publishes a workflow whose steps live in a helper subdirectory", async () => {
+    const workflowDirectory = await containmentFixture("multi-file");
+    await mkdir(join(workflowDirectory, "steps"), { recursive: true });
+    await writeFile(join(workflowDirectory, "flow.ts"), multiFileWorkflowFixture("flow", "./steps/one.js"));
+    await writeFile(join(workflowDirectory, "steps", "one.ts"), helperModule("first"));
+
+    await expect(listProjectWorkflows()).resolves.toEqual({
+      workflows: [{ id: "flow", description: "Run flow" }],
+    });
+  }, 30_000);
+
+  test("rejects a relative helper import that escapes the project root", async () => {
+    const workflowDirectory = await containmentFixture("relative-escape");
+    await mkdir(join(scratchRoot!, "outside"), { recursive: true });
+    await writeFile(join(scratchRoot!, "outside", "evil.ts"), helperModule("evil"));
+    await writeFile(
+      join(workflowDirectory, "flow.ts"),
+      multiFileWorkflowFixture("flow", "../../../outside/evil.js"),
+    );
+
+    await expect(listProjectWorkflows()).rejects.toThrow(/escapes the project root/);
+  }, 30_000);
+
+  test("rejects an absolute helper import outside the project root", async () => {
+    const workflowDirectory = await containmentFixture("absolute-escape");
+    await writeFile(join(workflowDirectory, "flow.ts"), multiFileWorkflowFixture("flow", "/etc/anything.js"));
+
+    await expect(listProjectWorkflows()).rejects.toThrow(/escapes the project root/);
+  }, 30_000);
+
+  test("rejects a helper subdirectory entry symlinked outside the project root", async () => {
+    const workflowDirectory = await containmentFixture("symlink-escape");
+    await mkdir(join(scratchRoot!, "outside"), { recursive: true });
+    await mkdir(join(workflowDirectory, "steps"), { recursive: true });
+    await writeFile(join(scratchRoot!, "outside", "evil.ts"), helperModule("evil"));
+    await symlink(join(scratchRoot!, "outside", "evil.ts"), join(workflowDirectory, "steps", "link.ts"));
+    await writeFile(join(workflowDirectory, "flow.ts"), multiFileWorkflowFixture("flow", "./steps/link.js"));
+
+    await expect(listProjectWorkflows()).rejects.toThrow(/escapes the project root/);
+  }, 30_000);
+
+  test("names the helper-subdirectory layout when a flat sibling is not a workflow", async () => {
+    const workflowDirectory = await containmentFixture("flat-helper");
+    await writeFile(join(workflowDirectory, "flow.ts"), multiFileWorkflowFixture("flow", "./steps.js"));
+    await writeFile(join(workflowDirectory, "steps.ts"), helperModule("flat"));
+
+    const failure = await listProjectWorkflows().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toMatch(/must default-export a committed Mastra Workflow/);
+    expect((failure as Error).message).toMatch(/subdirectory/i);
+  }, 30_000);
+
+  test("ignores declaration files in every module extension", async () => {
+    const workflowDirectory = await containmentFixture("declarations");
+    await mkdir(join(workflowDirectory, "steps"), { recursive: true });
+    await writeFile(join(workflowDirectory, "flow.ts"), multiFileWorkflowFixture("flow", "./steps/one.js"));
+    await writeFile(join(workflowDirectory, "steps", "one.ts"), helperModule("first"));
+    await writeFile(join(workflowDirectory, "types.d.ts"), "export type Unused = string;\n");
+    await writeFile(join(workflowDirectory, "types.d.mts"), "export type Unused = string;\n");
+    await writeFile(join(workflowDirectory, "types.d.cts"), "export type Unused = string;\n");
+
+    await expect(listProjectWorkflows()).resolves.toEqual({
+      workflows: [{ id: "flow", description: "Run flow" }],
+    });
+  }, 30_000);
 });
+
+async function containmentFixture(label: string): Promise<string> {
+  scratchRoot = await mkdtemp(join(tmpdir(), `rlabs-factory-workflow-${label}-`));
+  projectRoot = join(scratchRoot, "project");
+  const workflowDirectory = join(projectRoot, ".mastracode", "workflow");
+  await mkdir(workflowDirectory, { recursive: true });
+  return workflowDirectory;
+}
+
+async function listProjectWorkflows(): Promise<unknown> {
+  const root = projectRoot;
+  if (!root) throw new Error("containmentFixture must run before listProjectWorkflows");
+  const sandbox = localSandboxMachine(root);
+  if (!sandbox.executeCommand) throw new Error("LocalSandbox command execution is unavailable");
+  const workspace = new Workspace({
+    id: "factory-project-workflow-containment-test",
+    filesystem: new SandboxFilesystem({
+      sandbox: {
+        id: sandbox.id,
+        executeCommand: (command, args, options) => sandbox.executeCommand!(command, args, options),
+      },
+      workdir: root,
+    }),
+    sandbox,
+  });
+  await workspace.init();
+  const tools = await factoryIntegration().agentTools();
+  const projectWorkflow = tools.project_workflow as {
+    execute?: (input: unknown, context: unknown) => Promise<unknown>;
+  };
+  try {
+    return await projectWorkflow.execute?.({ action: "list" }, {
+      requestContext: new RequestContext(),
+      workspace,
+    });
+  } finally {
+    await workspace.destroy();
+  }
+}
+
+function multiFileWorkflowFixture(id: string, helperSpecifier: string): string {
+  return `import { helperValue } from ${JSON.stringify(helperSpecifier)};
+
+const schema = {
+  "~standard": {
+    version: 1,
+    vendor: "fixture",
+    validate: (value: unknown) => ({ value }),
+  },
+};
+
+export const agentTool = { description: "Run ${id}" };
+
+export default {
+  component: "WORKFLOW",
+  committed: true,
+  id: ${JSON.stringify(id)},
+  helperValue,
+  inputSchema: schema,
+  outputSchema: schema,
+  createRun: async () => ({
+    runId: ${JSON.stringify(`${id}-run`)},
+    cancel: async () => undefined,
+    start: async () => ({ status: "success", result: { helperValue } }),
+  }),
+};
+`;
+}
+
+function helperModule(value: string): string {
+  return `export const helperValue = ${JSON.stringify(value)};\n`;
+}
 
 function factoryIntegration(): ToolkitFactoryIntegration {
   const profile = loadModelProfile();

@@ -14,6 +14,7 @@ import {
   ROLE_IDS,
   ROLES,
   TOOLKIT_WORKSPACE_CONTEXT_KEY,
+  type RoleId,
 } from "@rlabs/agents-roles";
 import { ProjectMountingManager } from "@rlabs/project-mounting-manager";
 import {
@@ -54,11 +55,14 @@ export interface ToolkitRuntimeContractOptions {
 export interface ToolkitRuntimeCapabilityDescriptorV3 {
   readonly schemaVersion: typeof TOOLKIT_RUNTIME_CAPABILITY_SCHEMA_VERSION;
   readonly contractVersion: typeof TOOLKIT_RUNTIME_CONTRACT_VERSION;
-  readonly roles: readonly ["cortex", "flux", "zen"];
-  readonly roleInstructionDigests: Readonly<Record<"cortex" | "flux" | "zen", `sha256:${string}`>>;
-  readonly roleModels: Readonly<Record<"cortex" | "flux" | "zen", string>>;
-  readonly roleMaxSteps: Readonly<Record<"cortex" | "flux" | "zen", number>>;
-  readonly roleTemperatures: Readonly<Record<"cortex" | "flux" | "zen", number>>;
+  // Derived from the canonical role registry, never a literal tuple: a
+  // descriptor that silently accepts a further role while claiming to describe
+  // three would make the digest look right while being wrong.
+  readonly roles: typeof ROLE_IDS;
+  readonly roleInstructionDigests: Readonly<Record<RoleId, `sha256:${string}`>>;
+  readonly roleModels: Readonly<Record<RoleId, string>>;
+  readonly roleMaxSteps: Readonly<Record<RoleId, number>>;
+  readonly roleTemperatures: Readonly<Record<RoleId, number>>;
   readonly tools: {
     readonly agentVisible: {
       readonly workspace: "mastra-workspace-tools/v1";
@@ -70,10 +74,10 @@ export interface ToolkitRuntimeCapabilityDescriptorV3 {
   };
   readonly delegation: {
     readonly nativeTool: "subagent";
-    readonly targets: readonly ["cortex", "flux", "zen"];
+    readonly targets: typeof ROLE_IDS;
     readonly delegatedLeavesReceiveSubagent: false;
     readonly supervisorSurface: "agents-map";
-    readonly supervisorTargets: readonly ["cortex", "flux", "zen"];
+    readonly supervisorTargets: typeof ROLE_IDS;
     readonly supervisorLeavesReceiveAgents: false;
   };
   readonly containment: typeof RUN_CONTAINMENT_POLICY;

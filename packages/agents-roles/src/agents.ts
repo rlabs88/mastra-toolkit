@@ -131,7 +131,7 @@ function createAgent<TId extends RoleDefinition["id"]>(
     name: role.name,
     description: role.description,
     instructions: composePrompt(role),
-    model: resolveProxyGatewayModelId(profile, resolveRoleAlias(profile, role.id)),
+    model: resolveProxyGatewayModelId(profile, profile.roles[role.id]),
     tools: async ({ requestContext, mastra }) => {
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
@@ -151,22 +151,6 @@ function createAgent<TId extends RoleDefinition["id"]>(
     ...(agentBrowser ? { browser: agentBrowser } : {}),
     ...(agents ? { agents: { ...agents } } : {}),
   });
-}
-
-/**
- * TEMPORARY FALLBACK — REMOVE WHEN runtime-config LANDS `ayra`.
- *
- * `@rlabs/runtime-config` owns the canonical role-to-alias mapping. Its
- * `models.yaml` and its `.strict()` roles schema currently declare
- * cortex/flux/zen/specialist/observer/reflector and no `ayra`, so
- * `profile.roles.ayra` is absent at runtime and untypeable at compile time.
- * Until `ayra: code-frontier-high` lands there, Ayra silently resolves to the
- * Cortex alias, which is NOT its intended policy. Delete this function and
- * read `profile.roles[role.id]` directly once the schema carries `ayra`.
- */
-function resolveRoleAlias(profile: ModelProfile, id: RoleDefinition["id"]): string {
-  const roles: Readonly<Record<string, string | undefined>> = profile.roles;
-  return roles[id] ?? profile.roles.cortex;
 }
 
 function composeToolHooks(additionalHooks?: ToolHooks): ToolHooks {

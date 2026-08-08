@@ -98,6 +98,38 @@ describe("canonical MCode recipe", () => {
     }
   });
 
+  test("records the dynamic_workflow ceilings so an allowlist change moves the digest", () => {
+    const profile = loadModelProfile();
+    const contract = createToolkitRuntimeContract({ profile });
+    const recipe = createMcodeRecipe({ profile, browser: false });
+
+    // Derived from the role registry, never a literal role list: adding a
+    // canonical role must widen this ceiling and move the digest with it.
+    expect(recipe.capability.dynamicWorkflow).toEqual({
+      toolId: "dynamic_workflow",
+      agents: [...contract.roles.ids],
+      nestedWorkflows: [],
+      hostReservedToolIds: ["dynamic_workflow"],
+    });
+
+    // Widening any of these ceilings is an authority change, so it must be
+    // visible to every digest-comparison test rather than silently landing.
+    for (const widened of [
+      { agents: [...contract.roles.ids, "ayra"] },
+      { nestedWorkflows: ["project_release"] },
+      { hostReservedToolIds: [] },
+    ]) {
+      expect(createMcodeCapabilityDescriptor(
+        profile,
+        recipe.controller.modes,
+        recipe.controller.subagents,
+        recipe.capability.contractDigest,
+        "mcode",
+        { ...recipe.capability.dynamicWorkflow, ...widened },
+      ).digest).not.toBe(recipe.capability.digest);
+    }
+  });
+
   test("publishes a deterministic, serializable, secret-free compatibility descriptor", () => {
     const profile = loadModelProfile();
     const first = createMcodeRecipe({ profile, browser: false });

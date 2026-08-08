@@ -162,9 +162,60 @@ import { z } from "zod";
 
 const FACTORY_CONTROLLER_PROJECTION = Symbol("factory-controller-projection");
 
+/**
+ * Exactly the canonical agents a Factory-authored graph may dispatch.
+ *
+ * A hand-maintained literal, deliberately **not** derived from the canonical
+ * role list. This is a security boundary, and the value of writing it out is
+ * that a fifth canonical role cannot join it by the canonical list merely
+ * growing — admitting one stays a deliberate edit with a deliberate reviewer.
+ * Do not "simplify" this to `ROLE_IDS`; that would silently widen the boundary.
+ *
+ * Ayra is in it because the user widened it by hand: Ayra authors dynamic
+ * workflows on every other host, so excluding it would make Factory the one
+ * host where the orchestration role cannot orchestrate.
+ *
+ * Factory's own controller agent, per-project mounted specialists, and
+ * scheduler workers stay outside it. Admitting any of them is a separate
+ * decision, not a consequence of this one.
+ */
+export const FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS = Object.freeze(
+  ["cortex", "flux", "zen", "ayra"] as const,
+);
+
+/**
+ * What the Factory projection can prove about its dynamic orchestration seam.
+ *
+ * `enforced` lists the checks that hold today. `residual` lists the isolation
+ * gaps that survive them and cannot be closed from this package, because the
+ * tool content-addresses its workflow id over graph bytes alone and neither its
+ * stored definitions nor its run rows carry a tenant column.
+ */
+export interface FactoryOrchestrationCapability {
+  readonly tool: "dynamic-workflow/v1";
+  readonly seam: "integration-agent-tools";
+  readonly stage: "execution-session";
+  readonly agents: typeof FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS;
+  readonly resumable: false;
+  readonly tenantIsolation: {
+    readonly scope: "project-user-session";
+    readonly enforced: readonly [
+      "authorize-requires-execution-session",
+      "scoped-workflow-identity",
+      "scoped-inspect",
+      "resume-disabled",
+    ];
+    readonly residual: readonly ["dispatched-runs-carry-no-factory-session"];
+    readonly residualClosedBy: "durable-request-context-reconstruction";
+  };
+}
+
 export interface FactoryControllerProjection {
   readonly agents: ToolkitAgents;
   readonly binding: ToolkitRuntimeBinding;
+  readonly tools: {
+    readonly dynamic_workflow: NonNullable<ToolkitAgentsOptions["dynamicWorkflow"]>;
+  };
   readonly runtime: {
     readonly defaults: RuntimeDefaultsV1;
   };
@@ -177,6 +228,7 @@ export interface FactoryControllerProjection {
       readonly canonicalModesAndSubagents: "upstream-blocked";
       readonly missingConstructionInputs: readonly ["modes", "subagents", "controller-construction callback"];
     };
+    readonly orchestration: FactoryOrchestrationCapability;
   };
   readonly [FACTORY_CONTROLLER_PROJECTION]: true;
 };
@@ -205,13 +257,19 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
   async agentTools(): Promise<IntegrationTools> {
     return {
       project_workflow: createFactoryProjectWorkflowTool(),
+      // Contributing a tool is a supported integration seam; the upstream
+      // blocker gates controller ingredients, which this is not.
+      dynamic_workflow: this.bundle.tools.dynamic_workflow,
     } as IntegrationTools;
   }
 
   diagnostics(): Record<string, unknown> {
     return {
       configured: true,
-      agents: ["cortex", "flux", "zen"],
+      // Derived from what this projection actually registers. Diagnostics
+      // describe reality rather than police it, so unlike the dispatch
+      // allowlist this must never be a literal that can drift.
+      agents: Object.keys(this.bundle.agents),
       recursionGuarded: true,
       runtimeDefaults: {
         source: "@rlabs/runtime-config/models.yaml",
@@ -229,6 +287,7 @@ export class ToolkitFactoryIntegration implements FactoryIntegration {
         source: "@rlabs/mastra-primitives-export",
         contractDigest: this.bundle.capability.contractDigest,
         controllerConstruction: this.bundle.capability.controllerConstruction,
+        orchestration: this.bundle.capability.orchestration,
         repositoryConfiguration: {
           verified: ["published-workflows"],
           upstreamUnverified: ["skills"],
@@ -253,12 +312,32 @@ export function createFactoryControllerProjection(
   binding: ToolkitRuntimeBinding,
   options: FactoryControllerProjectionOptions,
 ): FactoryControllerProjection {
+  // The host owns the allowlist, the authorization boundary, and the resume
+  // posture; the canonical tool package owns no Factory identity.
+  const dynamicWorkflow = contract.tools.createDynamicWorkflow({
+    agents: FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS,
+    authorize: authorizeFactoryDynamicWorkflow,
+    scope: factoryDynamicWorkflowScope,
+    // Still false, and not because of tenancy: the scope now proves a resume
+    // comes from the session that authored the run. What remains is that a
+    // dispatched run receives a fresh request context carrying no Factory
+    // session, so its steps cannot resolve the project workspace they were
+    // authorized against. For a `run` that is bounded — the graph executes
+    // inside the authorizing turn, under its abort signal. A suspended run
+    // outlives that turn, so resuming it would be the only path where a
+    // Factory graph executes against a workspace no live authorization ever
+    // validated. Flipping this needs durable request-context reconstruction,
+    // not more scoping.
+    resumable: false,
+  });
   return {
     binding,
     agents: contract.roles.createAgents({
       ...options,
+      dynamicWorkflow,
       profile: contract.runtime.profile,
     }),
+    tools: { dynamic_workflow: dynamicWorkflow },
     runtime: { defaults: contract.runtime.defaults },
     capability: {
       projection: "factory",
@@ -269,9 +348,86 @@ export function createFactoryControllerProjection(
         canonicalModesAndSubagents: "upstream-blocked",
         missingConstructionInputs: ["modes", "subagents", "controller-construction callback"],
       },
+      orchestration: {
+        tool: "dynamic-workflow/v1",
+        seam: "integration-agent-tools",
+        stage: "execution-session",
+        agents: FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS,
+        resumable: false,
+        tenantIsolation: {
+          scope: "project-user-session",
+          enforced: [
+            "authorize-requires-execution-session",
+            "scoped-workflow-identity",
+            "scoped-inspect",
+            "resume-disabled",
+          ],
+          residual: ["dispatched-runs-carry-no-factory-session"],
+          residualClosedBy: "durable-request-context-reconstruction",
+        },
+      },
     },
     [FACTORY_CONTROLLER_PROJECTION]: true,
   };
+}
+
+/**
+ * Gates every `dynamic_workflow` action on the binding that only exists while
+ * Factory is executing work inside a project — a persisted project session, an
+ * authenticated user, and that session's sandbox-backed workspace. Intake,
+ * planning, scheduling, control-plane routes, and workers hold none of those,
+ * so the tool is unreachable outside the execution stage without reading
+ * governed work-item status from a tool boundary.
+ *
+ * This is also the only isolation seam the tool currently offers: it runs
+ * before any action dispatch, but it receives neither the parsed input nor a
+ * post-run hook, so it cannot tell a `resume` or `inspect` naming another
+ * project's rows from one naming this project's own.
+ */
+async function authorizeFactoryDynamicWorkflow(
+  context: { readonly requestContext: RequestContext; readonly workspace?: unknown },
+): Promise<void> {
+  const requestContext = context.requestContext;
+  if (!getFactorySessionAddress(requestContext)) {
+    throw new Error("Dynamic workflows require a persisted Factory project session");
+  }
+  requireFactoryUserId(requestContext);
+  await requireFactoryProjectSession({
+    requestContext,
+    ...(context.workspace
+      ? { workspace: context.workspace as NonNullable<FactoryProjectSessionContext["workspace"]> }
+      : {}),
+  });
+}
+
+/**
+ * The tenant key every dynamic workflow id, stored definition, and `inspect`
+ * listing is scoped by.
+ *
+ * The same `project-user-session` triple the approval binding already declares,
+ * so orchestration cannot be isolated more loosely than the approvals that
+ * authorize it. Session-level rather than project-level because Factory sessions
+ * are the durable unit that owns a checkout and a sandbox: two sessions of one
+ * project hold different mutable state, and a graph authored against one has no
+ * claim on the other.
+ *
+ * Derived independently of `authorize` rather than passed down from it, so a
+ * host that ever drops the authorize hook still cannot produce an unscoped id.
+ * The consuming package hashes this and never stores or echoes it.
+ */
+function factoryDynamicWorkflowScope(
+  context: { readonly requestContext: RequestContext },
+): string {
+  const address = getFactorySessionAddress(context.requestContext);
+  if (!address) {
+    throw new Error("Dynamic workflows require a persisted Factory project session");
+  }
+  return [
+    "factory",
+    address.factoryProjectId,
+    requireFactoryUserId(context.requestContext),
+    address.sessionId,
+  ].join(":");
 }
 
 export function createFactoryRuntimeBinding(): ToolkitRuntimeBinding {
