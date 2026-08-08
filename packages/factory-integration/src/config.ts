@@ -366,16 +366,29 @@ interface MemorySettingsDomain {
   }): Promise<unknown>;
 }
 
+/**
+ * What a stored model id is allowed to be. Built from the same declared alias list the gateway
+ * publishes, so storage and catalog cannot disagree about which ids exist.
+ */
+export interface StoredModelCatalog {
+  readonly aliases: ReadonlySet<string>;
+  readonly defaultModelId: string;
+}
+
 export async function prepareLocalA1Provider(
   storage: FactoryStorage,
   provider: A1ProviderOptions,
   defaults: RuntimeDefaultsV1,
 ): Promise<void> {
+  const catalog: StoredModelCatalog = {
+    aliases: new Set(provider.models),
+    defaultModelId: defaults.codeSdk.activeModelId,
+  };
   await seedProvider(storage, provider);
-  await migrateProjectDefaults(storage);
-  await migrateModelPacks(storage);
-  await migrateMemorySettings(storage, defaults);
-  await migrateThreadMetadata(storage);
+  await migrateProjectDefaults(storage, catalog);
+  await migrateModelPacks(storage, catalog);
+  await migrateMemorySettings(storage, defaults, catalog);
+  await migrateThreadMetadata(storage, catalog);
 }
 
 async function seedProvider(storage: FactoryStorage, provider: A1ProviderOptions): Promise<void> {
@@ -394,33 +407,33 @@ async function seedProvider(storage: FactoryStorage, provider: A1ProviderOptions
   });
 }
 
-async function migrateProjectDefaults(storage: FactoryStorage): Promise<void> {
+async function migrateProjectDefaults(storage: FactoryStorage, catalog: StoredModelCatalog): Promise<void> {
   const domain = getDomain<ProjectsDomain>(storage, "projects");
   await domain.ensureReady();
   for (const project of await domain.list({ orgId: LOCAL_ORG_ID })) {
-    const modelId = normalizeStoredModelId(project.defaultModelId);
+    const modelId = normalizeStoredModelId(project.defaultModelId, catalog);
     if (modelId && modelId !== project.defaultModelId) {
       await domain.update({ orgId: LOCAL_ORG_ID, id: project.id, input: { defaultModelId: modelId } });
     }
   }
 }
 
-async function migrateModelPacks(storage: FactoryStorage): Promise<void> {
+async function migrateModelPacks(storage: FactoryStorage, catalog: StoredModelCatalog): Promise<void> {
   const domain = getDomain<ModelPacksDomain>(storage, "model-packs");
   await domain.ensureReady();
   for (const pack of await domain.list({ orgId: LOCAL_ORG_ID })) {
-    const models = normalizeModeModels(pack.models);
+    const models = normalizeModeModels(pack.models, catalog);
     if (Object.keys(models).every(mode => models[mode as keyof ModeModels] === pack.models[mode as keyof ModeModels])) continue;
     await domain.upsert({ orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID, input: { name: pack.name, models } });
   }
 }
 
-async function migrateMemorySettings(storage: FactoryStorage, defaults: RuntimeDefaultsV1): Promise<void> {
+async function migrateMemorySettings(storage: FactoryStorage, defaults: RuntimeDefaultsV1, catalog: StoredModelCatalog): Promise<void> {
   const domain = getDomain<MemorySettingsDomain>(storage, "memory-settings");
   await domain.ensureReady();
   const memory = await domain.get({ orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID });
   const memoryDefaults = defaults.factory;
-  const normalizedModels = memory ? normalizeMemorySettings(memory) : {};
+  const normalizedModels = memory ? normalizeMemorySettings(memory, catalog) : {};
   const patch: ModelMemorySettingsPatch = {
     ...normalizedModels,
     ...(memory?.observationThreshold == null
@@ -448,61 +461,104 @@ async function migrateMemorySettings(storage: FactoryStorage, defaults: RuntimeD
   }
 }
 
-async function migrateThreadMetadata(storage: FactoryStorage): Promise<void> {
+async function migrateThreadMetadata(storage: FactoryStorage, catalog: StoredModelCatalog): Promise<void> {
   const domain = await storage.getMastraStorage().getStore("memory");
   if (!domain) return;
   await domain.init();
   const { threads } = await domain.listThreads({ perPage: false });
   for (const thread of threads) {
-    const metadata = normalizeModelReferences(thread.metadata ?? {});
+    const metadata = normalizeModelReferences(thread.metadata ?? {}, catalog);
     if (metadata.changed) {
       await domain.updateThread({ id: thread.id, title: thread.title ?? "", metadata: metadata.value });
     }
   }
 }
 
-function normalizeModeModels(models: ModeModels): ModeModels {
+function normalizeModeModels(models: ModeModels, catalog: StoredModelCatalog): ModeModels {
   return Object.fromEntries(
-    Object.entries(models).map(([mode, modelId]) => [mode, normalizeStoredModelId(modelId) ?? modelId]),
+    Object.entries(models).map(([mode, modelId]) => [mode, normalizeStoredModelId(modelId, catalog) ?? modelId]),
   ) as ModeModels;
 }
 
-function normalizeMemorySettings(memory: ModelMemorySettings): ModelMemorySettingsPatch {
-  const observerModelId = normalizeStoredModelId(memory.observerModelId);
-  const reflectorModelId = normalizeStoredModelId(memory.reflectorModelId);
+function normalizeMemorySettings(memory: ModelMemorySettings, catalog: StoredModelCatalog): ModelMemorySettingsPatch {
+  const observerModelId = normalizeStoredModelId(memory.observerModelId, catalog);
+  const reflectorModelId = normalizeStoredModelId(memory.reflectorModelId, catalog);
   return {
     ...(observerModelId && observerModelId !== memory.observerModelId ? { observerModelId } : {}),
     ...(reflectorModelId && reflectorModelId !== memory.reflectorModelId ? { reflectorModelId } : {}),
   };
 }
 
-export function normalizeStoredModelId(modelId: string | null | undefined): string | undefined {
+/**
+ * Rewrites a stored model id onto a declared alias, so nothing the proxy does not serve under a
+ * name we own can survive in storage.
+ *
+ * The rule is a catalog membership test, not a table of known-bad ids. The previous version mapped
+ * one upstream name (`gpt-5.6-luna`) back to one alias, which could never be complete — the proxy
+ * renames and re-points aliases, and each new upstream id it exposed produced the same bug again
+ * (`gpt-5.6-sol` reaching storage as `openai/gpt-5.6-sol`, resolving against the OpenAI provider,
+ * and failing with a missing `OPENAI_API_KEY`).
+ *
+ * Worse, that table could not be correct even in principle. The proxy distinguishes tiers by
+ * `reasoning.effort` over a shared upstream model, so the mapping is many-to-one: `gpt-5.6-luna`
+ * serves both `code-workhorse-high` and `-low`, and `gpt-5.6-sol` serves all three frontier tiers.
+ * Mapping an upstream id back to one alias silently re-tiers everything else that shared it.
+ *
+ * So an unrecognised id resets to the host's documented default rather than guessing. That is
+ * lossy on purpose: the tier is genuinely unrecoverable, and a caller that wants a specific tier
+ * must name a declared alias. Any prefix form the id already carries is preserved when the alias
+ * is valid, so a gateway-qualified id is not rewritten into a provider-qualified one.
+ */
+export function normalizeStoredModelId(
+  modelId: string | null | undefined,
+  catalog: StoredModelCatalog,
+): string | undefined {
   if (!modelId) return undefined;
-  if (/^(?:mastracode\/)?a1-proxy\/gpt-5\.6-luna$/.test(modelId) || modelId === "mastracode/gpt-5.6-luna") {
-    return getA1ProxyModelId("code-workhorse-high");
-  }
-  if (modelId.startsWith("mastracode/a1-proxy/")) return modelId.slice("mastracode/".length);
-  return modelId;
+  const hosted = modelId.startsWith("mastracode/") ? modelId.slice("mastracode/".length) : modelId;
+  const alias = hosted.split("/").at(-1);
+  if (alias && catalog.aliases.has(alias)) return hosted;
+  return catalog.defaultModelId;
 }
 
-export function normalizeModelReferences(input: Record<string, unknown>): {
+/**
+ * A key whose value is a model id: anything containing `model`, plus `modes`, which holds model ids
+ * without naming them. Observed live in thread metadata as `modeModelId_build`, `currentModelId`,
+ * `observerModelId`, and `subagentModels`.
+ */
+const MODEL_KEY = /model/i;
+const MODEL_KEY_EXACT = new Set(["modes"]);
+const isModelKey = (key: string): boolean => MODEL_KEY.test(key) || MODEL_KEY_EXACT.has(key);
+
+/**
+ * Rewrites the model references inside a stored metadata object, leaving everything else untouched.
+ *
+ * Selection is by key, never by value. `normalizeStoredModelId` maps anything outside the catalog
+ * onto the default, which is correct for a value already known to be a model id and destructive for
+ * anything else — applied to every string in the object it would turn thread titles, branch names,
+ * and ids into a model id. Arrays inherit the key that introduced them, so a list of model ids is
+ * still normalised.
+ */
+export function normalizeModelReferences(input: Record<string, unknown>, catalog: StoredModelCatalog): {
   value: Record<string, unknown>;
   changed: boolean;
 } {
   let changed = false;
-  const visit = (value: unknown): unknown => {
+  const visit = (value: unknown, underModelKey: boolean): unknown => {
     if (typeof value === "string") {
-      const normalized = normalizeStoredModelId(value);
+      if (!underModelKey) return value;
+      const normalized = normalizeStoredModelId(value, catalog);
       if (normalized && normalized !== value) changed = true;
       return normalized ?? value;
     }
-    if (Array.isArray(value)) return value.map(visit);
+    if (Array.isArray(value)) return value.map(entry => visit(entry, underModelKey));
     if (value && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, visit(entry)]));
+      return Object.fromEntries(Object.entries(value).map(
+        ([key, entry]) => [key, visit(entry, isModelKey(key))],
+      ));
     }
     return value;
   };
-  return { value: visit(input) as Record<string, unknown>, changed };
+  return { value: visit(input, false) as Record<string, unknown>, changed };
 }
 
 function getDomain<T>(storage: FactoryStorage, name: string): T {
