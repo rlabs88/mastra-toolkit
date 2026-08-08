@@ -378,7 +378,7 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
       // Charged before anything is registered or started, so an over-budget
       // graph dispatches nothing. Throws like the other containment guards.
       chargeRunDelegations(context.requestContext, graphDelegationCost(prepared.graph, input.input));
-      return run(host, prepared, input, context, childRequestContext);
+      return run(host, prepared, input, context, childRequestContext, resumable);
     },
   });
 }
@@ -718,6 +718,7 @@ async function run(
   input: { description: string; input: unknown; timeoutMs: number },
   context: ToolContext,
   childRequestContext: RequestContext,
+  resumable: boolean,
 ): Promise<Output> {
   try {
     await register(host, prepared.workflowId, prepared.stored);
@@ -743,7 +744,7 @@ async function run(
         ...writerBridge(context),
       }),
       workflowRun,
-      { action: "run", workflowId: prepared.workflowId, digest: prepared.digest, timeoutMs: input.timeoutMs },
+      { action: "run", workflowId: prepared.workflowId, digest: prepared.digest, timeoutMs: input.timeoutMs, resumable },
       context,
     );
   } finally {
@@ -827,7 +828,7 @@ async function resume(
         ...writerBridge(context),
       }),
       workflowRun,
-      { action: "resume", workflowId: input.workflowId, timeoutMs: input.timeoutMs },
+      { action: "resume", workflowId: input.workflowId, timeoutMs: input.timeoutMs, resumable: true },
       context,
     );
   } finally {
@@ -968,6 +969,8 @@ interface RunMeta {
   readonly workflowId: string;
   readonly digest?: string;
   readonly timeoutMs: number;
+  /** Whether this host permits resume, so a suspended run reports what the caller can actually do. */
+  readonly resumable: boolean;
 }
 
 async function execute(
@@ -994,6 +997,11 @@ async function execute(
     const result = await Promise.race([start(), aborted]);
     const bounded = boundSteps(result.steps);
     const boundedOutput = boundOutput(result.result);
+    // A run that suspended on a host with resume disabled is finished, not
+    // paused. Reporting only `resumable: false` would leave the model to infer
+    // that from a "suspended" status, so the reason is stated outright.
+    const stranded = result.status === "suspended" && !meta.resumable;
+    const error = errorText(result, stranded);
     return {
       version: 1 as const,
       action: meta.action,
@@ -1002,10 +1010,12 @@ async function execute(
       runId: workflowRun.runId,
       status: result.status as Output["status"],
       ...(boundedOutput.output === undefined ? {} : { output: boundedOutput.output }),
-      ...(result.error ? { error: String(result.error.message ?? result.error).slice(0, 2_000) } : {}),
+      ...(error ? { error } : {}),
+      // Kept even when stranded: the paths say where the graph stopped, which
+      // is what re-authoring needs, while `resumable` carries the bad news.
       ...(result.suspended ? { suspended: result.suspended.map(path => ({ path })).slice(0, 8) } : {}),
       steps: bounded.steps,
-      resumable: result.status === "suspended",
+      resumable: result.status === "suspended" && meta.resumable,
       truncated: bounded.truncated || boundedOutput.truncated,
     };
   } catch (error) {
@@ -1026,6 +1036,15 @@ async function execute(
     // the lesser failure once the grace has elapsed.
     if (cancellation) await Promise.race([cancellation, grace(CANCELLATION_GRACE_MS)]);
   }
+}
+
+/** The workflow's own error, or the reason a suspended run can never continue here. */
+function errorText(result: WorkflowResultLike, stranded: boolean): string | undefined {
+  if (result.error) return String(result.error.message ?? result.error).slice(0, 2_000);
+  if (!stranded) return undefined;
+  return "Run suspended, but this host does not support resuming a dynamic workflow run. "
+    + "It cannot be continued, and its workflowId and runId are not usable for recovery. "
+    + "Re-author the graph without a suspending step.";
 }
 
 function grace(ms: number): Promise<void> {
