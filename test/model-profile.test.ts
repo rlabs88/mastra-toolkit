@@ -4,7 +4,10 @@ import {
   DEFAULT_OBSERVER_ALIAS,
   loadModelProfile,
   resolveAliasModelId,
+  resolveModelCard,
+  resolveObservationalMemoryThresholds,
   resolveProxyGatewayModelId,
+  selectModelAlias,
 } from "@rlabs/runtime-config";
 
 describe("model profile", () => {
@@ -35,10 +38,48 @@ describe("model profile", () => {
       observer: DEFAULT_OBSERVER_ALIAS,
       reflector: DEFAULT_OBSERVER_ALIAS,
     });
+    // Profile-level fallback only. Every alias above declares a card, so this
+    // budget applies to a custom alias that does not.
     expect(profile.memory).toEqual({
       contextBudgetTokens: 120_000,
       observationThresholdTokens: 60_000,
     });
+  });
+
+  test("declares a preset card for every catalog alias", () => {
+    const profile = loadModelProfile();
+
+    expect(Object.keys(profile.modelCards).sort()).toEqual([...profile.aliases].sort());
+    for (const alias of profile.aliases) {
+      const card = resolveModelCard(profile, alias);
+      expect(card.capabilities.length, alias).toBeGreaterThan(0);
+      expect(card.observation.messageTokens, alias).toBeLessThanOrEqual(card.contextWindowTokens);
+      expect(card.reflection.observationTokens, alias).toBeLessThanOrEqual(card.observation.messageTokens);
+    }
+  });
+
+  test("resolves the canonical observational-memory budgets from the default agent's card", () => {
+    const profile = loadModelProfile();
+    const card = resolveModelCard(profile, profile.roles[profile.code.defaultAgent]);
+
+    // Only messageTokens reaches upstream; bufferTokens and bufferActivation are
+    // declared intent for an upstream extension point that does not exist yet.
+    expect(card.observation.messageTokens).toBe(180_000);
+    expect(card.observation.bufferTokens).toBe(30_000);
+    expect(card.observation.bufferActivation).toBe(0.8);
+    expect(card.reflection.observationTokens).toBe(60_000);
+    expect(resolveObservationalMemoryThresholds(profile)).toEqual({
+      observationThreshold: 180_000,
+      reflectionThreshold: 60_000,
+    });
+  });
+
+  test("selects a catalog model by capability rather than by alias name", () => {
+    const profile = loadModelProfile();
+
+    expect(selectModelAlias(profile, { capabilities: ["long-context"] })).toBe("code-frontier-max");
+    expect(selectModelAlias(profile, { capabilities: ["vision"] })).toBe("gpt-4o");
+    expect(profile.aliases).toContain(selectModelAlias(profile, { capabilities: ["economical"] }));
   });
 
   test("resolves only catalog aliases and rejects raw upstream IDs", () => {

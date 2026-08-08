@@ -181,7 +181,10 @@ describe("model profile", () => {
       "observation.bufferActivation",
     ]);
     for (const entry of UPSTREAM_BLOCKED_OBSERVATION_SETTINGS) {
-      expect(entry.evidence).toMatch(/@mastra\/code-sdk\/dist\/agents\/memory\.js:\d+$/);
+      // Paths are relative to the Mastra Code SDK package root: this package is
+      // host-neutral, and test/workspace-structure.test.ts forbids naming a host
+      // package inside packages/runtime-config/src.
+      expect(entry.evidence).toMatch(/^dist\/agents\/memory\.js:\d+$/);
       expect(entry.upstreamLiteral.length).toBeGreaterThan(0);
       expect(entry.cardField).toMatch(/^observation\./);
     }

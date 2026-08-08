@@ -43,24 +43,30 @@ export type ModelCapability = (typeof MODEL_CAPABILITIES)[number];
  * Upstream mirrors: used only to fill a card field the profile left unset, so a
  * partial card behaves the way Mastra itself would.
  *
- * - buffer ratio 1/5 matches `@mastra/code-sdk/dist/agents/memory.js:90`
- * - activation 0.8 matches the documented default in
- *   `@mastra/core/dist/memory/types.d.ts:439`
+ * - buffer ratio 1/5 matches the Mastra Code SDK literal at
+ *   `dist/agents/memory.js:90`
+ * - activation 0.8 matches the documented default in Mastra core at
+ *   `dist/memory/types.d.ts:439`
  */
 const DEFAULT_OBSERVATION_BUFFER_RATIO = 1 / 5;
 const DEFAULT_OBSERVATION_BUFFER_ACTIVATION = 0.8;
 
 /**
  * Observation settings a card may declare but that no host can honour, because
- * upstream hardcodes them with no settings key. Verified by reading the
- * installed package, not inferred: `bufferTokens` and `bufferActivation` occur
- * nowhere else in `@mastra/code-sdk/dist` — there is no zod schema entry and no
- * settings field, unlike `observationThreshold`
- * (`@mastra/code-sdk/dist/schema.d.ts:51`) which is how `messageTokens` reaches
- * upstream.
+ * upstream hardcodes them with no settings key.
  *
- * These are published so the gap is auditable rather than silent. Nothing in
- * `RuntimeDefaultsV1` carries them; a contract test asserts no host projection
+ * Verified by reading the installed Mastra Code SDK, not inferred:
+ * `bufferTokens` and `bufferActivation` occur nowhere in that package's `dist`
+ * except `dist/agents/memory.js` itself — no zod schema entry and no settings
+ * field, unlike `observationThreshold` (`dist/schema.d.ts:51`), which is how
+ * `messageTokens` reaches upstream.
+ *
+ * `evidence` paths are relative to the Mastra Code SDK package root. This
+ * package is host-neutral and must not name host packages in source; the
+ * fully-qualified references live in `config/models.yaml` and `CONTEXT.md`.
+ *
+ * Published so the gap is auditable rather than silent. Nothing in
+ * `RuntimeDefaultsV1` carries these; a contract test asserts no host projection
  * serializes either key.
  */
 export const UPSTREAM_BLOCKED_OBSERVATION_SETTINGS = Object.freeze([
@@ -68,13 +74,13 @@ export const UPSTREAM_BLOCKED_OBSERVATION_SETTINGS = Object.freeze([
     setting: "observation.bufferTokens",
     cardField: "observation.bufferTokens",
     upstreamLiteral: "isResourceScope ? false : 1 / 5",
-    evidence: "@mastra/code-sdk/dist/agents/memory.js:90",
+    evidence: "dist/agents/memory.js:90",
   }),
   Object.freeze({
     setting: "observation.bufferActivation",
     cardField: "observation.bufferActivation",
     upstreamLiteral: "isResourceScope ? void 0 : 2e3",
-    evidence: "@mastra/code-sdk/dist/agents/memory.js:91",
+    evidence: "dist/agents/memory.js:91",
   }),
 ] as const);
 
