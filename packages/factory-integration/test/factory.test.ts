@@ -70,6 +70,11 @@ describe("single-project Factory composition", () => {
       expect(Object.keys(await agent.listTools())).not.toContain("command_run");
       expect(Object.keys(await agent.listTools())).not.toContain("adhd_run");
     }
+    // Canonical role policy decides which roles orchestrate; Factory only
+    // decides that the capability exists and under which authority.
+    expect(Object.keys(await projection.agents.cortex.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await projection.agents.zen.listTools())).toContain("dynamic_workflow");
+    expect(Object.keys(await projection.agents.flux.listTools())).not.toContain("dynamic_workflow");
     expect(projection).not.toHaveProperty("controller");
   });
 
@@ -366,7 +371,7 @@ describe("Factory dynamic workflow authority", () => {
 
     for (const agentId of FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS) {
       const allowed = await runDynamicWorkflow(projection, mastra, dryRunGraph(agentId), session);
-      expect(allowed.status, agentId).toBe("validated");
+      expect(allowed.status, `${agentId}: ${JSON.stringify(allowed.issues)}`).toBe("validated");
     }
 
     // Factory's own controller agent, project specialists, and any canonical
@@ -414,8 +419,9 @@ function dryRunGraph(agentId: string): Record<string, unknown> {
     timeoutMs: 1_000,
     input: {},
     definition: {
-      inputSchema: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
-      outputSchema: { type: "object", properties: { done: { type: "string" } }, required: ["done"] },
+      // `createStep(agent)` pins an agent step to `{ prompt }` -> `{ text }`.
+      inputSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] },
+      outputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
       graph: [{ type: "agent", id: "only", agentId }],
     },
   };
