@@ -153,7 +153,7 @@ export type DynamicWorkflowDefinition = z.infer<typeof definitionSchema>;
 
 const singleLine = z.string().min(1).max(400).regex(/^[^\r\n]+$/);
 
-const inputSchema = z.discriminatedUnion("action", [
+const actionInputSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("run"),
     description: singleLine.describe("Single-line label shown in the approval prompt and the audit trace."),
@@ -179,6 +179,39 @@ const inputSchema = z.discriminatedUnion("action", [
     runId: z.string().min(1).max(200).optional(),
   }).strict(),
 ]);
+
+/**
+ * What the model is shown. It must be a single JSON-Schema object: a top-level
+ * discriminated union serializes to `oneOf` with no `type`, and
+ * OpenAI-compatible function calling rejects that outright with "schema must be
+ * a JSON Schema of 'type: \"object\"', got 'type: null'" — so advertising the
+ * union directly makes every request carrying this tool fail at the provider
+ * before the model ever runs.
+ *
+ * `actionInputSchema` above remains the real contract. Every call is re-parsed
+ * through it in `execute`, so per-action required fields, cross-action
+ * rejection via `.strict()`, and defaults all still apply; the flattening is
+ * only how the shape reaches the wire.
+ */
+const inputSchema = z.object({
+  action: z.enum(["run", "resume", "inspect"])
+    .describe("run authors and executes a graph; resume continues a suspended run; inspect reports runs."),
+  description: singleLine.optional()
+    .describe("Required for run and resume. Single-line label shown in the approval prompt and the audit trace."),
+  definition: definitionSchema.optional().describe(
+    "Required for run. A Mastra workflow graph as data. Agents and nested workflows are referenced by id and resolved against this runtime.",
+  ),
+  input: z.unknown().optional().describe("run only. Validated at run time against the definition's own inputSchema."),
+  workflowId: z.string().regex(DYNAMIC_WORKFLOW_ID_PATTERN).optional()
+    .describe("Required for resume; optional filter for inspect."),
+  runId: z.string().min(1).max(200).optional()
+    .describe("Required for resume; optional filter for inspect."),
+  step: z.array(z.string().min(1)).min(1).max(8).optional().describe("resume only. Path of the suspended step."),
+  resumeData: z.unknown().optional().describe("resume only."),
+  timeoutMs: z.number().int().min(1_000).max(MAX_TIMEOUT_MS).optional().describe("run and resume. Defaults to 300000."),
+  dryRun: z.boolean().optional()
+    .describe("run only. Validate and content-address only. No approval, no execution, no persistence."),
+});
 
 const outputSchema = z.object({
   version: z.literal(1),
@@ -307,10 +340,17 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
         openWorldHint: false,
       },
     },
-    execute: async (input, context) => {
+    execute: async (advertised, context) => {
       if (context.requestContext.get(DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY) === 1) {
         throw new Error("Nested dynamic_workflow calls are not allowed");
       }
+      // The advertised schema is deliberately permissive so it can serialize as
+      // one object; this is where the real per-action contract is enforced.
+      // Undefined keys are dropped first so a `run` call carrying an absent
+      // `runId` is not rejected by the union's `.strict()` branch.
+      const input = actionInputSchema.parse(
+        Object.fromEntries(Object.entries(advertised).filter(([, value]) => value !== undefined)),
+      );
       const authorizationContext = {
         requestContext: context.requestContext,
         ...(context.workspace ? { workspace: context.workspace } : {}),

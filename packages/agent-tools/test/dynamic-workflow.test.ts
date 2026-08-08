@@ -199,6 +199,41 @@ const nestedGraph = {
 };
 
 describe("dynamic_workflow", () => {
+  test("advertises one object schema, because providers reject a top-level union", () => {
+    const { tool } = harness();
+    const advertised = z.toJSONSchema(
+      (tool as unknown as { inputSchema: z.ZodType }).inputSchema,
+      { io: "input", unrepresentable: "any" },
+    ) as Record<string, unknown>;
+
+    // A discriminated union serializes to `oneOf` with no top-level `type`, and
+    // OpenAI-compatible function calling rejects the whole request with
+    // "schema must be a JSON Schema of 'type: \"object\"'". That fails every
+    // request carrying this tool, before the model runs -- so the advertised
+    // shape is a contract with the provider, not a style choice.
+    expect(advertised.type).toBe("object");
+    expect(advertised.oneOf).toBeUndefined();
+    expect(advertised.anyOf).toBeUndefined();
+    expect(Object.keys(advertised.properties as object)).toEqual(expect.arrayContaining([
+      "action", "description", "definition", "input", "workflowId", "runId", "step", "resumeData", "timeoutMs", "dryRun",
+    ]));
+    // Only the discriminator is universally required; the per-action contract
+    // is re-checked at execute time against the strict union.
+    expect(advertised.required).toEqual(["action"]);
+  });
+
+  test("still enforces the per-action contract the flattened schema cannot express", async () => {
+    const { invoke } = harness();
+
+    // `run` without a definition is accepted by the advertised schema and must
+    // still be rejected by the union behind it.
+    await expect(invoke({ action: "run", description: "no definition" }))
+      .rejects.toThrow();
+    // `resume` needs both ids.
+    await expect(invoke({ action: "resume", description: "d", workflowId: "dyn_0123456789abcdef" }))
+      .rejects.toThrow();
+  });
+
   test("requires approval to run or resume but not to validate or inspect", () => {
     const { tool } = harness();
     const requireApproval = (tool as unknown as {
