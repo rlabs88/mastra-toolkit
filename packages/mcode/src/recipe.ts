@@ -28,6 +28,14 @@ export const NATIVE_WORKSPACE_TOOL_IDS = [
   "execute_command",
 ] as const;
 
+/**
+ * Tool ids the host owns outright. They are handed to the project mounting
+ * manager for shadow detection only; nothing that manager publishes may
+ * reintroduce them, because host tools carry role-level exclusions that a
+ * project-mounted tool map cannot express.
+ */
+export const RESERVED_HOST_TOOL_IDS = ["dynamic_workflow"] as const;
+
 export type CanonicalAgentId = (typeof CANONICAL_AGENT_IDS)[number];
 export type CodeModeId = (typeof CODE_MODE_NAMES)[number];
 

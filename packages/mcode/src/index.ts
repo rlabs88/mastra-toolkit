@@ -14,6 +14,7 @@ export {
   MCODE_CONTROLLER_PROJECTION_VERSION,
   MCODE_RECIPE_VERSION,
   NATIVE_WORKSPACE_TOOL_IDS,
+  RESERVED_HOST_TOOL_IDS,
   buildModePrompt,
   createCodeModes,
   createCodeSubagents,
