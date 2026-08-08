@@ -6,6 +6,7 @@ import {
   createStudioControllerProjection,
   fillMissingSubagentModelId,
   RESERVED_HOST_TOOL_IDS,
+  SPECIALIST_TOOL_ALIASES,
   type McodeControllerProjection,
 } from "./recipe.js";
 import { type MastraCodeAgentController, prepareAgentControllerMount, wireSessionConcerns } from "@mastra/code-sdk";
@@ -377,6 +378,7 @@ export async function prepareMcodeRuntime(
           // live tool through `currentTools` as well would collide with this
           // reservation and fail the mount.
           reservedToolIds: RESERVED_HOST_TOOL_IDS,
+          specialistToolAliases: SPECIALIST_TOOL_ALIASES,
           currentTools: new StaticToolSnapshot({}),
           host: new MastraProjectHostRegistry(mastra),
           workspace,

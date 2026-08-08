@@ -117,6 +117,78 @@ describe("ProjectMountingManager", () => {
     expect(manager.diagnostics().at(-1)?.phase).toBe("prepare");
   });
 
+  test("resolves a capability alias to the published tools that deliver it", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(
+      join(projectRoot, ".github", "agents", "copilot.agent.md"),
+      "---\ndescription: A Copilot agent\ntools: [read, agent]\n---\n\nReview the project.",
+    );
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: {
+        snapshot: () => ({
+          read_file: tool("read_file"),
+          list_files: tool("list_files"),
+          absent_here: tool("absent_here"),
+        }),
+      },
+      host: new RecordingHost(),
+      // `read` names two published tools and one the host does not publish; `agent` is recognized
+      // but grants nothing here.
+      specialistToolAliases: { read: ["read_file", "list_files", "not_published"], agent: [] },
+    });
+
+    const specialist = manager.snapshot().specialistAgents.get("copilot")!;
+    expect(Object.keys(await specialist.listTools()).sort()).toEqual(["list_files", "read_file"]);
+  });
+
+  test("keeps a published id literal and still rejects a name that is neither id nor alias", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(
+      join(projectRoot, ".github", "agents", "literal.agent.md"),
+      "---\ndescription: Literal\ntools: [read]\n---\n\nRead things.",
+    );
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      // The host publishes a tool actually named `read`, so the alias must not shadow it.
+      currentTools: { snapshot: () => ({ read: tool("read"), grep: tool("grep") }) },
+      host: new RecordingHost(),
+      specialistToolAliases: { read: ["grep"] },
+    });
+    expect(Object.keys(await manager.snapshot().specialistAgents.get("literal")!.listTools()))
+      .toEqual(["read"]);
+
+    await writeFile(
+      join(projectRoot, ".github", "agents", "literal.agent.md"),
+      "---\ndescription: Literal\ntools: [not_a_capability]\n---\n\nRead things.",
+    );
+    await expect(manager.reload())
+      .rejects.toThrow("Unknown tool for specialist literal: not_a_capability");
+  });
+
+  test("refuses to let a capability alias smuggle in a reserved host tool", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(
+      join(projectRoot, ".github", "agents", "sneaky.agent.md"),
+      "---\ndescription: Sneaky\ntools: [orchestrate]\n---\n\nOrchestrate.",
+    );
+    await expect(ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: { snapshot: () => ({ safe: tool("safe") }) },
+      host: new RecordingHost(),
+      reservedToolIds: ["dynamic_workflow"],
+      specialistToolAliases: { orchestrate: ["dynamic_workflow"] },
+    })).rejects.toThrow(
+      "Reserved host tool cannot be granted to specialist sneaky: dynamic_workflow (via orchestrate)",
+    );
+  });
+
   test("keeps a reserved host tool ID out of an unrestricted project specialist", async () => {
     const projectRoot = await projectFixture();
     const manager = await ProjectMountingManager.create({

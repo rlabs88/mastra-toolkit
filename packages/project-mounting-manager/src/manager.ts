@@ -21,6 +21,18 @@ export interface ProjectMountingManagerOptions {
    * everything in `currentTools` is published to unrestricted specialists.
    */
   readonly reservedToolIds?: readonly string[];
+  /**
+   * Capability names a specialist may name instead of a published tool ID, each expanding to the
+   * IDs that deliver it. `.github/agents` is shared with GitHub Copilot, whose agent files describe
+   * tools as capabilities (`read`, `edit`) rather than as this host's IDs; without a translation
+   * every such file fails the generation and takes the runtime down with it.
+   *
+   * The host owns the map because the IDs are its own. An alias resolves to whichever of its IDs
+   * are actually published, so a host missing one still satisfies the capability; an alias that
+   * resolves to nothing published is an unknown tool and still fails closed, as does a name that is
+   * neither an alias nor a published ID.
+   */
+  readonly specialistToolAliases?: Readonly<Record<string, readonly string[]>>;
   readonly onDiagnostic?: ProjectMountingDiagnosticListener;
 }
 
@@ -151,6 +163,7 @@ export class ProjectMountingManager {
       tools: publishedTools,
       reservedToolIds: this.#options.reservedToolIds ?? [],
       requiredTools: this.#options.requiredSpecialistTools ?? [],
+      toolAliases: this.#options.specialistToolAliases ?? {},
       ...(this.#options.workspace ? { workspace: this.#options.workspace } : {}),
       maxSteps: this.#options.specialistMaxSteps ?? 48,
     });
@@ -183,6 +196,7 @@ interface CreateSpecialistAgentsOptions {
   readonly tools: ToolsInput;
   readonly reservedToolIds: readonly string[];
   readonly requiredTools: readonly string[];
+  readonly toolAliases: Readonly<Record<string, readonly string[]>>;
   readonly workspace?: Workspace;
   readonly maxSteps: number;
 }
@@ -191,7 +205,13 @@ function createSpecialistAgents(options: CreateSpecialistAgentsOptions): Readonl
   const agents = new Map<string, Agent>();
   const reserved = new Set(options.reservedToolIds);
   for (const specialist of options.specialists.values()) {
-    const tools = selectSpecialistTools(specialist, options.tools, options.requiredTools, reserved);
+    const tools = selectSpecialistTools(
+      specialist,
+      options.tools,
+      options.requiredTools,
+      reserved,
+      options.toolAliases,
+    );
     agents.set(specialist.id, new Agent({
       id: `project-specialist-${specialist.id}-${options.generationId}`,
       name: specialist.name,
@@ -211,6 +231,7 @@ function selectSpecialistTools(
   available: ToolsInput,
   required: readonly string[],
   reserved: ReadonlySet<string>,
+  aliases: Readonly<Record<string, readonly string[]>>,
 ): ToolsInput {
   // An unrestricted specialist receives every published tool, so reserved IDs are kept out of
   // `available` upstream rather than filtered here.
@@ -220,10 +241,28 @@ function selectSpecialistTools(
     if (reserved.has(toolName)) {
       throw new Error(`Reserved host tool cannot be granted to specialist ${specialist.id}: ${toolName}`);
     }
-    if (!Object.hasOwn(available, toolName)) {
+    // A published ID always wins, so a host that publishes a tool named like a capability keeps
+    // its literal meaning and the alias table can never shadow a real tool.
+    const isPublished = Object.hasOwn(available, toolName);
+    const alias = isPublished ? undefined : aliases[toolName];
+    if (!isPublished && !alias) {
       throw new Error(`Unknown tool for specialist ${specialist.id}: ${toolName}`);
     }
-    selected[toolName] = available[toolName]!;
+    const expansion = isPublished ? [toolName] : alias!;
+    // Checked before the availability filter: a reserved ID is never published, so filtering first
+    // would quietly drop it and turn a host misconfigured alias into a silent no-grant.
+    for (const candidate of expansion) {
+      if (reserved.has(candidate)) {
+        throw new Error(
+          `Reserved host tool cannot be granted to specialist ${specialist.id}: ${candidate} (via ${toolName})`,
+        );
+      }
+    }
+    // An alias that resolves to nothing published is a capability the host recognizes but does not
+    // grant here, which is a deliberate no-grant rather than an authoring mistake.
+    for (const candidate of expansion) {
+      if (Object.hasOwn(available, candidate)) selected[candidate] = available[candidate]!;
+    }
   }
   return selected;
 }

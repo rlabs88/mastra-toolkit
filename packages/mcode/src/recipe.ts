@@ -36,6 +36,47 @@ export const NATIVE_WORKSPACE_TOOL_IDS = [
  */
 export const RESERVED_HOST_TOOL_IDS = ["dynamic_workflow"] as const;
 
+/**
+ * Capability vocabulary a project specialist may use instead of this host's tool IDs.
+ *
+ * `.github/agents` is GitHub Copilot's directory, and the agent files there describe their tools as
+ * capabilities — `tools: [read, search, edit, execute, agent]` — because Copilot has no notion of
+ * `mastra_workspace_read_file`. Those same files are valid project specialists here, and specialist
+ * tool selection fails closed, so without this translation any repository carrying Copilot agents
+ * takes the whole MCode runtime down at mount with `Unknown tool for specialist ...`.
+ *
+ * Grouped by what the capability lets an agent *do*, not by tool count: `read` covers inspecting the
+ * tree as well as file contents, and `edit` covers creating and rewriting as well as patching. A
+ * capability resolves to whichever of its IDs the host actually publishes, so this stays correct as
+ * the workspace tool set changes; a name outside this table is still an unknown tool.
+ */
+export const SPECIALIST_TOOL_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  read: ["mastra_workspace_read_file", "mastra_workspace_list_files", "mastra_workspace_file_stat"],
+  search: ["mastra_workspace_grep"],
+  edit: [
+    "mastra_workspace_edit_file",
+    "mastra_workspace_write_file",
+    "mastra_workspace_ast_edit",
+    "mastra_workspace_mkdir",
+  ],
+  execute: [
+    "mastra_workspace_execute_command",
+    "mastra_workspace_get_process_output",
+    "mastra_workspace_kill_process",
+  ],
+  // Recognized but deliberately granted nothing. Delegation is a host concern: `project_specialist`
+  // is published to the bridge, never to specialists, so honouring this would let a specialist
+  // dispatch specialists. Declaring it empty keeps a Copilot agent mountable while making the
+  // no-grant explicit rather than an unknown-tool failure.
+  agent: [],
+  // Recognized, granted nothing by the host. The workspace tool set is filesystem and process only,
+  // so neither capability has a built-in counterpart here. An MCP server may publish tools that do;
+  // their IDs are per-server, so a project that wants them names those IDs directly rather than
+  // having this table guess. Empty keeps the agent mountable and its absence visible in the prompt.
+  web: [],
+  todo: [],
+});
+
 export type CanonicalAgentId = (typeof CANONICAL_AGENT_IDS)[number];
 export type CodeModeId = (typeof CODE_MODE_NAMES)[number];
 
