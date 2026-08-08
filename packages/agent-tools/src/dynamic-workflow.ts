@@ -24,6 +24,7 @@ const MAX_CONCURRENCY = 3;
 const MAX_SLEEP_MS = 60_000;
 const MAX_ROW_CHARS = 2_000;
 const MAX_RETAINED_CHARS = 24_000;
+const MAX_INSPECT_RUNS = 20;
 
 /**
  * Bumped whenever any ceiling above changes. The value is digested with the
@@ -206,7 +207,9 @@ const outputSchema = z.object({
     workflowId: z.string(),
     runId: z.string(),
     status: z.string(),
-  }).passthrough()).max(20).optional(),
+    /** Resumable step paths, so a caller can resume from `inspect` alone. */
+    suspended: z.array(z.array(z.string())).max(8).optional(),
+  }).passthrough()).max(MAX_INSPECT_RUNS).optional(),
   resumable: z.boolean(),
   truncated: z.boolean(),
 }).strict();
@@ -753,31 +756,82 @@ async function runBelongsToWorkflow(
   return { ok: true };
 }
 
+function emptyInspect(truncated = false): Output {
+  return { version: 1 as const, action: "inspect" as const, runs: [], resumable: false, truncated };
+}
+
+/**
+ * Pages per dynamic workflow id rather than paging the whole runs table and
+ * filtering afterwards: a shared table's first page belongs to whichever
+ * workflow ran most recently, so a dynamic run behind any busier workflow used
+ * to be silently absent from its own inspection.
+ */
 async function inspect(
   host: DynamicWorkflowHost,
   input: { workflowId?: string | undefined; runId?: string | undefined },
 ): Promise<Output> {
   const store = await definitionsStore(host);
-  if (!store) return { version: 1 as const, action: "inspect" as const, runs: [], resumable: false, truncated: false };
+  if (!store) return emptyInspect();
   const { definitions } = await store.list({ status: "archived" });
-  const workflowIds = new Set(definitions
+  const workflowIds = definitions
     .filter(definition => definition.metadata?.origin === DYNAMIC_WORKFLOW_ORIGIN)
     .filter(definition => !input.workflowId || definition.id === input.workflowId)
-    .map(definition => definition.id));
+    .map(definition => definition.id);
   const runsStore = await workflowRunsStore(host);
-  if (!runsStore || workflowIds.size === 0) {
-    return { version: 1 as const, action: "inspect" as const, runs: [], resumable: false, truncated: false };
+  if (!runsStore || workflowIds.length === 0) return emptyInspect();
+
+  const collected: WorkflowRunRow[] = [];
+  let pageTruncated = false;
+  for (const workflowId of workflowIds) {
+    const listed = await runsStore.listWorkflowRuns({ workflowName: workflowId, perPage: MAX_INSPECT_RUNS });
+    // Defensive: a store that ignores `workflowName` must not widen the result.
+    const owned = listed.runs.filter(run => run.workflowName === workflowId);
+    if (typeof listed.total === "number" && listed.total > owned.length) pageTruncated = true;
+    collected.push(...owned);
   }
-  const listed = await runsStore.listWorkflowRuns({
-    ...(input.workflowId ? { workflowName: input.workflowId } : {}),
-    perPage: 20,
+
+  const matching = input.runId ? collected.filter(run => run.runId === input.runId) : collected;
+  const runs = matching.slice(0, MAX_INSPECT_RUNS).map(run => {
+    const suspended = suspendedStepPaths(run.snapshot);
+    return {
+      workflowId: run.workflowName,
+      runId: run.runId,
+      status: workflowRunStatus(run.snapshot),
+      ...(suspended.length > 0 ? { suspended: suspended.slice(0, 8) } : {}),
+    };
   });
-  const runs = listed.runs
-    .filter(run => workflowIds.has(run.workflowName))
-    .filter(run => !input.runId || run.runId === input.runId)
-    .slice(0, 20)
-    .map(run => ({ workflowId: run.workflowName, runId: run.runId, status: workflowRunStatus(run.snapshot) }));
-  return { version: 1 as const, action: "inspect" as const, runs, resumable: false, truncated: false };
+  return {
+    version: 1 as const,
+    action: "inspect" as const,
+    runs,
+    resumable: runs.some(run => run.status === "suspended"),
+    // A located run is a complete answer; otherwise a cut page may have hidden it.
+    truncated: input.runId
+      ? matching.length === 0 && pageTruncated
+      : pageTruncated || matching.length > MAX_INSPECT_RUNS,
+  };
+}
+
+/**
+ * The resumable step paths upstream derives from a suspended snapshot, so a
+ * model that lost its transcript can pass one straight back as `step`.
+ */
+function suspendedStepPaths(snapshot: unknown): string[][] {
+  const parsed = parseSnapshot(snapshot);
+  const suspendedPaths = parsed?.suspendedPaths;
+  if (!suspendedPaths || typeof suspendedPaths !== "object") return [];
+  const context = (parsed.context ?? {}) as Record<string, unknown>;
+  const paths: string[][] = [];
+  for (const stepId of Object.keys(suspendedPaths as Record<string, unknown>)) {
+    const stepResult = context[stepId] as {
+      status?: unknown;
+      suspendPayload?: { __workflow_meta?: { path?: unknown } };
+    } | undefined;
+    if (stepResult?.status !== "suspended") continue;
+    const nested = stepResult.suspendPayload?.__workflow_meta?.path;
+    paths.push(Array.isArray(nested) ? [stepId, ...nested.map(String)] : [stepId]);
+  }
+  return paths;
 }
 
 interface RunMeta {
@@ -797,8 +851,12 @@ async function execute(
   const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout;
   let rejectAbort: ((reason: Error) => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  // Held so the caller's `finally` can wait for containment to settle before
+  // unregistering. Cancelling and unregistering concurrently would drop a live
+  // workflow out of the registry while it is still executing.
+  let cancellation: Promise<void> | undefined;
   const cancel = () => {
-    void workflowRun.cancel().catch(() => undefined);
+    cancellation ??= workflowRun.cancel().catch(() => undefined);
     rejectAbort?.(new Error(context.abortSignal?.aborted ? "Dynamic workflow was cancelled" : "Dynamic workflow timed out"));
   };
   signal.addEventListener("abort", cancel, { once: true });
@@ -834,7 +892,18 @@ async function execute(
     };
   } finally {
     signal.removeEventListener("abort", cancel);
+    // Bounded, because an upstream `cancel()` that never settles must not pin
+    // the tool call open past the harness deadline. A stale registration is
+    // the lesser failure once the grace has elapsed.
+    if (cancellation) await Promise.race([cancellation, grace(CANCELLATION_GRACE_MS)]);
   }
+}
+
+function grace(ms: number): Promise<void> {
+  return new Promise<void>(resolve => {
+    const timer = setTimeout(resolve, ms);
+    (timer as unknown as { unref?: () => void }).unref?.();
+  });
 }
 
 /**
@@ -919,13 +988,23 @@ async function workflowRunsStore(host: DynamicWorkflowHost): Promise<WorkflowRun
   return store?.listWorkflowRuns ? store : undefined;
 }
 
-function workflowRunStatus(snapshot: unknown): string {
+interface RunSnapshot {
+  readonly status?: unknown;
+  readonly suspendedPaths?: unknown;
+  readonly context?: unknown;
+}
+
+/** Snapshots arrive as objects from some stores and as JSON text from others. */
+function parseSnapshot(snapshot: unknown): RunSnapshot | undefined {
   let value = snapshot;
   if (typeof value === "string") {
-    try { value = JSON.parse(value) as unknown; } catch { return "unknown"; }
+    try { value = JSON.parse(value) as unknown; } catch { return undefined; }
   }
-  if (!value || typeof value !== "object") return "unknown";
-  const status = (value as { status?: unknown }).status;
+  return value && typeof value === "object" ? value as RunSnapshot : undefined;
+}
+
+function workflowRunStatus(snapshot: unknown): string {
+  const status = parseSnapshot(snapshot)?.status;
   return typeof status === "string" ? status : "unknown";
 }
 
