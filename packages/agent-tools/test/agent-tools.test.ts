@@ -8,6 +8,9 @@ import {
   createToolAuditHooks,
   RUN_CONTAINMENT_POLICY,
 } from "../src/index.js";
+// Not on the package facade: only `dynamic-workflow.ts` charges this way, and
+// widening the root export surface is a separate decision.
+import { chargeRunDelegations } from "../src/capabilities.js";
 
 describe("agent tool policies", () => {
   test("exports the canonical run containment policy used by host descriptors", () => {
@@ -112,6 +115,27 @@ describe("agent tool policies", () => {
       ...retainedCall,
       output: "x".repeat(256_001),
     })).toThrow(/retained tool output limit/);
+  });
+
+  test("charges a variable-cost delegation against the same aggregate ceiling", async () => {
+    const hooks = createRunBudgetHooks(() => 1_000);
+    const requestContext = new RequestContext();
+    const context = { requestContext };
+
+    // A tool whose fan-out is known only after it validates its own request
+    // charges itself, because the hook sees a name and an authored input and
+    // the agents it dispatches never pass back through the hook.
+    await hooks.beforeToolCall?.({ toolName: "dynamic_workflow", input: { action: "run" }, context });
+    chargeRunDelegations(requestContext, 6);
+    expect(() => hooks.beforeToolCall?.({ toolName: "subagent", input: { task: "a" }, context }))
+      .not.toThrow();
+    expect(() => chargeRunDelegations(requestContext, 2)).toThrow(/delegation limit/);
+  });
+
+  test("ignores a delegation charge when the host installed no run budget", () => {
+    // Hosts without the budget hooks are unmetered by design; charging must
+    // not invent state that the hooks would otherwise own.
+    expect(() => chargeRunDelegations(new RequestContext(), 4)).not.toThrow();
   });
 
   test("does not import role, Code SDK, or Factory code", async () => {
