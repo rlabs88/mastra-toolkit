@@ -117,6 +117,104 @@ describe("ProjectMountingManager", () => {
     expect(manager.diagnostics().at(-1)?.phase).toBe("prepare");
   });
 
+  test("keeps a reserved host tool ID out of an unrestricted project specialist", async () => {
+    const projectRoot = await projectFixture();
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      reservedToolIds: ["dynamic_workflow"],
+      host: new RecordingHost(),
+    });
+
+    const specialistTools = await manager.snapshot().specialistAgents.get("review")!.listTools();
+
+    expect(Object.keys(specialistTools).sort()).toEqual(["host_read", "mcp_lookup", "workflow_demo"]);
+    expect(specialistTools).not.toHaveProperty("dynamic_workflow");
+  });
+
+  test("does not surface a reserved host tool ID through the host bridge", async () => {
+    const projectRoot = await projectFixture();
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      reservedToolIds: ["dynamic_workflow"],
+      host: new RecordingHost(),
+    });
+
+    expect(Object.keys(manager.getTools()).sort()).toEqual([
+      "host_read",
+      "mcp_lookup",
+      "project_specialist",
+      "workflow_demo",
+    ]);
+    expect(manager.getTools()).not.toHaveProperty("dynamic_workflow");
+  });
+
+  test("still rejects a project workflow whose tool ID shadows a reserved host tool ID", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(join(projectRoot, ".mastracode", "workflow", "shadow.ts"), workflow("shadow", true));
+    const host = new RecordingHost();
+    const mcp = new RecordingMcp();
+
+    await expect(ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp,
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      reservedToolIds: ["workflow_shadow"],
+      host,
+    })).rejects.toThrow("Duplicate published tool ID: workflow_shadow");
+
+    expect(host.current).toBeUndefined();
+    expect(mcp.currentGeneration).toBe(0);
+    expect(mcp.rollbackCount).toBe(1);
+  });
+
+  test("retains the last-known-good generation when a reload introduces a reserved-ID collision", async () => {
+    const projectRoot = await projectFixture();
+    const host = new RecordingHost();
+    const mcp = new RecordingMcp();
+    const manager = await ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp,
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      reservedToolIds: ["workflow_shadow"],
+      host,
+    });
+    const first = manager.snapshot();
+    await writeFile(join(projectRoot, ".mastracode", "workflow", "shadow.ts"), workflow("shadow", true));
+
+    await expect(manager.reload()).rejects.toThrow("Duplicate published tool ID: workflow_shadow");
+
+    expect(manager.snapshot()).toBe(first);
+    expect(host.current?.generation.id).toBe(1);
+    expect(mcp.currentGeneration).toBe(1);
+    expect(mcp.rollbackCount).toBe(1);
+    expect(manager.diagnostics().at(-1)?.phase).toBe("prepare");
+  });
+
+  test("refuses a project specialist that asks for a reserved host tool by name", async () => {
+    const projectRoot = await projectFixture();
+    await writeFile(
+      join(projectRoot, ".github", "agents", "review.md"),
+      "---\ndescription: Review the project\ntools: [dynamic_workflow]\n---\n\nReview the current project.",
+    );
+
+    await expect(ProjectMountingManager.create({
+      projectRoot,
+      modelAliases: { resolveSpecialistModel: alias => `openai/${alias ?? "specialist-default"}` },
+      mcp: new RecordingMcp(),
+      currentTools: { snapshot: () => ({ host_read: tool("host_read") }) },
+      reservedToolIds: ["dynamic_workflow"],
+      host: new RecordingHost(),
+    })).rejects.toThrow("Reserved host tool cannot be granted to specialist review: dynamic_workflow");
+  });
+
   test("returns the value produced by Standard Schema output transformation", async () => {
     const projectRoot = await projectFixture();
     await writeFile(
