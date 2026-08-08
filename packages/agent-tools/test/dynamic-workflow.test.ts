@@ -68,7 +68,7 @@ const streaming = createWorkflow({
   },
 })).commit();
 
-function harness() {
+function harness(toolOptions: { resumable?: boolean } = {}) {
   const flux = new Agent({ id: "flux", name: "flux", instructions: "test", model: "openai/gpt-4o-mini" });
   const mastra = new Mastra({
     agents: { flux },
@@ -79,6 +79,7 @@ function harness() {
   const tool = createDynamicWorkflowTool({
     agents: ["flux"],
     nestedWorkflows: ["helper", "large-output", "pausing", "streaming"],
+    ...toolOptions,
   });
   const invoke = (
     input: unknown,
@@ -1568,6 +1569,50 @@ describe("dynamic_workflow", () => {
     // crashed definition auto-mounting at startWorkers().
     await expect(reconcileDynamicWorkflowDefinitions(mastra)).resolves.toBe(2);
     expect((await store.list({ status: "active" })).definitions).toHaveLength(0);
+  });
+
+  test("reports a suspended run as resumable only when the host permits resume", async () => {
+    const suspending = {
+      inputSchema: objectSchema,
+      outputSchema: doneSchema,
+      graph: [{ type: "workflow", id: "p", workflowId: "pausing" }],
+    };
+    const start = (invoke: ReturnType<typeof harness>["invoke"]) => invoke({
+      action: "run",
+      description: "await approval",
+      definition: suspending,
+      input: { task: "ship" },
+      dryRun: false,
+      timeoutMs: 30_000,
+    });
+
+    const permitted = await start(harness().invoke);
+    expect(permitted.status).toBe("suspended");
+    expect(permitted.resumable).toBe(true);
+    expect(permitted.error).toBeUndefined();
+
+    const restricted = harness({ resumable: false });
+    const refused = await start(restricted.invoke);
+
+    expect(refused.status).toBe("suspended");
+    // The host has resume disabled, so this runId can never be used. Saying
+    // otherwise makes the model hold state for a recovery it cannot perform.
+    expect(refused.resumable).toBe(false);
+    expect(refused.error).toMatch(/cannot be continued/i);
+    // Step paths still explain where the graph stopped, which is what a
+    // re-author needs even though recovery is impossible.
+    expect(refused.suspended).toBeTruthy();
+
+    const attempted = await restricted.invoke({
+      action: "resume",
+      description: "approve",
+      workflowId: refused.workflowId,
+      runId: refused.runId,
+      resumeData: { approved: "yes" },
+      timeoutMs: 1_000,
+    });
+    expect(attempted.status).toBe("failed");
+    expect(attempted.error).toMatch(/does not support resuming/i);
   });
 
   test("archives a stray active definition at boot", async () => {
