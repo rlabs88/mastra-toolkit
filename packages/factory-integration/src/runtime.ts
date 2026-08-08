@@ -25,6 +25,7 @@ import { createFactoryAuth, createFactoryStorage, loadFactoryConfig, prepareLoca
 import {
   createFactoryControllerProjection,
   createFactoryRuntimeBinding,
+  FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS,
   ToolkitFactoryIntegration,
   type FactoryControllerProjection,
 } from "./integration.js";
@@ -109,6 +110,42 @@ export async function createToolkitFactory(
     controlPlaneDirectory,
     config.workos ? undefined : loopbackServerHost(config.server.publicUrl),
   );
+}
+
+/**
+ * Factory's background-task capacity, sized from the governor that already
+ * bounds concurrent sessions.
+ *
+ * The shared host policy was authored for a single-user host, where capping one
+ * agent instance at one background task serializes that one user's work. In
+ * Factory the same agent instance is shared by every project session, so the
+ * cap becomes per-process rather than per-session, and `dynamic_workflow` may
+ * hold a slot for its full ten-minute ceiling. With the host policy's `reject`
+ * backpressure, the second project to arrive receives a hard failure caused by
+ * an unrelated tenant.
+ *
+ * Capacity therefore scales with `maxSandboxes` — one in-flight background task
+ * per concurrently admitted session, per canonical agent — and an over-capacity
+ * moment degrades to inline execution rather than rejecting anyone. Inline is a
+ * bounded outcome: the tool already races its own timeout, honours the caller's
+ * abort signal, and truncates its own output. The policy never drops below the
+ * shared host values, so a control plane without repository execution is
+ * unchanged.
+ */
+export function factoryBackgroundTaskPolicy(config: FactoryConfig) {
+  const concurrentSessions = config.sandbox?.maxSandboxes ?? 1;
+  return Object.freeze({
+    ...HOST_BACKGROUND_TASK_POLICY,
+    globalConcurrency: Math.max(
+      HOST_BACKGROUND_TASK_POLICY.globalConcurrency,
+      concurrentSessions * FACTORY_DYNAMIC_WORKFLOW_AGENT_IDS.length,
+    ),
+    perAgentConcurrency: Math.max(
+      HOST_BACKGROUND_TASK_POLICY.perAgentConcurrency,
+      concurrentSessions,
+    ),
+    backpressure: "fallback-sync",
+  } as const);
 }
 
 export function createProjectsManagedFactoryRules() {
@@ -235,7 +272,7 @@ export async function createFactoryRuntime(
         ...(prepared.gateways ?? {}),
         proxy: new ProxyGateway({ ...config.runtime.proxy, models: defaults.gateway.models }),
       },
-      backgroundTasks: HOST_BACKGROUND_TASK_POLICY,
+      backgroundTasks: factoryBackgroundTaskPolicy(config),
     });
     await factory.finalize();
   } catch (error) {
