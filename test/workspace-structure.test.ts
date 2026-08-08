@@ -21,7 +21,7 @@ const packageNames = [
 ] as const;
 
 describe("workspace ownership", () => {
-  test("pins one coherent stable Mastra release set across every runtime manifest", async () => {
+  test("pins one coherent Mastra release set with the approved memory hotfix", async () => {
     const expected = {
       "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
       "@mastra/code-sdk": "1.1.3",
@@ -30,7 +30,7 @@ describe("workspace ownership", () => {
       "mastra": "1.23.0",
       "@mastra/libsql": "1.19.0",
       "@mastra/pg": "1.19.0",
-      "@mastra/memory": "1.26.0",
+      "@mastra/memory": "1.26.1-alpha.3",
     } as const;
     const manifestPaths = [
       "package.json",
@@ -64,10 +64,14 @@ describe("workspace ownership", () => {
       const manifest = JSON.parse(await readFile(join(root, manifestPath), "utf8")) as {
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
+        overrides?: Record<string, string>;
       };
       const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
       for (const name of requiredByManifest[manifestPath] ?? []) {
         expect(dependencies[name], `${manifestPath}: ${name}`).toBe(expected[name]);
+      }
+      if (manifestPath === "package.json") {
+        expect(manifest.overrides?.["@mastra/memory"]).toBe(expected["@mastra/memory"]);
       }
     }
   });
@@ -104,7 +108,7 @@ describe("workspace ownership", () => {
       "sandbox": ["contract.ts", "index.ts", "machine.ts", "providers.ts"],
       "project-mounting-manager": ["contract.ts", "discovery.ts", "index.ts", "manager.ts"],
       "mastra-primitives-export": ["index.ts", "primitives.ts"],
-      "mcode": ["index.ts", "project.ts", "recipe.ts", "runtime.ts"],
+      "mcode": ["background-task-observer.ts", "index.ts", "project.ts", "recipe.ts", "runtime.ts"],
       "factory-integration": ["config.ts", "index.ts", "integration.ts", "runtime.ts"],
       "factory-github-projects": [
         "config.ts",
@@ -286,6 +290,7 @@ describe("workspace ownership", () => {
     const paths = artifacts[0]?.files.map(file => file.path) ?? [];
 
     expect(paths.filter(path => path.startsWith("src/") && path.endsWith(".ts")).sort()).toEqual([
+      "src/background-task-observer.ts",
       "src/index.ts",
       "src/project.ts",
       "src/recipe.ts",

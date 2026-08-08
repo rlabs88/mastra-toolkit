@@ -1,5 +1,9 @@
 import { createCodeMcpAdapter, createMcodeWorkspace, MastraProjectHostRegistry, ProfileModelAliasResolver, StaticToolSnapshot } from "./project.js";
 import {
+  createBackgroundTaskTelemetryTerminal,
+  startDynamicWorkflowBackgroundTaskObserver,
+} from "./background-task-observer.js";
+import {
   CANONICAL_AGENT_IDS,
   CODE_MODE_IDS,
   createMcodeControllerProjection,
@@ -548,10 +552,39 @@ export async function createLocalMcodeRuntime(
     throw error;
   }
 
+  const backgroundTaskObserver = startDynamicWorkflowBackgroundTaskObserver({
+    manager: mounted.mastra.backgroundTaskManager,
+    resourceId: session.identity.getResourceId(),
+    waitForActivation: true,
+    emit: event => session.emit(event),
+  });
+  const observedController = new Proxy(mounted.controller, {
+    get(target, property) {
+      if (property === "setResourceId") {
+        return async (
+          targetSession: Session<MastraCodeState>,
+          input: { resourceId: string },
+        ): Promise<void> => {
+          if (targetSession !== session) {
+            await target.setResourceId(targetSession, input);
+            return;
+          }
+          await backgroundTaskObserver.rebind(
+            input.resourceId,
+            () => target.setResourceId(targetSession, input),
+          );
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
   let tui: MastraTUI | undefined;
   let localClosePromise: Promise<void> | undefined;
   const closeRuntime = async () => {
     localClosePromise ??= (async () => {
+      await backgroundTaskObserver.close();
       tui?.stop();
       releaseAllThreadLocks();
       await mounted.close();
@@ -560,10 +593,11 @@ export async function createLocalMcodeRuntime(
   };
   return {
     ...mounted,
+    controller: observedController,
     session,
     async runTui(): Promise<void> {
       tui ??= new MastraTUI({
-        controller: mounted.controller,
+        controller: observedController,
         session,
         ...(mounted.code.hookManager ? { hookManager: mounted.code.hookManager } : {}),
         ...(mounted.code.authStorage ? { authStorage: mounted.code.authStorage } : {}),
@@ -573,6 +607,7 @@ export async function createLocalMcodeRuntime(
         ...(mounted.code.githubSignals ? { githubSignals: mounted.code.githubSignals } : {}),
         appName: "RLabs MCode",
         inlineQuestions: true,
+        terminal: createBackgroundTaskTelemetryTerminal(() => backgroundTaskObserver.activate()),
       });
       const originalExit = process.exit;
       let exitStarted = false;

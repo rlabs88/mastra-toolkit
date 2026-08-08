@@ -25,6 +25,7 @@ applies_to: ["**/*"]
 
 ```text
 src/
+├── background-task-observer.ts # human-only dynamic workflow telemetry projection
 ├── recipe.ts  # controller projections and deprecated recipe compatibility
 ├── project.ts # workspace, MCP lifecycle, and project host adapters
 ├── runtime.ts # configuration, settings, mount lifecycle, session, and TUI

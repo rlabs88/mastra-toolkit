@@ -1,9 +1,14 @@
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
 import type { Workspace } from "@mastra/core/workspace";
-import { createHash } from "node:crypto";
+import type { Mastra } from "@mastra/core/mastra";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { validateStoredWorkflow } from "@mastra/core/workflows";
+import {
+  rehydrateWorkflow,
+  type StoredWorkflowGraph,
+  validateStoredWorkflow,
+} from "@mastra/core/workflows";
 import { chargeRunDelegations, RUN_BUDGET_CONTEXT_KEY } from "./capabilities.js";
 
 /**
@@ -12,6 +17,9 @@ import { chargeRunDelegations, RUN_BUDGET_CONTEXT_KEY } from "./capabilities.js"
  * workflow rather than relying on a particular host's tool resolver.
  */
 export const DYNAMIC_WORKFLOW_DEPTH_CONTEXT_KEY = "dynamicWorkflowDepth";
+
+/** Isolated memory identity for agent entries inside one dynamic workflow run. */
+const DYNAMIC_WORKFLOW_MEMORY_CONTEXT_KEY = "dynamicWorkflowMemory";
 
 /** Stamped on every definition this tool persists so boot reconciliation can find them. */
 export const DYNAMIC_WORKFLOW_ORIGIN = "dynamic_workflow";
@@ -268,6 +276,8 @@ export interface DynamicWorkflowToolOptions {
 /** Structural view of the host runtime, so this package depends on no host type. */
 interface DynamicWorkflowHost {
   addStoredWorkflow(definition: unknown): Promise<void>;
+  addWorkflow?(workflow: unknown, key?: string): void;
+  getAgentById?(id: string): unknown;
   getWorkflow(id: string): unknown;
   removeWorkflow?(id: string): boolean;
   getStorage?(): unknown;
@@ -326,7 +336,10 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
       "Author a Mastra workflow as a declarative graph and run it durably to orchestrate other agents. "
       + "Agents and nested workflows are referenced by id. Use dryRun to validate a graph for free before "
       + "spending an approval; validation issues come back precise enough to repair. Runs are durable: keep "
-      + "workflowId and runId to resume a suspended run.",
+      + "workflowId and runId to resume a suspended run. Execution policy: run with dryRun:false and resume "
+      + "must omit the _background override or set _background.enabled:true, so they acknowledge promptly and "
+      + "continue as background tasks. Never set _background.enabled:false for those actions. dryRun and inspect "
+      + "may run in the foreground.",
     inputSchema,
     outputSchema,
     requireApproval: input =>
@@ -777,6 +790,7 @@ async function run(
   try {
     const workflow = host.getWorkflow(prepared.workflowId) as WorkflowHandle;
     const workflowRun = await workflow.createRun();
+    setDynamicWorkflowMemoryScope(childRequestContext, prepared.workflowId, workflowRun.runId);
     return await execute(
       () => workflowRun.start({
         inputData: input.input,
@@ -860,6 +874,7 @@ async function resume(
   try {
     const workflow = host.getWorkflow(input.workflowId) as WorkflowHandle;
     const workflowRun = await workflow.createRun({ runId: input.runId });
+    setDynamicWorkflowMemoryScope(childRequestContext, input.workflowId, workflowRun.runId);
     return await execute(
       () => workflowRun.resume({
         ...(input.step ? { step: input.step } : {}),
@@ -1110,6 +1125,18 @@ function dispatchContext(
   return dispatch;
 }
 
+function setDynamicWorkflowMemoryScope(
+  context: RequestContext,
+  workflowId: string,
+  runId: string,
+): void {
+  const resource = `dynamic-workflow:${workflowId}:${runId}`;
+  context.set(DYNAMIC_WORKFLOW_MEMORY_CONTEXT_KEY, {
+    resource,
+    threadPrefix: resource,
+  });
+}
+
 function writerBridge(context: ToolContext): { outputWriter?: (chunk: unknown) => Promise<void> } {
   if (!context.writer) return {};
   const writer = context.writer;
@@ -1152,14 +1179,83 @@ async function registerDefinition(
   stored: Record<string, unknown>,
 ): Promise<void> {
   try {
-    await host.addStoredWorkflow(stored);
     const store = await definitionsStore(host);
     if (!store) throw new Error("dynamic_workflow requires workflow definition storage");
-    await store.upsert({ id, status: "archived" });
+    if (host.addWorkflow && host.getAgentById) {
+      await host.addStoredWorkflow(stored);
+      host.removeWorkflow?.(id);
+      const resolver = agentEntryResolver(host);
+      const { workflow } = await rehydrateWorkflow(
+        stored as unknown as StoredWorkflowGraph,
+        resolver,
+      );
+      host.addWorkflow(workflow, id);
+      await store.upsert({ id, status: "archived" });
+    } else {
+      await host.addStoredWorkflow(stored);
+      await store.upsert({ id, status: "archived" });
+    }
   } catch (error) {
     host.removeWorkflow?.(id);
     throw error;
   }
+}
+
+/**
+ * Stored agent entries call the regular Agent stream contract. Mastra wraps a
+ * durable registered agent, whose stream result has a different durable-run
+ * shape, but retains the already-registered regular agent on `.agent`.
+ */
+function agentEntryResolver(host: DynamicWorkflowHost): Mastra {
+  return new Proxy(host as object, {
+    get(target, property) {
+      if (property === "getAgentById") {
+        return (id: string): unknown => {
+          const registered = host.getAgentById?.(id);
+          if (!registered || typeof registered !== "object") return registered;
+          const underlying = (registered as { agent?: unknown }).agent;
+          const agent = underlying && underlying !== registered ? underlying : registered;
+          if (!agent || typeof agent !== "object") return agent;
+          return new Proxy(agent, {
+            get(agentTarget, agentProperty) {
+              if (agentProperty === "stream" || agentProperty === "streamLegacy") {
+                const stream = Reflect.get(agentTarget, agentProperty, agentTarget) as unknown;
+                if (typeof stream !== "function") return stream;
+                return (messages: unknown, streamOptions: Record<string, unknown> = {}) => {
+                  const requestContext = streamOptions.requestContext;
+                  const scope = requestContext instanceof RequestContext
+                    ? requestContext.get(DYNAMIC_WORKFLOW_MEMORY_CONTEXT_KEY)
+                    : undefined;
+                  const memory = isDynamicWorkflowMemoryScope(scope)
+                    ? {
+                        thread: `${scope.threadPrefix}:${id}:${randomUUID()}`,
+                        resource: scope.resource,
+                      }
+                    : undefined;
+                  return stream.call(agentTarget, messages, {
+                    ...streamOptions,
+                    ...(memory ? { memory } : {}),
+                  });
+                };
+              }
+              const value = Reflect.get(agentTarget, agentProperty, agentTarget) as unknown;
+              return typeof value === "function" ? value.bind(agentTarget) : value;
+            },
+          });
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Mastra;
+}
+
+function isDynamicWorkflowMemoryScope(
+  value: unknown,
+): value is { resource: string; threadPrefix: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const scope = value as Record<string, unknown>;
+  return typeof scope.resource === "string" && typeof scope.threadPrefix === "string";
 }
 
 async function definitionsStore(host: DynamicWorkflowHost): Promise<WorkflowDefinitionsStore | undefined> {

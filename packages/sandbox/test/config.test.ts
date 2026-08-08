@@ -30,7 +30,7 @@ describe("loadSandboxConfig", () => {
 
     expect(config.provider).toBe("local");
     expect(config.workdir).toBe("/workspace");
-    expect(config.maxSandboxes).toBe(8);
+    expect(config.maxSandboxes).toBe(50);
     expect(config.commandTimeoutMs).toBe(300_000);
     expect(config.specification).toEqual(expect.objectContaining({
       apiVersion: "cortex.provisioning/v1",
