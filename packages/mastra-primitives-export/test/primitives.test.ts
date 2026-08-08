@@ -1,3 +1,4 @@
+import { ROLE_IDS } from "@rlabs/agents-roles";
 import { loadModelProfile } from "@rlabs/runtime-config";
 import { describe, expect, test } from "vitest";
 import {
@@ -51,6 +52,34 @@ describe("ToolkitRuntimeContract", () => {
     expect(first.tools.createDynamicWorkflow).toBeTypeOf("function");
     expect(first.tools.reconcileDynamicWorkflowDefinitions).toBeTypeOf("function");
     expect(first.sandbox).not.toHaveProperty("createCommandRun");
+  });
+
+  test("projects every id in the canonical role registry, not a fixed three", () => {
+    const contract = createToolkitRuntimeContract({ profile: loadModelProfile() });
+    const capability = contract.capability;
+    const canonical = [...ROLE_IDS].sort();
+
+    // Compared against ROLE_IDS rather than a literal list, so a fourth
+    // canonical role widens this contract instead of quietly bypassing it.
+    expect([...capability.roles]).toEqual([...ROLE_IDS]);
+    expect([...capability.delegation.targets]).toEqual([...ROLE_IDS]);
+    expect([...capability.delegation.supervisorTargets]).toEqual([...ROLE_IDS]);
+    expect([...contract.roles.ids]).toEqual([...ROLE_IDS]);
+    expect(Object.keys(contract.roles.definitions).sort()).toEqual(canonical);
+
+    // Every per-role projection must cover the registry exactly: no missing
+    // role, and no stale entry for a role that no longer exists.
+    for (const record of [
+      capability.roleInstructionDigests,
+      capability.roleModels,
+      capability.roleMaxSteps,
+      capability.roleTemperatures,
+    ]) {
+      expect(Object.keys(record).sort()).toEqual(canonical);
+    }
+
+    // The digest covers the role list, so adding a role must move it.
+    expect(capability.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
   test("boot reconciliation fails open when the host has no workflow definition store", async () => {
