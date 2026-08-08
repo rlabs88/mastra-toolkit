@@ -4,7 +4,7 @@ import type { Workspace } from "@mastra/core/workspace";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { validateStoredWorkflow } from "@mastra/core/workflows";
-import { RUN_BUDGET_CONTEXT_KEY } from "./capabilities.js";
+import { RUN_BUDGET_CONTEXT_KEY, RUN_CONTAINMENT_POLICY } from "./capabilities.js";
 
 /**
  * Marks a dispatched run so a delegated agent cannot author another graph.
@@ -21,10 +21,58 @@ const DYNAMIC_WORKFLOW_ID_PATTERN = /^dyn_[0-9a-f]{16}$/;
 const MAX_GRAPH_ENTRIES = 16;
 const MAX_FAN_OUT = 8;
 const MAX_CONCURRENCY = 3;
-const MAX_NESTING_DEPTH = 2;
 const MAX_SLEEP_MS = 60_000;
 const MAX_ROW_CHARS = 2_000;
 const MAX_RETAINED_CHARS = 24_000;
+
+/**
+ * Bumped whenever any ceiling above changes. The value is digested with the
+ * graph, so a definition stored under one policy can never be mistaken for the
+ * same graph clamped under another, and `resume` can say which policy a
+ * suspended run belongs to instead of reporting a bare digest mismatch.
+ */
+const CEILING_POLICY_VERSION = 1;
+
+export const DYNAMIC_WORKFLOW_CEILING_POLICY = Object.freeze({
+  version: CEILING_POLICY_VERSION,
+  maxGraphEntries: MAX_GRAPH_ENTRIES,
+  maxFanOut: MAX_FAN_OUT,
+  maxConcurrency: MAX_CONCURRENCY,
+  maxSleepMs: MAX_SLEEP_MS,
+});
+
+const CEILING_POLICY = DYNAMIC_WORKFLOW_CEILING_POLICY;
+
+/** Named so a model that cannot resume learns why, and that the run is unrecoverable rather than mistyped. */
+export const DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH = "ceiling_policy_mismatch";
+
+/**
+ * Three bounds used to be set independently and could not all hold at once.
+ *
+ * The tool's own `timeoutMs` must expire strictly before the background
+ * harness reclaims the call, or the harness kills the invocation while
+ * `cancel()` is still in flight and the run is never contained. The harness
+ * bound in turn has to fit inside the aggregate run budget, or a single
+ * dynamic workflow can outlive the wall clock that is supposed to contain the
+ * whole agent run. `timeBoundsInvariant` is the executable statement of that
+ * ordering.
+ */
+const MAX_TIMEOUT_MS = 600_000;
+const CANCELLATION_GRACE_MS = 30_000;
+const BACKGROUND_TIMEOUT_MS = MAX_TIMEOUT_MS + CANCELLATION_GRACE_MS;
+
+export const DYNAMIC_WORKFLOW_TIME_BOUNDS = Object.freeze({
+  maxTimeoutMs: MAX_TIMEOUT_MS,
+  cancellationGraceMs: CANCELLATION_GRACE_MS,
+  backgroundTimeoutMs: BACKGROUND_TIMEOUT_MS,
+  runBudgetWallClockMs: RUN_CONTAINMENT_POLICY.maxWallClockMs,
+});
+
+/** True only while every authored timeout can still be cancelled and reported inside the run budget. */
+export function timeBoundsInvariant(): boolean {
+  return MAX_TIMEOUT_MS < BACKGROUND_TIMEOUT_MS
+    && BACKGROUND_TIMEOUT_MS <= RUN_CONTAINMENT_POLICY.maxWallClockMs;
+}
 
 const identifier = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
 const jsonSchemaObject = z.record(z.string(), z.unknown());
@@ -75,11 +123,15 @@ const parallelEntrySchema = z.object({
   steps: z.array(agentEntrySchema).min(1).max(MAX_CONCURRENCY),
 }).strict();
 
-const suspendableInnerSchema = z.discriminatedUnion("type", [agentEntrySchema, workflowEntrySchema]);
-
+/**
+ * Branch bodies are agents only, matching `foreach` and `parallel`. Every
+ * container therefore holds leaf entries exclusively, so a container can never
+ * hold another container and graph nesting is bounded by the union itself
+ * rather than by a depth counter that has to be trusted and kept in sync.
+ */
 const conditionalEntrySchema = z.object({
   type: z.literal("conditional"),
-  steps: z.array(suspendableInnerSchema).min(1).max(MAX_CONCURRENCY),
+  steps: z.array(agentEntrySchema).min(1).max(MAX_CONCURRENCY),
   // Predicates are upstream's declarative language; `validateStoredWorkflow` is their authority.
   predicates: z.array(z.unknown()).min(1),
 }).strict();
@@ -116,7 +168,7 @@ const inputSchema = z.discriminatedUnion("action", [
       "A Mastra workflow graph as data. Agents and nested workflows are referenced by id and resolved against this runtime.",
     ),
     input: z.unknown().default({}).describe("Validated at run time against the definition's own inputSchema."),
-    timeoutMs: z.number().int().min(1_000).max(600_000).default(300_000),
+    timeoutMs: z.number().int().min(1_000).max(MAX_TIMEOUT_MS).default(300_000),
     dryRun: z.boolean().default(false).describe("Validate and content-address only. No approval, no execution, no persistence."),
   }).strict(),
   z.object({
@@ -126,7 +178,7 @@ const inputSchema = z.discriminatedUnion("action", [
     runId: z.string().min(1).max(200),
     step: z.array(z.string().min(1)).min(1).max(8).optional(),
     resumeData: z.unknown().default({}),
-    timeoutMs: z.number().int().min(1_000).max(600_000).default(300_000),
+    timeoutMs: z.number().int().min(1_000).max(MAX_TIMEOUT_MS).default(300_000),
   }).strict(),
   z.object({
     action: z.literal("inspect"),
@@ -198,10 +250,18 @@ interface WorkflowDefinitionsStore {
   list(args?: { status?: "active" | "archived" }): Promise<{ definitions: WorkflowDefinitionRow[] }>;
 }
 
+interface WorkflowRunRow {
+  readonly workflowName: string;
+  readonly runId: string;
+  readonly snapshot: unknown;
+}
+
 interface WorkflowRunsStore {
   listWorkflowRuns(args?: { workflowName?: string; perPage?: number }): Promise<{
-    runs: Array<{ workflowName: string; runId: string; snapshot: unknown }>;
+    runs: WorkflowRunRow[];
+    total?: number;
   }>;
+  getWorkflowRunById?(args: { runId: string; workflowName?: string }): Promise<WorkflowRunRow | null>;
 }
 
 /**
@@ -232,7 +292,7 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
     outputSchema,
     requireApproval: input =>
       input.action === "run" ? !input.dryRun : input.action === "resume",
-    background: { enabled: true, timeoutMs: 600_000 },
+    background: { enabled: true, timeoutMs: BACKGROUND_TIMEOUT_MS },
     mcp: {
       annotations: {
         title: "Dynamic Workflow",
@@ -270,6 +330,22 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
           action: "run" as const,
           status: "invalid" as const,
           issues: prepared.issues.slice(0, 24),
+          resumable: false,
+          truncated: false,
+        };
+      }
+      // Width is checked on the dry-run path too, so a graph validated for free
+      // with its real input cannot still be refused once an approval is spent.
+      const widthIssues: string[] = [];
+      checkInputWidth(prepared.stored.inputSchema, input.input, "input", widthIssues);
+      if (widthIssues.length > 0) {
+        return {
+          version: 1 as const,
+          action: "run" as const,
+          workflowId: prepared.workflowId,
+          graphDigest: prepared.digest,
+          status: "invalid" as const,
+          issues: widthIssues.slice(0, 24),
           resumable: false,
           truncated: false,
         };
@@ -326,25 +402,31 @@ function prepare(
   const issues: string[] = [];
   const ids = new Set<string>();
   definition.graph.forEach((entry, index) => {
-    checkEntry(entry, `graph.${index}`, 0, { allowedAgents, allowedWorkflows, ids, issues, topLevel: true });
+    checkEntry(entry, `graph.${index}`, { allowedAgents, allowedWorkflows, ids, issues });
   });
+  checkForeachSources(definition, issues);
   if (issues.length > 0) return { ok: false, issues };
 
   const graph = definition.graph.map(clampEntry);
   const inputSchema = boundArraySchema(definition.inputSchema);
   const outputSchema = boundArraySchema(definition.outputSchema);
+  const stateSchema = definition.stateSchema ? boundArraySchema(definition.stateSchema) : undefined;
   const digest = createHash("sha256")
-    .update(canonicalJson({ inputSchema, outputSchema, stateSchema: definition.stateSchema, graph }))
+    .update(canonicalJson({ ceilingPolicy: CEILING_POLICY, inputSchema, outputSchema, stateSchema, graph }))
     .digest("hex");
   const workflowId = `dyn_${digest.slice(0, 16)}`;
   const stored = {
     id: workflowId,
     inputSchema,
     outputSchema,
-    ...(definition.stateSchema ? { stateSchema: definition.stateSchema } : {}),
+    ...(stateSchema ? { stateSchema } : {}),
     graph,
     ...(definition.description ? { description: definition.description } : {}),
-    metadata: { origin: DYNAMIC_WORKFLOW_ORIGIN, graphDigest: `sha256:${digest}` },
+    metadata: {
+      origin: DYNAMIC_WORKFLOW_ORIGIN,
+      graphDigest: `sha256:${digest}`,
+      ceilingPolicy: CEILING_POLICY,
+    },
   };
   const upstreamIssues = validateStoredWorkflow(stored as never, {
     agents: Object.fromEntries([...allowedAgents].map(id => [id, {}])),
@@ -369,14 +451,9 @@ interface CheckContext {
   readonly allowedWorkflows: ReadonlySet<string>;
   readonly ids: Set<string>;
   readonly issues: string[];
-  readonly topLevel: boolean;
 }
 
-function checkEntry(entry: DynamicWorkflowGraphEntry, path: string, depth: number, check: CheckContext): void {
-  if (depth > MAX_NESTING_DEPTH) {
-    check.issues.push(`${path}: container nesting exceeds depth ${MAX_NESTING_DEPTH}`);
-    return;
-  }
+function checkEntry(entry: DynamicWorkflowGraphEntry, path: string, check: CheckContext): void {
   switch (entry.type) {
     case "agent":
       claimId(entry.id, path, check);
@@ -397,24 +474,92 @@ function checkEntry(entry: DynamicWorkflowGraphEntry, path: string, depth: numbe
           `${path}.workflowId: nested workflow "${entry.workflowId}" is not allowlisted for dynamic use`,
         );
       }
-      if (!check.topLevel && depth > 0) {
-        check.issues.push(`${path}: a nested workflow may only appear at the top level or as a loop body`);
-      }
       return;
     case "foreach":
-      checkEntry(entry.step, `${path}.step`, depth + 1, { ...check, topLevel: false });
+      checkEntry(entry.step, `${path}.step`, check);
       return;
     case "parallel":
-      entry.steps.forEach((step, index) =>
-        checkEntry(step, `${path}.steps.${index}`, depth + 1, { ...check, topLevel: false }));
-      return;
     case "conditional":
-      if (entry.predicates.length !== entry.steps.length) {
+      if (entry.type === "conditional" && entry.predicates.length !== entry.steps.length) {
         check.issues.push(`${path}: predicates must align one-to-one with steps`);
       }
-      entry.steps.forEach((step, index) =>
-        checkEntry(step, `${path}.steps.${index}`, depth + 1, { ...check, topLevel: false }));
+      entry.steps.forEach((step, index) => checkEntry(step, `${path}.steps.${index}`, check));
       return;
+  }
+}
+
+/**
+ * Rejects rather than clamps. Concurrency is a scheduling knob the host may
+ * silently rewrite, but the iteration source is the author's declared unit of
+ * work: quietly reducing a declared `maxItems: 50` to 8 would run a twelfth of
+ * the requested fan-out and report success, so an over-wide source is refused
+ * with the ceiling named instead.
+ */
+function checkForeachSources(definition: DynamicWorkflowDefinition, issues: string[]): void {
+  definition.graph.forEach((entry, index) => {
+    if (entry.type !== "foreach") return;
+    const source = foreachSourceSchema(definition, index);
+    const declared = declaredMaxItems(source);
+    if (declared === undefined || declared <= MAX_FAN_OUT) return;
+    issues.push(
+      `graph.${index}: foreach iterates a source declaring maxItems ${declared}, `
+      + `above the ${MAX_FAN_OUT}-iteration ceiling. Narrow the source or split the work across runs.`,
+    );
+  });
+}
+
+/**
+ * The schema feeding a `foreach`, for the positions where it is statically
+ * knowable. A nested workflow's or mapping's output shape lives outside this
+ * definition, so those predecessors yield `undefined` and the run-time width
+ * check in `checkInputWidth` remains the binding control.
+ */
+function foreachSourceSchema(definition: DynamicWorkflowDefinition, index: number): unknown {
+  if (index === 0) return definition.inputSchema;
+  const previous = definition.graph[index - 1];
+  if (previous?.type === "agent") return previous.outputSchema;
+  return undefined;
+}
+
+function declaredMaxItems(schema: unknown): number | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
+  const record = schema as Record<string, unknown>;
+  if (record.type !== "array") return undefined;
+  return typeof record.maxItems === "number" ? record.maxItems : undefined;
+}
+
+/**
+ * Counts elements at every array-typed path of the clamped input schema.
+ *
+ * This is the fan-out ceiling. Upstream's `jsonSchemaToZod` builds array
+ * schemas as `z.array(walk(items))` and never reads `maxItems` — the keyword
+ * is not even in its `UNSUPPORTED_SCHEMA_KEYS`, so a stamped ceiling is
+ * silently discarded rather than rejected. Nothing downstream of `start()`
+ * counts elements, so an unchecked 200-element input would turn one approval
+ * into 200 agent invocations.
+ */
+function checkInputWidth(schema: unknown, value: unknown, path: string, issues: string[]): void {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return;
+  const record = schema as Record<string, unknown>;
+  if (record.type === "array" && Array.isArray(value)) {
+    const limit = typeof record.maxItems === "number" ? Math.min(record.maxItems, MAX_FAN_OUT) : MAX_FAN_OUT;
+    if (value.length > limit) {
+      issues.push(
+        `${path}: ${value.length} elements exceeds the ${limit}-element fan-out ceiling. `
+        + "Split the work across runs.",
+      );
+      return;
+    }
+    value.forEach((element, index) => checkInputWidth(record.items, element, `${path}[${index}]`, issues));
+    return;
+  }
+  if (record.type === "object" && value && typeof value === "object" && !Array.isArray(value)) {
+    const properties = record.properties;
+    if (!properties || typeof properties !== "object") return;
+    for (const [key, child] of Object.entries(properties as Record<string, unknown>)) {
+      if (!(key in (value as Record<string, unknown>))) continue;
+      checkInputWidth(child, (value as Record<string, unknown>)[key], `${path}.${key}`, issues);
+    }
   }
 }
 
@@ -443,8 +588,14 @@ function clampAgent(entry: z.infer<typeof agentEntrySchema>): z.infer<typeof age
 }
 
 /**
- * A `maxItems` ceiling on every array schema is the only static bound on
- * fan-out width, and `jsonSchemaToZod` enforces it at run time.
+ * Stamps a `maxItems` ceiling on every array schema, so the persisted
+ * definition states the width it was admitted under.
+ *
+ * This is documentation, not enforcement. Upstream's `jsonSchemaToZod` builds
+ * `z.array(walk(items))` and never reads `maxItems`, and the keyword is absent
+ * from its `UNSUPPORTED_SCHEMA_KEYS`, so a rehydrated definition drops the
+ * ceiling silently rather than refusing it. `checkInputWidth` is what actually
+ * binds, before `start()`.
  */
 function boundArraySchema(schema: unknown): unknown {
   if (!schema || typeof schema !== "object") return schema;
@@ -525,11 +676,26 @@ async function resume(
     ...(definition.description ? { description: definition.description } : {}),
   });
   if (!parsed.success) return fail("resume", "Stored definition no longer satisfies the authoring contract");
+  // Checked before re-preparing, because lowering any ceiling changes the
+  // digest of every graph clamped under the old one. Without this the run
+  // would fail as a content mismatch, which reads as corruption rather than as
+  // a deliberate policy change nobody can resume across.
+  const storedVersion = ceilingPolicyVersion(definition.metadata.ceilingPolicy);
+  if (storedVersion !== CEILING_POLICY_VERSION) {
+    return fail(
+      "resume",
+      `${DYNAMIC_WORKFLOW_CEILING_POLICY_MISMATCH}: run was suspended under ceiling policy `
+      + `v${storedVersion ?? "unversioned"}, and this runtime enforces v${CEILING_POLICY_VERSION}. `
+      + "Ceilings changed while the run was suspended, so it cannot be resumed. Author the graph again.",
+    );
+  }
   const prepared = prepare(parsed.data, allowedAgents, allowedWorkflows);
   if (!prepared.ok) return fail("resume", `Stored definition is outside current authority: ${prepared.issues.join("; ")}`);
   if (prepared.workflowId !== input.workflowId || definition.metadata.graphDigest !== prepared.digest) {
     return fail("resume", "Stored definition identity or digest does not match its content");
   }
+  const owned = await runBelongsToWorkflow(host, input.workflowId, input.runId);
+  if (!owned.ok) return fail("resume", owned.error);
   try {
     await register(host, input.workflowId, prepared.stored);
   } catch (error) {
@@ -552,6 +718,39 @@ async function resume(
   } finally {
     await unregister(host, input.workflowId);
   }
+}
+
+function ceilingPolicyVersion(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const version = (value as { version?: unknown }).version;
+  return typeof version === "number" ? version : undefined;
+}
+
+/**
+ * `createRun({ runId })` mints a fresh run for an id it does not recognise, so
+ * an unverified resume would silently start a second run of the graph under
+ * the caller's chosen id instead of continuing the suspended one. Fails closed
+ * when the runtime cannot answer, because an unverifiable id is exactly the
+ * case this guards.
+ */
+async function runBelongsToWorkflow(
+  host: DynamicWorkflowHost,
+  workflowId: string,
+  runId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const runsStore = await workflowRunsStore(host);
+  if (!runsStore?.getWorkflowRunById) {
+    return { ok: false, error: "This runtime cannot verify run ownership, so resume is refused" };
+  }
+  const row = await runsStore.getWorkflowRunById({ runId, workflowName: workflowId });
+  if (!row || row.workflowName !== workflowId) {
+    return { ok: false, error: `Run ${runId} does not exist for ${workflowId}` };
+  }
+  const status = workflowRunStatus(row.snapshot);
+  if (status !== "suspended") {
+    return { ok: false, error: `Run ${runId} is ${status}, not suspended, so there is nothing to resume` };
+  }
+  return { ok: true };
 }
 
 async function inspect(
