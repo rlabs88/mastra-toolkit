@@ -544,6 +544,7 @@ export async function createLocalMcodeRuntime(
       tags: { projectPath: mounted.project.rootPath },
     });
     await wireSessionConcerns(mounted.code, session);
+    restrictSessionModelSelection(session, mounted.contract.runtime.profile);
   } catch (error) {
     try {
       await mounted.close();
@@ -565,6 +566,11 @@ export async function createLocalMcodeRuntime(
   });
   const observedController = new Proxy(mounted.controller, {
     get(target, property) {
+      if (property === "listAvailableModels") {
+        return async () => (await target.listAvailableModels())
+          .filter(model => isDeclaredGatewayModelId(model.id, mounted.contract.runtime.profile))
+          .map(model => ({ ...model, id: model.id.slice("mastracode/".length) }));
+      }
       if (property === "setResourceId") {
         return async (
           targetSession: Session<MastraCodeState>,
@@ -641,6 +647,31 @@ export async function createLocalMcodeRuntime(
       await closeRuntime();
     },
   };
+}
+
+function restrictSessionModelSelection(session: Session<MastraCodeState>, profile: ModelProfile): void {
+  const model = session.model as unknown as {
+    switch(input: { modelId: string; scope?: "global" | "thread"; modeId?: string }): Promise<void>;
+  };
+  const switchModel = model.switch.bind(model);
+  model.switch = async input => {
+    if (!isDeclaredA1ModelId(input.modelId, profile)) {
+      throw new Error(`Selected model must use a declared A1 model alias: ${input.modelId}`);
+    }
+    await switchModel(input);
+  };
+}
+
+function isDeclaredA1ModelId(modelId: string, profile: ModelProfile): boolean {
+  const prefix = `${A1_CODE_PROVIDER_ID}/`;
+  return modelId.startsWith(prefix) && profile.aliases.includes(modelId.slice(prefix.length));
+}
+
+function isDeclaredGatewayModelId(modelId: string, profile: ModelProfile): boolean {
+  return modelId.startsWith("mastracode/") && isDeclaredA1ModelId(
+    modelId.slice("mastracode/".length),
+    profile,
+  );
 }
 
 function localSessionId(projectRoot: string): string {

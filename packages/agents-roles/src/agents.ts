@@ -131,7 +131,11 @@ function createAgent<TId extends RoleDefinition["id"]>(
     name: role.name,
     description: role.description,
     instructions: composePrompt(role),
-    model: resolveProxyGatewayModelId(profile, profile.roles[role.id]),
+    model: ({ requestContext }) => resolveActiveSessionModel(
+      profile,
+      profile.roles[role.id],
+      requestContext.get("controller"),
+    ),
     tools: async ({ requestContext, mastra }) => {
       const resolvedAdditionalTools = typeof additionalTools === "function"
         ? await additionalTools({ requestContext, ...(mastra ? { mastra } : {}) })
@@ -151,6 +155,39 @@ function createAgent<TId extends RoleDefinition["id"]>(
     ...(agentBrowser ? { browser: agentBrowser } : {}),
     ...(agents ? { agents: { ...agents } } : {}),
   });
+}
+
+/**
+ * AgentController keeps the selected model on the session, while role agents
+ * are shared controller projections. Resolve the model at request time so an
+ * explicit session switch changes the actual provider dispatch instead of only
+ * the TUI's displayed state.
+ */
+function resolveActiveSessionModel(
+  profile: ModelProfile,
+  fallbackAlias: string,
+  controller: unknown,
+): string {
+  const selectedModelId = readSelectedModelId(controller);
+  if (!selectedModelId) return resolveProxyGatewayModelId(profile, fallbackAlias);
+
+  const prefix = "a1-proxy/";
+  if (!selectedModelId.startsWith(prefix)) {
+    throw new Error(`Selected model must use a declared A1 model alias: ${selectedModelId}`);
+  }
+  const alias = selectedModelId.slice(prefix.length);
+  if (!profile.aliases.includes(alias)) {
+    throw new Error(`Selected model must use a declared A1 model alias: ${selectedModelId}`);
+  }
+  return resolveProxyGatewayModelId(profile, alias);
+}
+
+function readSelectedModelId(controller: unknown): string | undefined {
+  if (!controller || typeof controller !== "object") return undefined;
+  const session = (controller as { session?: unknown }).session;
+  if (!session || typeof session !== "object") return undefined;
+  const modelId = (session as { modelId?: unknown }).modelId;
+  return typeof modelId === "string" && modelId.trim() ? modelId : undefined;
 }
 
 function composeToolHooks(additionalHooks?: ToolHooks): ToolHooks {

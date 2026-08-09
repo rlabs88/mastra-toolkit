@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -14,10 +15,65 @@ import { startDynamicWorkflowBackgroundTaskObserver } from "../packages/mcode/sr
 
 const execFileAsync = promisify(execFile);
 const openRuntimes: LocalMcodeRuntime[] = [];
+const openProxyServers: Server[] = [];
 
 afterEach(async () => {
   await Promise.all(openRuntimes.splice(0).map(runtime => runtime.close()));
+  await Promise.all(openProxyServers.splice(0).map(server => new Promise<void>((resolve, reject) =>
+    server.close(error => error ? reject(error) : resolve()),
+  )));
 });
+
+async function startOpenAiCompatibleProxy(): Promise<{
+  readonly baseUrl: string;
+  readonly requestedModels: string[];
+}> {
+  const requestedModels: string[] = [];
+  const server = createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+      response.writeHead(404).end();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { model?: unknown };
+    if (typeof body.model === "string") requestedModels.push(body.model);
+
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.write(`data: ${JSON.stringify({
+      id: "test-completion",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: body.model,
+      choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }],
+    })}\n\n`);
+    response.write(`data: ${JSON.stringify({
+      id: "test-completion",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: body.model,
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    })}\n\n`);
+    response.end("data: [DONE]\n\n");
+  });
+  openProxyServers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(0, "127.0.0.1");
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected local proxy TCP address");
+  return { baseUrl: `http://127.0.0.1:${address.port}/v1`, requestedModels };
+}
 
 describe("local Mastra Code runtime", () => {
   test("boots the canonical agents and modes at the containing Git checkout", async () => {
@@ -101,6 +157,48 @@ describe("local Mastra Code runtime", () => {
     openRuntimes.push(runtime);
 
     expect(runtime.config.runtime.proxy.model).toBe("startup-only");
+  });
+
+  test("dispatches the active selected A1 alias to the local proxy", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "mastra-code-model-project-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "mastra-code-model-data-"));
+    const proxy = await startOpenAiCompatibleProxy();
+    await execFileAsync("git", ["init", "--quiet", projectRoot]);
+    const profile = structuredClone(loadModelProfile());
+    profile.provider.baseUrl = proxy.baseUrl;
+
+    const runtime = await createLocalMcodeRuntime({
+      cwd: projectRoot,
+      dataDirectory,
+      profile,
+      browser: false,
+      disableMcp: true,
+      watch: false,
+      memory: false,
+      environment: {
+        ...process.env,
+        PROXY_BASE_URL: proxy.baseUrl,
+        CLI_PROXY_API_KEY: "test-only-key",
+      },
+    });
+    openRuntimes.push(runtime);
+
+    await runtime.session.model.switch({ modelId: "a1-proxy/code-economic" });
+    expect(runtime.session.model.get()).toBe("a1-proxy/code-economic");
+    await runtime.session.sendMessage({ content: "Reply with ok." });
+    expect(proxy.requestedModels).toEqual(["code-economic"]);
+
+    await runtime.session.model.switch({ modelId: "a1-proxy/code-frontier-high" });
+    expect(runtime.session.model.get()).toBe("a1-proxy/code-frontier-high");
+    await runtime.session.sendMessage({ content: "Reply with ok again." });
+    expect(proxy.requestedModels).toEqual(["code-economic", "code-frontier-high"]);
+
+    const availableModelIds = (await runtime.controller.listAvailableModels()).map(model => model.id);
+    expect(availableModelIds).toContain("a1-proxy/code-economic");
+    expect(availableModelIds).toContain("a1-proxy/code-frontier-high");
+    expect(availableModelIds).not.toContain("openai/gpt-5.6-sol");
+    await expect(runtime.session.model.switch({ modelId: "openai/gpt-5.6-sol" }))
+      .rejects.toThrow(/declared A1 model alias/i);
   });
 
   test("projects manager output onto the human session bus without persisting it", async () => {
