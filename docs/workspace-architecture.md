@@ -103,7 +103,7 @@ The package is host-neutral. Model lookup, MCP lifecycle, current tool enumerati
 
 The embedded `mcode` path remains serverless in the transport sense: the controller, workflows, specialists, and Mastra instance run in the CLI process. The `mz` path is deliberately server-backed: Studio singularly owns that state and the terminal is a REST/SSE client. Factory remains a separate server host of the same canonical definitions.
 
-The remote backend, authoritative snapshot, and cloud-export disablement live in the pinned RLabs Mastra fork at commit `992180eb65`. This checkout consumes the corresponding immutable tarballs from `vendor/mastra/`; `scripts/vendor-mastra-fork.mjs` rebuilds them from the external fork checkout while normalizing the release-train versions used by the toolkit. The vendored closure is intentional: registry releases do not yet expose the remote-TUI contract, and committing the artifacts keeps a clean toolkit checkout installable and deployable without relying on an unpublished registry version.
+The remote backend, authoritative snapshot, and cloud-export disablement live in the pinned RLabs Mastra fork at commit `d31defff03`. This checkout consumes the corresponding immutable tarballs from `vendor/mastra/`; `scripts/vendor-mastra-fork.mjs` rebuilds them from the external fork checkout while normalizing the release-train versions used by the toolkit. The vendored closure is intentional: registry releases do not yet expose the remote-TUI contract, and committing the artifacts keeps a clean toolkit checkout installable and deployable without relying on an unpublished registry version.
 
 ## Run containment and local artifacts
 

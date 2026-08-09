@@ -13,7 +13,7 @@ const packages = [
   ['packages/server', '1.58.0', '3'],
   ['observability/mastra', '1.16.6', '2'],
   ['mastracode/sdk', '1.2.0', '2'],
-  ['mastracode/tui', '0.33.0', '4'],
+  ['mastracode/tui', '0.33.0', '5'],
   ['packages/deployer', '1.58.0-alpha.8', '4'],
   [
     'packages/server-adapters/hono',
