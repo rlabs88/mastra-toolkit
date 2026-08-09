@@ -6,14 +6,27 @@ import {
   SANDBOX_PROJECT_WORKFLOW_STREAM_PREFIX,
 } from "@rlabs/project-mounting-manager";
 
-const projectWorkflowInputSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("list") }).strict(),
-  z.object({
-    action: z.literal("run"),
-    workflowId: z.string().min(1).max(200),
-    input: z.record(z.string(), z.unknown()),
-  }).strict(),
-]);
+const projectWorkflowInputSchema = z.object({
+  action: z.enum(["list", "run"]),
+  workflowId: z.string().min(1).max(200).describe("Required when action is run").optional(),
+  input: z.record(z.string(), z.unknown()).describe("Required when action is run").optional(),
+}).strict().superRefine((value, context) => {
+  if (value.action === "run") {
+    if (!value.workflowId) {
+      context.addIssue({ code: "custom", path: ["workflowId"], message: "workflowId is required for run" });
+    }
+    if (!value.input) {
+      context.addIssue({ code: "custom", path: ["input"], message: "input is required for run" });
+    }
+    return;
+  }
+  if (value.workflowId !== undefined) {
+    context.addIssue({ code: "custom", path: ["workflowId"], message: "workflowId is only valid for run" });
+  }
+  if (value.input !== undefined) {
+    context.addIssue({ code: "custom", path: ["input"], message: "input is only valid for run" });
+  }
+});
 
 export function createFactoryProjectWorkflowTool() {
   return createTool({
@@ -23,6 +36,14 @@ export function createFactoryProjectWorkflowTool() {
     // Listing imports project modules, so it needs the same approval boundary as execution.
     requireApproval: true,
     execute: async (input, context) => {
+      const workflowId = input.workflowId;
+      const workflowInput = input.input;
+      if (input.action === "run" && (!workflowId || !workflowInput)) {
+        throw new Error("Project workflow run input is incomplete");
+      }
+      if (input.action === "list" && (workflowId !== undefined || workflowInput !== undefined)) {
+        throw new Error("Project workflow list input contains run-only fields");
+      }
       const workspace = context.workspace;
       if (!workspace) throw new Error("Project workflows require an active Factory session workspace");
       const [filesystem, sandbox] = await Promise.all([
@@ -38,8 +59,8 @@ export function createFactoryProjectWorkflowTool() {
         : undefined;
       if (input.action === "run") {
         args.push(
-          input.workflowId,
-          Buffer.from(JSON.stringify(input.input)).toString("base64url"),
+          workflowId!,
+          Buffer.from(JSON.stringify(workflowInput)).toString("base64url"),
           cancellationPath!,
         );
       }

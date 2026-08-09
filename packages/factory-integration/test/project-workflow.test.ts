@@ -7,6 +7,7 @@ import { SandboxFilesystem } from "@mastra/code-sdk/agents/sandbox-filesystem";
 import { loadModelProfile, resolveRuntimeDefaultsV1 } from "@rlabs/runtime-config";
 import { createSandboxMachine, loadSandboxConfig } from "@rlabs/sandbox";
 import { afterEach, describe, expect, test } from "vitest";
+import { z } from "zod";
 import { createFactoryAgentBundle, ToolkitFactoryIntegration } from "../src/index.js";
 
 let projectRoot: string | undefined;
@@ -21,6 +22,37 @@ afterEach(async () => {
 });
 
 describe("Factory project workflows", () => {
+  test("publishes a provider-compatible object input schema", async () => {
+    const tools = await factoryIntegration().agentTools();
+    const projectWorkflow = tools.project_workflow as { inputSchema: z.ZodType };
+    const providerSchema = projectWorkflow.inputSchema["~standard"].jsonSchema.input({ target: "draft-07" });
+
+    expect(providerSchema).toMatchObject({
+      type: "object",
+      properties: {
+        action: { enum: ["list", "run"] },
+        workflowId: { description: "Required when action is run" },
+        input: { description: "Required when action is run" },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    });
+    expect(providerSchema).not.toHaveProperty("oneOf");
+    expect(providerSchema).not.toHaveProperty("anyOf");
+    expect(projectWorkflow.inputSchema.safeParse({ action: "list" }).success).toBe(true);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "list", workflowId: "demo" }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "list", input: {} }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "run", input: {} }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "run", workflowId: "demo" }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "invalid" }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({ action: "list", extra: true }).success).toBe(false);
+    expect(projectWorkflow.inputSchema.safeParse({
+      action: "run",
+      workflowId: "demo",
+      input: {},
+    }).success).toBe(true);
+  });
+
   test("lists and runs only explicitly published project workflows inside the active sandbox workspace", async () => {
     projectRoot = await mkdtemp(join(tmpdir(), "rlabs-factory-workflow-"));
     await mkdir(join(projectRoot, ".mastracode", "workflow"), { recursive: true });
