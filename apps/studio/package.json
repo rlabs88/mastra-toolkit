@@ -11,6 +11,6 @@
     "@mastra/observability": "file:../../vendor/mastra/mastra-observability-1.16.6-rlabs.mz.2.tgz",
     "@mastra/server": "file:../../vendor/mastra/mastra-server-1.58.0-rlabs.mz.3.tgz",
     "@rlabs/mcode": "*",
-    "mastracode": "file:../../vendor/mastra/mastracode-0.33.0-rlabs.mz.4.tgz"
+    "mastracode": "file:../../vendor/mastra/mastracode-0.33.0-rlabs.mz.5.tgz"
   }
 }
