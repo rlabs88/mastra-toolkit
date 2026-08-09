@@ -21,6 +21,12 @@ const packageNames = [
 ] as const;
 
 describe("workspace ownership", () => {
+  test("rebuilds the Mastra Code TUI before creating its vendored artifact", async () => {
+    const vendorScript = await readFile(join(root, "scripts/vendor-mastra-fork.mjs"), "utf8");
+    expect(vendorScript).toContain("relativePath === 'mastracode/tui'");
+    expect(vendorScript).toContain("['pnpm', 'build:lib']");
+  });
+
   test("keeps vendored Mastra artifact bytes aligned with the lockfile", async () => {
     const { stdout } = await execFileAsync(process.execPath, ["scripts/verify-vendored-dependencies.mjs"], { cwd: root });
     expect(stdout).toContain("Vendored Mastra artifacts match package-lock.json.");
@@ -40,7 +46,7 @@ describe("workspace ownership", () => {
     const vendoredArtifacts: Partial<Record<keyof typeof expected, string>> = {
       "@mastra/factory": "mastra-factory-0.5.0-rlabs.mz.2.tgz",
       "@mastra/code-sdk": "mastra-code-sdk-1.2.0-rlabs.mz.2.tgz",
-      "mastracode": "mastracode-0.33.0-rlabs.mz.5.tgz",
+      "mastracode": "mastracode-0.33.0-rlabs.mz.6.tgz",
       "@mastra/core": "mastra-core-1.58.0-rlabs.mz.2.tgz",
     };
     const manifestPaths = [
@@ -232,7 +238,7 @@ describe("workspace ownership", () => {
       "@mastra/client-js": "file:../../vendor/mastra/mastra-client-js-1.39.0-rlabs.mz.3.tgz",
       "@mastra/code-sdk": "file:../../vendor/mastra/mastra-code-sdk-1.2.0-rlabs.mz.2.tgz",
       "@mastra/server": "file:../../vendor/mastra/mastra-server-1.58.0-rlabs.mz.3.tgz",
-      mastracode: "file:../../vendor/mastra/mastracode-0.33.0-rlabs.mz.5.tgz",
+      mastracode: "file:../../vendor/mastra/mastracode-0.33.0-rlabs.mz.6.tgz",
       "@rlabs/mcode": "*",
     });
     expect(source).toContain("prepareMcodeRuntime");
