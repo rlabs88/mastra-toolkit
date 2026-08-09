@@ -205,7 +205,8 @@ describe("canonical agent roles", () => {
     vi.spyOn(registry.leaves.flux, "getModel").mockResolvedValue({ specificationVersion: "v3" } as never);
     const generate = vi.spyOn(registry.leaves.flux, "generate").mockImplementation((async (...args: unknown[]) => {
       const options = args[1] as { requestContext?: RequestContext; abortSignal?: AbortSignal } | undefined;
-      expect(options?.requestContext).toBe(requestContext);
+      expect(options?.requestContext).toBeInstanceOf(RequestContext);
+      expect(options?.requestContext?.get(TOOLKIT_WORKSPACE_CONTEXT_KEY)).toBe(workspace);
       expect(options?.abortSignal).toBe(abortController.signal);
       expect(await registry.leaves.flux.getWorkspace({ requestContext })).toBe(workspace);
       return {
@@ -243,7 +244,10 @@ describe("canonical agent roles", () => {
   });
 
   test("configures visible browser support for every canonical agent", () => {
-    const agents = createToolkitAgents({ browser: true });
+    const agents = createToolkitAgents({
+      browser: true,
+      browserModel: { modelName: "gpt-4o", apiKey: "test-key", baseURL: "https://proxy.example/v1" },
+    });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();

@@ -12,8 +12,7 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@mastra/core": "1.57.0",
-    "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
+    "@mastra/core": "1.58.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -21,5 +20,8 @@
     "@types/node": "22.20.1",
     "typescript": "5.9.2",
     "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@mastra/factory": "0.5.0-rlabs.mz.2"
   }
 }

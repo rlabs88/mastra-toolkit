@@ -1,4 +1,4 @@
-import { createCodeMcpAdapter, createMcodeWorkspace, MastraProjectHostRegistry, ProfileModelAliasResolver, StaticToolSnapshot } from "./project.js";
+import { createCodeMcpAdapter, createMcodeWorkspace, MastraProjectHostRegistry, ProfileModelAliasResolver, ProjectWorkflowRestartRequiredError, StaticToolSnapshot } from "./project.js";
 import {
   createBackgroundTaskTelemetryTerminal,
   startDynamicWorkflowBackgroundTaskObserver,
@@ -25,6 +25,7 @@ import { releaseAllThreadLocks } from "@mastra/code-sdk/utils/thread-lock";
 import type { AgentControllerConfig, Session } from "@mastra/core/agent-controller";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
+import type { ApiRoute, ContextWithMastra } from "@mastra/core/server";
 import type { ToolkitAdditionalTools, ToolkitAgents } from "@rlabs/agents-roles";
 import {
   createToolkitRuntimeContract,
@@ -32,7 +33,7 @@ import {
   type ToolkitRuntimeContract,
 } from "@rlabs/mastra-primitives-export";
 import { type McpLifecyclePort, type PreparedMcpGeneration, type ProjectMountingDiagnostic, ProjectMountingManager } from "@rlabs/project-mounting-manager";
-import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, HOST_BACKGROUND_TASK_POLICY, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, ProxyGateway, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
+import { A1_PROXY_PROVIDER_ID, A1_PROXY_PROVIDER_NAME, getA1ProxyModelId, HOST_BACKGROUND_TASK_POLICY, loadModelProfile, loadRuntimeConfig, type ModelProfile, prepareHostDataDirectory, prepareProjectHostDataDirectory, ProxyGateway, selectModelAlias, type RuntimeConfig, type RuntimeDefaultsV1, type ToolkitHostId } from "@rlabs/runtime-config";
 import { loadSandboxConfig, type SandboxConfig } from "@rlabs/sandbox";
 import { MastraTUI } from "mastracode/tui";
 import { createHash } from "node:crypto";
@@ -84,6 +85,10 @@ interface SettingsDocument {
     omReflectionThreshold?: number | null;
   };
   preferences?: Record<string, unknown>;
+  observability?: {
+    resources?: Record<string, unknown>;
+    localTracing?: boolean;
+  };
   customProviders?: Array<{ name: string; url: string; models: string[] }>;
   [key: string]: unknown;
 }
@@ -104,6 +109,7 @@ export async function prepareCodeSdkSettings(options: {
   readonly environment?: NodeJS.ProcessEnv;
   readonly defaults: RuntimeDefaultsV1;
   readonly provider?: Omit<A1ProviderOptions, "apiKey">;
+  readonly localTracing?: boolean;
 }): Promise<string> {
   const environment = options.environment ?? process.env;
   const directory = options.dataDirectory
@@ -144,6 +150,12 @@ export async function prepareCodeSdkSettings(options: {
       ...(!Object.hasOwn(existingPreferences, "yolo") ? { yolo: false } : {}),
       ...(!Object.hasOwn(existingPreferences, "thinkingLevel") ? { thinkingLevel: "off" } : {}),
     },
+    ...(options.localTracing !== undefined ? {
+      observability: {
+        resources: existing.observability?.resources ?? {},
+        localTracing: options.localTracing,
+      },
+    } : {}),
     ...(options.provider ? {
       customProviders: [
         ...(existing.customProviders ?? []).filter(provider => provider.name !== A1_CODE_PROVIDER_NAME),
@@ -226,6 +238,76 @@ export interface McodeRuntimeOptions {
   readonly disableGithubSignals?: boolean;
   readonly memory?: AgentControllerConfig["memory"] | false;
   readonly onDiagnostic?: (diagnostic: ProjectMountingDiagnostic) => void;
+  readonly onRestartRequired?: (reason: ProjectWorkflowRestartRequiredError) => void;
+}
+
+export interface McodeRuntimeDescriptor {
+  readonly schemaVersion: 1;
+  readonly remoteTuiProtocolVersion: 1;
+  readonly remoteTuiCapabilities: {
+    readonly chat: boolean;
+    readonly threads: boolean;
+    readonly modes: boolean;
+    readonly models: boolean;
+    readonly goals: boolean;
+    readonly permissions: boolean;
+    readonly approvals: boolean;
+    readonly skills: boolean;
+  };
+  readonly remoteTuiSubagents: ReadonlyArray<{ readonly id: string; readonly name: string; readonly description: string }>;
+  readonly runtimeId: string;
+  readonly projectRoot: string;
+  readonly controllerId: string;
+  readonly resourceId: string;
+  readonly contractDigest: `sha256:${string}`;
+  readonly mounting: { readonly ready: boolean; readonly generation: number };
+  readonly observability: { readonly enabled: boolean; readonly export: "local-only" | "disabled" };
+}
+
+export function createMcodeRuntimeDescriptorRoute(options: {
+  readonly runtimeId: string;
+  readonly projectRoot: string;
+  readonly controllerId: string;
+  readonly resourceId: string;
+  readonly contractDigest: `sha256:${string}`;
+  readonly observabilityEnabled: boolean;
+  readonly subagents: ReadonlyArray<{ readonly id: string; readonly name: string; readonly description: string }>;
+  readonly generation: () => number;
+}): ApiRoute {
+  const handler = (c: ContextWithMastra) => {
+    const generation = options.generation();
+    return c.json({
+      schemaVersion: 1,
+      remoteTuiProtocolVersion: 1,
+      remoteTuiCapabilities: {
+        chat: true,
+        threads: true,
+        modes: true,
+        models: true,
+        goals: true,
+        permissions: true,
+        approvals: true,
+        skills: true,
+      },
+      remoteTuiSubagents: options.subagents.map(({ id, name, description }) => ({ id, name, description })),
+      runtimeId: options.runtimeId,
+      projectRoot: options.projectRoot,
+      controllerId: options.controllerId,
+      resourceId: options.resourceId,
+      contractDigest: options.contractDigest,
+      mounting: { ready: generation > 0, generation },
+      observability: {
+        enabled: options.observabilityEnabled,
+        export: options.observabilityEnabled ? "local-only" : "disabled",
+      },
+    } satisfies McodeRuntimeDescriptor);
+  };
+  return {
+    method: "GET",
+    path: "/mz/runtime",
+    requiresAuth: false,
+    handler,
+  };
 }
 
 export interface PreparedMcodeRuntime {
@@ -256,7 +338,10 @@ export async function prepareMcodeRuntime(
   options: McodeRuntimeOptions = {},
 ): Promise<PreparedMcodeRuntime> {
   const project = detectProject(resolve(options.cwd ?? process.cwd()));
-  const environment = { ...(options.environment ?? process.env), WORKSPACE_ROOT: project.rootPath };
+  const environment: NodeJS.ProcessEnv = {
+    ...(options.environment ?? process.env),
+    WORKSPACE_ROOT: project.rootPath,
+  };
   const profile = options.profile ?? loadModelProfile();
   const config = freezeSnapshot(
     options.config ?? loadMcodeConfig(environment, project.rootPath, profile),
@@ -294,20 +379,35 @@ export async function prepareMcodeRuntime(
   const createProjection = options.host === "studio"
     ? createStudioControllerProjection
     : createMcodeControllerProjection;
+  const browserEnabled = options.browser ?? true;
+  const browserApiKey = config.runtime.proxy.apiKey;
+  if (browserEnabled && !browserApiKey) throw new Error("Stagehand browser requires the resolved proxy credential");
   const projection = createProjection(contract, binding, {
-    browser: options.browser ?? true,
+    browser: browserEnabled,
+    ...(browserEnabled ? {
+      browserModel: {
+        modelName: selectModelAlias(profile, { capabilities: ["vision"] }),
+        apiKey: browserApiKey!,
+        baseURL: config.runtime.proxy.baseUrl,
+      },
+    } : {}),
     additionalTools: dynamicTools,
     hooks: { beforeToolCall: ({ input }) => fillMissingSubagentModelId(contractProfile, input) },
     ...(config.browser.executablePath ? { browserExecutablePath: config.browser.executablePath } : {}),
     ...(config.browser.userDataDir ? { browserUserDataDir: config.browser.userDataDir } : {}),
   });
   const agents = projection.agents;
+  const selectedDataDirectory = options.dataDirectory
+    ?? (options.host === "studio"
+      ? (await prepareProjectHostDataDirectory("studio", project.rootPath, environment)).directory
+      : undefined);
   const dataDirectory = await prepareCodeSdkSettings({
-    ...(options.dataDirectory ? { dataDirectory: options.dataDirectory } : {}),
+    ...(selectedDataDirectory ? { dataDirectory: selectedDataDirectory } : {}),
     host: options.host ?? "mcode",
     environment,
     defaults: runtimeDefaults,
     provider: { baseUrl: config.runtime.proxy.baseUrl, models: runtimeDefaults.gateway.models },
+    ...(options.host === "studio" ? { localTracing: true } : {}),
   });
   setCustomProvidersSource(() => [createA1CodeProvider({
     baseUrl: config.runtime.proxy.baseUrl,
@@ -317,7 +417,9 @@ export async function prepareMcodeRuntime(
 
   let controllerMount: Awaited<ReturnType<typeof prepareAgentControllerMount>>;
   try {
-    controllerMount = await prepareAgentControllerMount({
+    const codeSdkMountOptions: NonNullable<Parameters<typeof prepareAgentControllerMount>[0]> & {
+      disableCloudObservability?: boolean;
+    } = {
       cwd: project.rootPath,
       settingsPath: join(dataDirectory, "settings.json"),
       modes: projection.controller.modes,
@@ -329,12 +431,25 @@ export async function prepareMcodeRuntime(
       disableGithubSignals: options.disableGithubSignals ?? true,
       ...(options.memory === false ? { memory: false } : options.memory ? { memory: options.memory } : {}),
       intervalHandlers: [],
-    });
+      disableCloudObservability: options.host === "studio",
+    };
+    controllerMount = await prepareAgentControllerMount(codeSdkMountOptions);
   } catch (error) {
     setCustomProvidersSource(undefined);
     throw error;
   }
 
+  const descriptorRoute = createMcodeRuntimeDescriptorRoute({
+    runtimeId: environment["MZ_RUNTIME_ID"] ?? `studio-${process.pid}`,
+    projectRoot: project.rootPath,
+    controllerId: controllerMount.base.controller.id,
+    resourceId: project.resourceId,
+    contractDigest: contract.capability.digest,
+    observabilityEnabled: options.host === "studio" && !controllerMount.base.observabilityWarning,
+    subagents: projection.controller.subagents,
+    generation: () => resources?.snapshot().id ?? 0,
+  });
+  const existingServer = controllerMount.mastraArgs.server ?? {};
   const mastraArgs: NonNullable<ConstructorParameters<typeof Mastra>[0]> = {
     ...controllerMount.mastraArgs,
     agents: { ...(controllerMount.mastraArgs.agents ?? {}), ...agents },
@@ -344,6 +459,10 @@ export async function prepareMcodeRuntime(
     },
     workspace,
     backgroundTasks: HOST_BACKGROUND_TASK_POLICY,
+    server: {
+      ...existingServer,
+      apiRoutes: [...(existingServer.apiRoutes ?? []), descriptorRoute],
+    },
   };
   let claimed = false;
 
@@ -390,7 +509,13 @@ export async function prepareMcodeRuntime(
           ...(options.onDiagnostic ? { onDiagnostic: options.onDiagnostic } : {}),
         });
         await controllerMount.finalize();
-        if (options.watch ?? true) resources.startWatching();
+        if (options.watch ?? true) {
+          resources.startWatching({
+            onReloadError: error => {
+              if (error instanceof ProjectWorkflowRestartRequiredError) options.onRestartRequired?.(error);
+            },
+          });
+        }
       } catch (error) {
         const cleanupFailures = await cleanupFailedMcodeStartup(
           mastra,

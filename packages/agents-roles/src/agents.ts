@@ -9,6 +9,7 @@ import {
   createRunBudgetHooks,
   createToolAuditHooks,
   createVisibleBrowser,
+  type VisibleBrowserModelConfig,
 } from "@rlabs/agent-tools";
 import {
   AGENT_BACKGROUND_TASK_POLICY,
@@ -30,6 +31,7 @@ export interface ToolkitAgentsOptions {
   readonly dynamicWorkflow?: NonNullable<ToolsInput[string]>;
   readonly browserExecutablePath?: string;
   readonly browserUserDataDir?: string;
+  readonly browserModel?: VisibleBrowserModelConfig;
   readonly additionalTools?: ToolkitAdditionalTools;
   readonly hooks?: ToolHooks;
   readonly profile?: ModelProfile;
@@ -181,6 +183,7 @@ function composeToolHooks(additionalHooks?: ToolHooks): ToolHooks {
 function browser(options: ToolkitAgentsOptions): StagehandBrowser | undefined {
   if (!options.browser) return undefined;
   return createVisibleBrowser({
+    ...(options.browserModel ? { model: options.browserModel } : {}),
     ...(options.browserExecutablePath ? { executablePath: options.browserExecutablePath } : {}),
     ...(options.browserUserDataDir ? { userDataDir: options.browserUserDataDir } : {}),
   });

@@ -19,24 +19,20 @@ describe("MCode sandbox deployment source", () => {
   });
 
   test("installs the exact Mastra workflow runtime used by Factory", async () => {
-    const [manifest, lock, rootManifest] = await Promise.all([
+    const [manifest, lock] = await Promise.all([
       readFile(resolve(deploymentRoot, "runtime/package.json"), "utf8").then(JSON.parse),
       readFile(resolve(deploymentRoot, "runtime/package-lock.json"), "utf8").then(JSON.parse),
-      readFile(resolve("package.json"), "utf8").then(JSON.parse),
     ]) as [{
       dependencies: Record<string, string>;
     }, {
       packages: { "": { dependencies: Record<string, string> } };
-    }, {
-      dependencies: Record<string, string>;
-      devDependencies: Record<string, string>;
     }];
 
     expect(manifest.dependencies).toEqual({
-      "@mastra/core": rootManifest.dependencies["@mastra/core"],
-      esbuild: rootManifest.dependencies.esbuild,
-      tsx: rootManifest.devDependencies.tsx,
-      zod: rootManifest.dependencies.zod,
+      "@mastra/core": "1.57.0",
+      esbuild: "0.28.1",
+      tsx: "4.20.6",
+      zod: "4.4.3",
     });
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
   });

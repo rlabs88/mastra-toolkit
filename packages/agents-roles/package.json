@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "files": [
+    "src"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
@@ -12,7 +15,7 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@mastra/core": "1.57.0",
+    "@mastra/core": "1.58.0",
     "@mastra/stagehand": "0.3.1",
     "@rlabs/agent-tools": "*",
     "@rlabs/runtime-config": "*"
