@@ -6,8 +6,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   rehydrateWorkflow,
-  type StoredWorkflowGraph,
-  validateStoredWorkflow,
+  type DynamicWorkflowGraph as MastraDynamicWorkflowGraph,
+  validateDynamicWorkflow,
 } from "@mastra/core/workflows";
 import { chargeRunDelegations, RUN_BUDGET_CONTEXT_KEY } from "./capabilities.js";
 
@@ -133,7 +133,7 @@ const parallelEntrySchema = z.object({
 const conditionalEntrySchema = z.object({
   type: z.literal("conditional"),
   steps: z.array(agentEntrySchema).min(1).max(MAX_CONCURRENCY),
-  // Predicates are upstream's declarative language; `validateStoredWorkflow` is their authority.
+  // Predicates are upstream's declarative language; `validateDynamicWorkflow` is their authority.
   predicates: z.array(z.unknown()).min(1),
 }).strict();
 
@@ -275,7 +275,7 @@ export interface DynamicWorkflowToolOptions {
 
 /** Structural view of the host runtime, so this package depends on no host type. */
 interface DynamicWorkflowHost {
-  addStoredWorkflow(definition: unknown): Promise<void>;
+  addDynamicWorkflow(definition: unknown): Promise<void>;
   addWorkflow?(workflow: unknown, key?: string): void;
   getAgentById?(id: string): unknown;
   getWorkflow(id: string): unknown;
@@ -377,7 +377,7 @@ export function createDynamicWorkflowTool(options: DynamicWorkflowToolOptions) {
         scopeDigest: await resolveScopeDigest(options.scope, authorizationContext),
       };
       const host = context.mastra as unknown as DynamicWorkflowHost | undefined;
-      if (!host?.addStoredWorkflow) throw new Error("dynamic_workflow requires an active Mastra runtime");
+      if (!host?.addDynamicWorkflow) throw new Error("dynamic_workflow requires an active Mastra runtime");
       const childRequestContext = dispatchContext(
         context.requestContext,
       );
@@ -539,7 +539,7 @@ function prepare(
       ...(scopeDigest ? { scopeDigest } : {}),
     },
   };
-  const upstreamIssues = validateStoredWorkflow(stored as never, {
+  const upstreamIssues = validateDynamicWorkflow(stored as never, {
     agents: Object.fromEntries([...allowedAgents].map(id => [id, {}])),
     workflows: Object.fromEntries([...allowedWorkflows].map(id => [id, {}])),
   });
@@ -1182,17 +1182,17 @@ async function registerDefinition(
     const store = await definitionsStore(host);
     if (!store) throw new Error("dynamic_workflow requires workflow definition storage");
     if (host.addWorkflow && host.getAgentById) {
-      await host.addStoredWorkflow(stored);
+      await host.addDynamicWorkflow(stored);
       host.removeWorkflow?.(id);
       const resolver = agentEntryResolver(host);
       const { workflow } = await rehydrateWorkflow(
-        stored as unknown as StoredWorkflowGraph,
+        stored as unknown as MastraDynamicWorkflowGraph,
         resolver,
       );
       host.addWorkflow(workflow, id);
       await store.upsert({ id, status: "archived" });
     } else {
-      await host.addStoredWorkflow(stored);
+      await host.addDynamicWorkflow(stored);
       await store.upsert({ id, status: "archived" });
     }
   } catch (error) {

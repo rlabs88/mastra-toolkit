@@ -6,6 +6,7 @@ import {
   browserActionRequiresApproval,
   createRunBudgetHooks,
   createToolAuditHooks,
+  createVisibleBrowser,
   RUN_CONTAINMENT_POLICY,
 } from "../src/index.js";
 // Not on the package facade: only `dynamic-workflow.ts` charges this way, and
@@ -13,6 +14,17 @@ import {
 import { chargeRunDelegations } from "../src/capabilities.js";
 
 describe("agent tool policies", () => {
+  test("configures Stagehand with the canonical OpenAI-compatible proxy and fails closed without it", () => {
+    expect(() => createVisibleBrowser()).toThrow(/model configuration/);
+
+    const browser = createVisibleBrowser({
+      model: { modelName: "gpt-4o", apiKey: "test-proxy-key", baseURL: "https://proxy.example/v1" },
+    });
+
+    expect((browser as unknown as { stagehandConfig: { model: unknown } }).stagehandConfig.model).toEqual({
+      modelName: "gpt-4o", apiKey: "test-proxy-key", baseURL: "https://proxy.example/v1", provider: "openai",
+    });
+  });
   test("exports the canonical run containment policy used by host descriptors", () => {
     expect(RUN_CONTAINMENT_POLICY).toEqual({
       maxToolCalls: 64,

@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   loadRuntimeConfig,
   prepareHostDataDirectory,
+  resolveProjectHostDataPaths,
   resolveHostDataPaths,
 } from "../src/index.js";
 
@@ -58,6 +59,32 @@ describe("host data", () => {
   test("treats MASTRA_APP_DATA_DIR as an exact host directory override", () => {
     expect(resolveHostDataPaths("factory", { MASTRA_APP_DATA_DIR: "/runtime/factory" }, "/ignored"))
       .toMatchObject({ directory: "/runtime/factory", databasePath: "/runtime/factory/factory.db" });
+  });
+
+  test("isolates persistent Studio state by canonical project root", () => {
+    const first = resolveProjectHostDataPaths("studio", "/repos/one", {}, "/users/example");
+    const repeated = resolveProjectHostDataPaths("studio", "/repos/one", {}, "/users/example");
+    const second = resolveProjectHostDataPaths("studio", "/repos/two", {}, "/users/example");
+
+    expect(first).toEqual(repeated);
+    expect(first.directory).toMatch(/^\/users\/example\/\.mastra-toolkit\/studio\/projects\/[a-f0-9]{16}$/);
+    expect(second.directory).not.toBe(first.directory);
+    expect(first.observabilityDatabasePath).toBe(`${first.directory}/observability.duckdb`);
+
+    const overriddenFirst = resolveProjectHostDataPaths(
+      "studio",
+      "/repos/one",
+      { MASTRA_APP_DATA_DIR: "/runtime/studio" },
+      "/ignored",
+    );
+    const overriddenSecond = resolveProjectHostDataPaths(
+      "studio",
+      "/repos/two",
+      { MASTRA_APP_DATA_DIR: "/runtime/studio" },
+      "/ignored",
+    );
+    expect(overriddenFirst.directory).toMatch(/^\/runtime\/studio\/projects\/[a-f0-9]{16}$/);
+    expect(overriddenSecond.directory).not.toBe(overriddenFirst.directory);
   });
 
   test("moves a legacy database family once and rejects an ambiguous destination", async () => {

@@ -96,6 +96,7 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
   readonly #mastra: Mastra;
   #agents = new Map<string, Agent>();
   #workflowGenerations = new Map<string, string>();
+  #workflowGenerationMounted = false;
 
   constructor(mastra: Mastra) {
     this.#mastra = mastra;
@@ -113,8 +114,8 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
     const candidateWorkflows = new Map([...registration.generation.workflows].map(
       ([id, workflow]) => [id, workflow.generation],
     ));
-    if (this.#workflowGenerations.size > 0 && !sameEntries(this.#workflowGenerations, candidateWorkflows)) {
-      throw new Error("Project workflow hot reload requires an upstream Mastra workflow removal API");
+    if (this.#workflowGenerationMounted && !sameEntries(this.#workflowGenerations, candidateWorkflows)) {
+      throw new ProjectWorkflowRestartRequiredError();
     }
     const addedAgentKeys: string[] = [];
     let committed = false;
@@ -125,7 +126,7 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
           this.#mastra.addAgent(agent, key);
           addedAgentKeys.push(key);
         }
-        if (this.#workflowGenerations.size === 0) {
+        if (!this.#workflowGenerationMounted) {
           for (const workflow of registration.generation.workflows.values()) {
             this.#mastra.addWorkflow(workflow.workflow, `project-workflow-${workflow.id}`);
           }
@@ -133,6 +134,7 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
         for (const key of this.#agents.keys()) this.#mastra.removeAgent(key);
         this.#agents = candidateAgents;
         this.#workflowGenerations = candidateWorkflows;
+        this.#workflowGenerationMounted = true;
         committed = true;
       },
       rollback: async () => {
@@ -143,6 +145,13 @@ export class MastraProjectHostRegistry implements StagedHostRegistrationPort {
         }
       },
     };
+  }
+}
+
+export class ProjectWorkflowRestartRequiredError extends Error {
+  constructor() {
+    super("Project workflow changes require a Studio runtime restart");
+    this.name = "ProjectWorkflowRestartRequiredError";
   }
 }
 

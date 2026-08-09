@@ -1,4 +1,5 @@
 import { mkdir, readdir, rename } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -91,6 +92,31 @@ export async function prepareHostDataDirectory(
 ): Promise<HostDataPaths> {
   const paths = resolveHostDataPaths(host, environment, userHome);
   if (!environment.MASTRA_APP_DATA_DIR) await migrateLegacyHostData(host, paths);
+  await mkdir(paths.directory, { recursive: true, mode: 0o700 });
+  return paths;
+}
+
+export function resolveProjectHostDataPaths(
+  host: Extract<ToolkitHostId, "mcode" | "studio">,
+  canonicalProjectRoot: string,
+  environment: NodeJS.ProcessEnv = process.env,
+  userHome: string = homedir(),
+): HostDataPaths {
+  const projectId = createHash("sha256").update(resolve(canonicalProjectRoot)).digest("hex").slice(0, 16);
+  const base = resolveHostDataPaths(host, environment, userHome);
+  return resolveHostDataPaths(host, {
+    ...environment,
+    MASTRA_APP_DATA_DIR: join(base.directory, "projects", projectId),
+  }, userHome);
+}
+
+export async function prepareProjectHostDataDirectory(
+  host: Extract<ToolkitHostId, "mcode" | "studio">,
+  canonicalProjectRoot: string,
+  environment: NodeJS.ProcessEnv = process.env,
+  userHome: string = homedir(),
+): Promise<HostDataPaths> {
+  const paths = resolveProjectHostDataPaths(host, canonicalProjectRoot, environment, userHome);
   await mkdir(paths.directory, { recursive: true, mode: 0o700 });
   return paths;
 }

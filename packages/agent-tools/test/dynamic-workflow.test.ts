@@ -197,7 +197,7 @@ function inspectHarness(runsByWorkflow: Record<string, StubRun[]>) {
     }),
   };
   const host = {
-    addStoredWorkflow: async () => undefined,
+    addDynamicWorkflow: async () => undefined,
     getWorkflow: () => { throw new Error("inspect must not execute a graph"); },
     removeWorkflow: () => true,
     getStorage: () => ({
@@ -496,7 +496,7 @@ describe("dynamic_workflow", () => {
   test("marks step output as truncated when more than 32 entries are omitted", async () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -565,7 +565,7 @@ describe("dynamic_workflow", () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     let removals = 0;
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => { throw new Error("archive failed"); } }) }),
       getWorkflow: () => { throw new Error("must not execute"); },
       removeWorkflow: () => { removals += 1; return true; },
@@ -589,7 +589,7 @@ describe("dynamic_workflow", () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     let cancellations = 0;
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -624,7 +624,7 @@ describe("dynamic_workflow", () => {
     let additions = 0;
     let removals = 0;
     const host = {
-      addStoredWorkflow: async () => { additions += 1; },
+      addDynamicWorkflow: async () => { additions += 1; },
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -954,7 +954,7 @@ describe("dynamic_workflow", () => {
     const order: string[] = [];
     let releaseCancel: (() => void) | undefined;
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -1229,7 +1229,7 @@ describe("dynamic_workflow", () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     let cancellations = 0;
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -1284,7 +1284,7 @@ describe("dynamic_workflow", () => {
   test("truncates a single oversized step row and still reports later rows", async () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({
@@ -1328,7 +1328,7 @@ describe("dynamic_workflow", () => {
   test("stops spending step-row output once the aggregate budget is exhausted", async () => {
     const tool = createDynamicWorkflowTool({ agents: ["flux"], nestedWorkflows: ["helper"] });
     const host = {
-      addStoredWorkflow: async () => undefined,
+      addDynamicWorkflow: async () => undefined,
       getStorage: () => ({ getStore: async () => ({ upsert: async () => undefined }) }),
       getWorkflow: () => ({
         createRun: async () => ({

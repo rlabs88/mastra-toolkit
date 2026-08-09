@@ -27,7 +27,9 @@ export {
 export {
   loadRuntimeConfig,
   prepareHostDataDirectory,
+  prepareProjectHostDataDirectory,
   resolveHostDataPaths,
+  resolveProjectHostDataPaths,
   type HostDataPaths,
   type ModelHostConfig,
   type RuntimeConfig,

@@ -194,7 +194,20 @@ function defaultWriter(event: ToolAuditEvent): void {
   process.stderr.write(`${JSON.stringify({ type: "mastra-toolkit.tool-audit", ...event })}\n`);
 }
 
-export function createVisibleBrowser(options: { readonly executablePath?: string; readonly userDataDir?: string } = {}): StagehandBrowser {
+export interface VisibleBrowserModelConfig {
+  readonly modelName: string;
+  readonly apiKey: string;
+  readonly baseURL: string;
+}
+
+export function createVisibleBrowser(options: {
+  readonly executablePath?: string;
+  readonly userDataDir?: string;
+  readonly model?: VisibleBrowserModelConfig;
+} = {}): StagehandBrowser {
+  if (!options.model) {
+    throw new Error("Stagehand browser model configuration is required");
+  }
   return new StagehandBrowser({
     env: "LOCAL",
     headless: false,
@@ -202,6 +215,8 @@ export function createVisibleBrowser(options: { readonly executablePath?: string
     viewport: { width: 1440, height: 960 },
     timeout: 30_000,
     selfHeal: true,
+    disableAPI: true,
+    model: { ...options.model, provider: "openai" },
     preserveUserDataDir: Boolean(options.userDataDir),
     ...(options.executablePath ? { executablePath: options.executablePath } : {}),
     ...(options.userDataDir ? { profile: options.userDataDir } : {}),

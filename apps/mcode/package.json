@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "mcode": "./bin/mcode.mjs"
+    "mcode": "./bin/mcode.mjs",
+    "mz": "./bin/mz.mjs"
   },
   "dependencies": {
     "@rlabs/mcode": "*",

@@ -42,6 +42,19 @@ describe("Factory Code SDK configuration", () => {
     expect(settings).not.toContain("gpt-5.6-sol");
   });
 
+  test("enables local-only trace storage for the Studio host", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mastra-code-sdk-observability-"));
+
+    await prepareCodeSdkSettings({
+      dataDirectory: directory,
+      defaults: resolveRuntimeDefaultsV1(loadModelProfile()),
+      localTracing: true,
+    });
+
+    const settings = JSON.parse(await readFile(join(directory, "settings.json"), "utf8"));
+    expect(settings.observability).toEqual({ resources: {}, localTracing: true });
+  });
+
   test("registers the provider ID emitted by Factory onboarding", async () => {
     const gateway = createA1MastraCodeGateway({
       baseUrl: "https://proxy.example.test/v1",

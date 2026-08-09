@@ -47,7 +47,10 @@ describe("Mastra agents", () => {
   });
 
   test("configures visible Chrome when browser support is enabled", () => {
-    const agents = createToolkitAgents({ browser: true });
+    const agents = createToolkitAgents({
+      browser: true,
+      browserModel: { modelName: "gpt-4o", apiKey: "test-key", baseURL: "https://proxy.example/v1" },
+    });
 
     expect(agents.cortex.browser).toBeDefined();
     expect(agents.flux.browser).toBeDefined();

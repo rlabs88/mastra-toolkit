@@ -21,17 +21,28 @@ const packageNames = [
 ] as const;
 
 describe("workspace ownership", () => {
+  test("keeps vendored Mastra artifact bytes aligned with the lockfile", async () => {
+    const { stdout } = await execFileAsync(process.execPath, ["scripts/verify-vendored-dependencies.mjs"], { cwd: root });
+    expect(stdout).toContain("Vendored Mastra artifacts match package-lock.json.");
+  });
+
   test("pins one coherent Mastra release set with the approved memory hotfix", async () => {
     const expected = {
-      "@mastra/factory": "https://github.com/rlabs88/mastra/releases/download/factory-automation-seams-0.5.0-ec57e0f97f-p1/mastra-factory-0.5.0.tgz",
-      "@mastra/code-sdk": "1.1.3",
-      "mastracode": "0.32.6",
-      "@mastra/core": "1.57.0",
+      "@mastra/factory": "0.5.0-rlabs.mz.2",
+      "@mastra/code-sdk": "1.2.0",
+      "mastracode": "0.33.0",
+      "@mastra/core": "1.58.0",
       "mastra": "1.23.0",
       "@mastra/libsql": "1.19.0",
       "@mastra/pg": "1.19.0",
       "@mastra/memory": "1.26.1-alpha.3",
     } as const;
+    const vendoredArtifacts: Partial<Record<keyof typeof expected, string>> = {
+      "@mastra/factory": "mastra-factory-0.5.0-rlabs.mz.2.tgz",
+      "@mastra/code-sdk": "mastra-code-sdk-1.2.0-rlabs.mz.2.tgz",
+      "mastracode": "mastracode-0.33.0-rlabs.mz.4.tgz",
+      "@mastra/core": "mastra-core-1.58.0-rlabs.mz.2.tgz",
+    };
     const manifestPaths = [
       "package.json",
       ...packageNames.map(name => `packages/${name}/package.json`),
@@ -57,18 +68,24 @@ describe("workspace ownership", () => {
       "packages/runtime-config/package.json": ["@mastra/core"],
       "packages/sandbox/package.json": ["@mastra/core"],
       "apps/studio/package.json": ["@mastra/core"],
-      "deployment/mcode-sandbox/runtime/package.json": ["@mastra/core"],
     };
 
     for (const manifestPath of manifestPaths) {
       const manifest = JSON.parse(await readFile(join(root, manifestPath), "utf8")) as {
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
         overrides?: Record<string, string>;
       };
-      const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
+      const dependencies = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.peerDependencies };
       for (const name of requiredByManifest[manifestPath] ?? []) {
-        expect(dependencies[name], `${manifestPath}: ${name}`).toBe(expected[name]);
+        const actual = dependencies[name];
+        const artifact = vendoredArtifacts[name];
+        if (actual?.startsWith("file:") && artifact) {
+          expect(actual, `${manifestPath}: ${name}`).toContain(artifact);
+        } else {
+          expect(actual, `${manifestPath}: ${name}`).toBe(expected[name]);
+        }
       }
       if (manifestPath === "package.json") {
         expect(manifest.overrides?.["@mastra/memory"]).toBe(expected["@mastra/memory"]);
@@ -111,6 +128,7 @@ describe("workspace ownership", () => {
       "mcode": [
         "background-task-observer.ts",
         "index.ts",
+        "mz.ts",
         "project.ts",
         "recipe.ts",
         "runtime.ts",
@@ -209,7 +227,14 @@ describe("workspace ownership", () => {
     };
     const source = await readFile(join(root, "apps/studio/src/index.ts"), "utf8");
 
-    expect(manifest.dependencies).toEqual({ "@mastra/core": "1.57.0", "@rlabs/mcode": "*" });
+    expect(manifest.dependencies).toMatchObject({
+      "@mastra/core": "file:../../vendor/mastra/mastra-core-1.58.0-rlabs.mz.2.tgz",
+      "@mastra/client-js": "file:../../vendor/mastra/mastra-client-js-1.39.0-rlabs.mz.3.tgz",
+      "@mastra/code-sdk": "file:../../vendor/mastra/mastra-code-sdk-1.2.0-rlabs.mz.2.tgz",
+      "@mastra/server": "file:../../vendor/mastra/mastra-server-1.58.0-rlabs.mz.3.tgz",
+      mastracode: "file:../../vendor/mastra/mastracode-0.33.0-rlabs.mz.4.tgz",
+      "@rlabs/mcode": "*",
+    });
     expect(source).toContain("prepareMcodeRuntime");
     expect(source).toContain("localProject.contract");
     expect(source).toContain("localProject.projection");
@@ -231,17 +256,21 @@ describe("workspace ownership", () => {
     expect(tsconfig.include).not.toContain("src/**/*.ts");
   });
 
-  test("mcode bin is a tsx-backed shim that can load @rlabs/mcode", async () => {
+  test("mcode and mz bins are tsx-backed shims that can load @rlabs/mcode", async () => {
     const manifest = JSON.parse(await readFile(join(root, "apps/mcode/package.json"), "utf8")) as {
       bin?: Record<string, string>;
       dependencies?: Record<string, string>;
     };
-    expect(manifest.bin).toEqual({ mcode: "./bin/mcode.mjs" });
+    expect(manifest.bin).toEqual({ mcode: "./bin/mcode.mjs", mz: "./bin/mz.mjs" });
     expect(manifest.dependencies?.tsx).toBe("4.20.6");
 
     const shim = await readFile(join(root, "apps/mcode/bin/mcode.mjs"), "utf8");
     expect(shim).toContain("tsx/esm/api");
     expect(shim).toContain("../src/cli.ts");
+
+    const mzShim = await readFile(join(root, "apps/mcode/bin/mz.mjs"), "utf8");
+    expect(mzShim).toContain("tsx/esm/api");
+    expect(mzShim).toContain("../src/mz-cli.ts");
 
     const dataDirectory = await mkdtemp(join(tmpdir(), "mcode-shim-test-"));
     try {
@@ -315,6 +344,7 @@ describe("workspace ownership", () => {
     expect(paths.filter(path => path.startsWith("src/") && path.endsWith(".ts")).sort()).toEqual([
       "src/background-task-observer.ts",
       "src/index.ts",
+      "src/mz.ts",
       "src/project.ts",
       "src/recipe.ts",
       "src/runtime.ts",

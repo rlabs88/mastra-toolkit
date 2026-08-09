@@ -38,6 +38,7 @@ export interface ProjectMountingManagerOptions {
 
 export interface ProjectMountingWatchOptions {
   readonly debounceMs?: number;
+  readonly onReloadError?: (error: unknown) => void;
 }
 
 export class ProjectMountingManager {
@@ -88,6 +89,7 @@ export class ProjectMountingManager {
         await this.reload();
       },
       onError: error => {
+        options.onReloadError?.(error);
         this.#diagnostics.record("watch", error);
       },
     });
