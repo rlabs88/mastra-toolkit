@@ -13,7 +13,7 @@ const packages = [
   ['packages/server', '1.58.0', '3'],
   ['observability/mastra', '1.16.6', '2'],
   ['mastracode/sdk', '1.2.0', '2'],
-  ['mastracode/tui', '0.33.0', '5'],
+  ['mastracode/tui', '0.33.0', '6'],
   ['packages/deployer', '1.58.0-alpha.8', '4'],
   [
     'packages/server-adapters/hono',
@@ -43,6 +43,12 @@ for (const [relativePath, version, revision, sourceRoot = forkRoot, , outputName
   const scratch = mkdtempSync(join(tmpdir(), 'mastra-fork-pack-'));
   try {
     const sourcePath = join(sourceRoot, relativePath);
+    if (relativePath === 'mastracode/tui') {
+      execFileSync('corepack', ['pnpm', 'build:lib'], {
+        cwd: sourcePath,
+        stdio: 'inherit',
+      });
+    }
     const packedName = execFileSync('corepack', ['pnpm', 'pack', '--pack-destination', scratch], {
       cwd: sourcePath,
       encoding: 'utf8',
