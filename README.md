@@ -1,5 +1,8 @@
 # Mastra Toolkit
 
+> [!IMPORTANT]
+> Development moved to [`rlabs88/agentics-mono/harness/mastra/toolkit`](https://github.com/rlabs88/agentics-mono/tree/main/harness/mastra/toolkit) in [agentics-mono#138](https://github.com/rlabs88/agentics-mono/pull/138). This standalone repository is archived and read-only. Its imported source tip is `bdf21fd738b4569475a5b09eac06a06dcb6d6f0f`; future owned toolkit changes belong in `agentics-mono`.
+
 RLabs' local Mastra agent runtime and Mastra Factory adapter. It provides Cortex, Flux, and Zen through one shared runtime, with guarded repository tools, native background work, visible browser automation, and cloneable Local, Docker, or Platform sandboxes.
 
 The [Executive Direction](docs/executive-direction.md) defines the project-runtime thesis and progression from local Mastra Code development to a multi-project Factory. The implemented ownership and fork boundaries are documented in [Workspace Architecture](docs/workspace-architecture.md), with exact consumers and extension rules in the [Repository Manifest](docs/repository-manifest.md).
